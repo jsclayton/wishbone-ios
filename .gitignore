@@ -25,6 +25,9 @@ xcuserdata/
 *.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/*
 !*.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 
+# JS tooling for the git hooks
+node_modules/
+
 # Build output
 .build/
 .swiftpm/
