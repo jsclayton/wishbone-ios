@@ -1,0 +1,48 @@
+# Agent scratch and private notes (never committed)
+.agent/
+.claude/
+.beads/
+*.local.md
+
+# Local build settings: signing team, keys, and other per-machine overrides
+*.local.xcconfig
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Xcode user data (machine-specific)
+xcuserdata/
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+
+# Xcode's generated workspace, except the resolved package versions
+*.xcodeproj/project.xcworkspace/*
+!*.xcodeproj/project.xcworkspace/xcshareddata/
+*.xcodeproj/project.xcworkspace/xcshareddata/*
+!*.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+*.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/*
+!*.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+
+# Build output
+.build/
+.swiftpm/
+/build/
+/DerivedData/
+*.xcresult
+
+# App packaging
+*.ipa
+*.dSYM
+*.dSYM.zip
+
+# Scratch: captures, logs, screenshots, probe builds
+/.scratch/
+/tmp/
+
+# Editors and OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
