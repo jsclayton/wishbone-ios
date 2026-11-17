@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security problem
+    url: https://github.com/jsclayton/wishbone-ios/security/advisories/new
+    about: Report it in private. Don't open an issue for a vulnerability.
+  - name: Ask a question
+    url: https://github.com/jsclayton/wishbone/discussions
+    about: For help with the app or how something works. Use the iOS app category in the Wishbone server's Discussions.
