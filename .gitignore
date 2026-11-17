@@ -5,6 +5,7 @@
 *.local.md
 
 # Local build settings: signing team, keys, and other per-machine overrides
+Config/Local.xcconfig
 *.local.xcconfig
 
 # Environment
