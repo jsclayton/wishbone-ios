@@ -13,7 +13,7 @@ The app runs against servers that its maintainer can't see. Without reports, a c
 - **Opt-in.** Rejected. It gives far fewer reports, and one more step before a family member reaches their list. Notice plus an easy way to withdraw is the basis Apple's guideline 5.1.1(ii) allows, and GDPR's legitimate interest.
 - **No SDK**, with only Apple's reports. Rejected. Apple's crash reports come late and without the app's own faults, such as a response that can't be decoded.
 - **A DSN in the repo, with a filter on the bundle ID.** Rejected. Every fork and CI run holds the DSN, and a fork that keeps the bundle ID passes the filter.
-- **Sentry in the extensions too.** Rejected. The share extension runs under a memory limit of about 120 MB, starting the SDK costs every share, and the switch and the ID would have to move into the shared container.
+- **Sentry in the extensions too.** Rejected. The share extension runs under a memory limit of about 120 MB, starting the SDK costs every share, and the switch and the ID must then move into the shared container.
 
 ## Consequences
 

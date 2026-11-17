@@ -6,7 +6,7 @@ status: accepted
 
 The session model's tests run against a real Wishbone server, not an HTTP stub. The server is built from source at a pinned commit of `jsclayton/wishbone`, with the `e2e` build tag, and stamped with its version. The pin is held in one file beside the copy of the OpenAPI document and the minimum server version, and all three change together in one commit (see [ADR 0004](0004-the-api-client-is-written-by-hand-and-checked-against-a-pinned-copy-of-the-servers-openapi-document.md)). Each test process starts its own server, on a free port with its own data folder, so tests and checkouts run in parallel. What a real server can't do (no network, a held request, a 5xx, a 410, an old version) comes from a network conditioner in `TestSupport`, which passes everything through to the server unless a test tells it otherwise.
 
-The server holds the rules that matter most: who sees what, claim state, quantity, the `can_*` fields, and reveal. A fake would copy them and drift. A real server is cheap: built from source it takes about 13 seconds once, starts in under a second, and finishes setup in milliseconds.
+The server holds the rules that matter most: who sees what, claim state, quantity, the `can_*` fields, and reveal. A fake copies them, and drifts. A real server is cheap: built from source it takes about 13 seconds once, starts in under a second, and finishes setup in milliseconds.
 
 ## Considered Options
 

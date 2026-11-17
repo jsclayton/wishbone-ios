@@ -11,7 +11,7 @@ A drop in one window must show in every other window at once. One shared model, 
 ## Considered Options
 
 - **A view model for each screen.** Rejected. Each window then holds its own copy of shared state. SwiftUI's own state and one `@Observable` model already do the job.
-- **Screens that call the API client directly.** Rejected. Writes could then skip the unsent changes, and a screen could show data that no other window sees.
+- **Screens that call the API client directly.** Rejected. Writes can then skip the unsent changes, and a screen can show data that no other window sees.
 
 ## Consequences
 

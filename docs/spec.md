@@ -23,7 +23,7 @@ The maintainer decides how a screen looks by using it. So this spec decides plac
 - **Decided, and not marked:** which places exist (a tab, a sheet, or a pushed screen), where a link opens, what each action does, and the words, unless they are marked.
 - **Provisional, and marked:** layout, look, order, symbols, and draft words. Each provisional part has a plain default.
 - **The mark** is "**Provisional.** Plain default: ...", written where the part is described.
-- **Built plain** means system lists, forms, and controls; the system font with Dynamic Type; SF Symbols; the one accent color; and nothing invented.
+- **Built plain** means system lists, forms, and controls, the system font with Dynamic Type, SF Symbols, and the one accent color. Nothing is invented.
 - An implementer builds the plain default without asking. Nobody asks the maintainer to approve a look from a description or a picture.
 - A mark comes off in a pull request, after the maintainer has used the screen and settled it. The pull request says so.
 
@@ -181,7 +181,7 @@ This screen is in Settings (section 3).
 
 - Sign out warns: "You need a new login link to sign in again." If unsent changes remain, the warning adds "{n} changes haven't been sent and will be lost."
 - The app first tries to send the unsent changes. Then it calls `DELETE /users/me/sessions/current`, and clears the device as the API's own 401 does.
-- Sign out with no connection still clears the device. The app tries the server call once, and keeps no token to try again with. If the call failed: "Signed out on this device. {address} could not be reached, so this device still shows in your Devices list until you remove it there."
+- Sign out with no connection still clears the device. The app tries the server call once. It keeps no token to try again with. If the call failed: "Signed out on this device. {address} could not be reached, so this device still shows in your Devices list until you remove it there."
 
 ### Sign in on another device
 
@@ -389,7 +389,7 @@ The same in the app and the share extension.
   - **Text.** If it holds a link, the first link is used and the rest is ignored, because store apps share "Check out this toy! https://…". Otherwise the words go to search as typed words.
   - **One image**, a photo or a screenshot. It goes to search as a photo, counts against the hourly limit, and is titled "Photo from {date}" when no guess comes back.
 - It sends only the link. It has no JavaScript file to read Safari's page, because the server spec says that a URL is always read on the server.
-- When the instance can't be reached, it says "Can't reach {address}", with Try again and Copy the link (to add it later from the Add screen). Cancel keeps nothing. The extension has no queue, because a queue there would need the shared container.
+- When the instance can't be reached, it says "Can't reach {address}", with Try again and Copy the link (to add it later from the Add screen). Cancel keeps nothing. The extension has no queue, because a queue there needs the shared container.
 - After an add, it tells the app, so the app syncs at once (section 10).
 
 ### The "Add item" control
@@ -480,7 +480,12 @@ Relies on the server spec's [Admin and setup](https://github.com/jsclayton/wishb
 
 The rows show from their `can_*` fields, in this order.
 
-- **An active user:** Edit {name}'s profile; Sign-in and devices; **Parents** (pushes the user's parents, each with Remove, and Add parent, with no confirmation; a refused loop shows the server's `detail`); **Deactivate {name}**; **Delete {name}** (see [Account deletion](#account-deletion)).
+- **An active user:**
+  - Edit {name}'s profile
+  - Sign-in and devices
+  - **Parents**, which pushes the user's parents, each with Remove, and Add parent. Neither asks for confirmation. A refused loop shows the server's `detail`.
+  - **Deactivate {name}**
+  - **Delete {name}** (see [Account deletion](#account-deletion))
 - Deactivate asks for confirmation: the user's devices are signed out, their open gifts are released, and only you and their parents see them until you reactivate them.
 - **A deactivated user:** "Deactivated" beside the name, the line "{name} can't sign in. Reactivate to bring them back as they were.", and the rows **Reactivate {name}** (no confirmation), Parents, and Delete {name}. Profile and Sign-in and devices are hidden.
 - **A user seen only through the admin's access:** the page says "You see {name} because you're the admin. Their lists show only to people who share a group with them."
@@ -525,7 +530,11 @@ The People page is reached from the "People" heading on Home, and from a sidebar
 
 - Coming up on Home leads to the **Occasions** screen. Everyone sees the occasions there.
 - The admin also gets a **Shared occasions** part: every shared occasion, soonest first, each saying who it reaches ("Everyone" or the group names), and **New shared occasion** in the toolbar.
-- The form: Name; When (every year on a date, once on a date, the nth weekday of a month, or the last weekday of a month); Who (Everyone, or Groups). The app attaches the groups after the create, and names any attach that failed.
+- The form has three fields:
+  - **Name**
+  - **When**: every year on a date, once on a date, the nth weekday of a month, or the last weekday of a month
+  - **Who**: Everyone, or Groups
+- The app attaches the groups after the create, and names any attach that failed.
 - Edit is the same form. Its footer says that a switch to Everyone drops the groups, and that the gifts of people it stops reaching move to their next occasion.
 - **Delete** asks for confirmation: "Gifts picked for {name} move to the next occasion of the people they're for, and each giver sees why."
 - A shared occasion's page ("See who's on it") is the same for everyone. The admin also gets Edit and Delete there.
@@ -681,7 +690,7 @@ By the rule in section 3, the page opens on top of Home.
 
 ### Why there is no push
 
-- The app does not ask the server for push. Push is a non-goal of the server, so asking for it changes a goal; it does not add a feature.
+- The app does not ask the server for push. Push is a non-goal of the server. So to ask for it changes a goal, and does not only add a feature.
 - A self-hosted server reaches Apple's push service only through a relay that holds the app's push key. Someone must run it and pay for it, which clashes with a free app.
 - With one kind of reminder and the 60-day rebuild, push mostly fixes only the stale-weeks cost above.
 
@@ -806,7 +815,15 @@ Relies on the server spec's [Collections](https://github.com/jsclayton/wishbone/
 ### Unsent changes
 
 - Most writes are **unsent changes**. Each one is saved with an ID, applied to the copy at once (so every window shows it), and sent in order when the instance answers. It stays over the pulled rows until the server accepts it.
-- These writes are unsent changes: mark bought; edits to items, lists, profiles, and gifts (note, from label, occasion); deletes; unclaim; lowering a gift's quantity; move; reorder; acknowledge; accept or decline an invitation; and creates (an item filled in by hand, a list, an occasion, an invitation, a store link, an image upload, and Add again). Each create carries its own `Idempotency-Key`, so a resend after a lost answer can't make it twice.
+- These writes are unsent changes:
+  - mark bought
+  - edits to items, lists, profiles, and gifts (note, from label, occasion)
+  - deletes, and unclaim
+  - lowering a gift's quantity
+  - move and reorder
+  - acknowledge, and accept or decline an invitation
+  - creates: an item filled in by hand, a list, an occasion, an invitation, a store link, an image upload, and Add again
+- Each create carries its own `Idempotency-Key`, so a resend after a lost answer can't make it twice.
 - A create that later changes refer to gets a local stand-in ID. When the create's answer comes, the app puts the server's ID in its place.
 - A late refusal rolls the change back in the copy, and shows once (see [Late refusals](#late-refusals)).
 - Sign-out and the API's own 401 discard every unsent change. A write in flight is abandoned, and its answer is never written into a cleared database.
@@ -822,7 +839,7 @@ Relies on the server spec's [Collections](https://github.com/jsclayton/wishbone/
 ### No If-Match
 
 - No write sends `If-Match`. Each change is a merge patch of only the fields changed. The server applies it to its current state, and the last writer wins for each field.
-- The server's `ETag` covers what each caller sees, so it changes for reasons that have nothing to do with the edit. For example, a claim changes a parent's `ETag` on a child's item. `If-Match` would then fail for no real conflict, more so for a change that waited offline.
+- The server's `ETag` covers what each caller sees, so it changes for reasons that have nothing to do with the edit. For example, a claim changes a parent's `ETag` on a child's item. `If-Match` then fails for no real conflict, more so for a change that waited offline.
 - Each row keeps its version, to skip writes that change nothing, and to send as `If-None-Match` when it fetches.
 
 ### When the app syncs
@@ -830,8 +847,8 @@ Relies on the server spec's [Collections](https://github.com/jsclayton/wishbone/
 A sync sends the unsent changes, then pulls. It runs:
 
 - each time the app comes to the foreground, and on each network change
-- on pull to refresh, on any screen; it syncs everything
-- every 60 seconds while any window is in the foreground and the instance answers; the timer stops while the instance is unreachable
+- on pull to refresh, on any screen (it syncs everything)
+- every 60 seconds while any window is in the foreground and the instance answers (the timer stops while the instance is unreachable)
 - once when the last unsent change is sent
 - at once when the share extension says that it added an item
 - in background app refresh: the unsent changes, a pull, then the reminders (section 8) and the widget's file are made again from the copy
@@ -926,7 +943,10 @@ Every new error type picks its side: captured, a breadcrumb, or never.
 ### The notice and the switch
 
 - **The notice** is one line at the foot of the signed-out screen, the first screen of a fresh install. The SDK starts only after that screen has shown. The line opens the Share diagnostics screen as a sheet, so a person can turn diagnostics off before anything is sent.
-- **The Settings row "Share diagnostics"** pushes the same screen. It holds the switch; a short paragraph on what is sent (crash and fault reports, the app and Wishbone versions, the device model, and the iOS version) and what never is (anything from the family's lists, names, birthdays, and the instance's address); and a link to the privacy policy (`WISHBONE_PRIVACY_URL`).
+- **The Settings row "Share diagnostics"** pushes the same screen. It holds:
+  - the switch
+  - a short paragraph on what is sent (crash and fault reports, the app and Wishbone versions, the device model, and the iOS version), and what never is (anything from the family's lists, names, birthdays, and the instance's address)
+  - a link to the privacy policy (`WISHBONE_PRIVACY_URL`)
 - The operator gets no switch for the whole instance. Each person's own switch is the control. The operator learns about diagnostics from the README and the privacy policy.
 
 **Provisional.** Plain default: a system form with a toggle, a footer paragraph, and a link. The draft notice is "If Wishbone crashes, it sends a report to its developer, never anything from your family's lists. Diagnostics settings".
@@ -968,7 +988,10 @@ Relies on the server spec's [Design](https://github.com/jsclayton/wishbone/blob/
 ### A color for each person
 
 - Each person gets a color that the app makes from the user's ID, from a fixed palette of system colors. It is the same on every device, with no server change. The web app shows no person color, and a client owns its layout.
-- The color is used for the person's initials avatar when they have no photo; the tile behind an item with no image, on a list they are a recipient of (a list with several recipients takes its first recipient's color); and the countdown card when the occasion is theirs.
+- The color is used for:
+  - the person's initials avatar, when they have no photo
+  - the tile behind an item with no image, on a list they are a recipient of (a list with several recipients takes its first recipient's color)
+  - the countdown card, when the occasion is theirs
 - Item images and avatar photos show as they are, with no tint and no overlay.
 - Color never carries meaning alone. A name always sits beside the avatar or the tile.
 - The palette leaves out colors on which white initials fail the contrast rule, such as yellow.

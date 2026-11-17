@@ -11,7 +11,7 @@ Wishbone's content is for reading: a list, a person's page, what you are giving.
 ## Considered Options
 
 - **Memory only**, as the web app does. Rejected. Every launch starts empty, and an unreachable instance shows nothing.
-- **A disk copy of the API's responses.** Rejected. Each screen would read a different response, so a change in one window does not show in another, and nothing can query across them.
+- **A disk copy of the API's responses.** Rejected. Each screen reads a different response, so a change in one window does not show in another, and nothing can query across them.
 - **A copy that the app shows only while online.** Rejected. Wishbone's content is for reading, so the copy is worth most when the instance can't be reached.
 
 ## Consequences

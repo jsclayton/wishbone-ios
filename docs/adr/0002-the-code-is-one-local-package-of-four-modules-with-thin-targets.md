@@ -10,7 +10,7 @@ Two extensions share code with the app, and the logic must test with `swift test
 
 ## Considered Options
 
-- **One app target with no package**, as the open source apps hermex and ruddarr do. Rejected. The extensions would compile the app's files one by one, and every test would need a simulator.
+- **One app target with no package**, as the open source apps hermex and ruddarr do. Rejected. The extensions then compile the app's files one by one, and every test needs a simulator.
 - **Many small modules**, as a much larger app has. Rejected. That many modules come from cutting a much larger codebase, and here they add only build settings to keep in step. A new module here is cut only when a target's link list or a macOS build needs it.
 
 ## Consequences
