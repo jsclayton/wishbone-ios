@@ -1,0 +1,97 @@
+name: Bug report
+description: Something in the iPhone or iPad app does not work as you expect
+labels: ["needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this.
+
+        If the problem lets someone see what is claimed or a gift they should not see, anywhere in the app or outside it (a widget, a reminder, the share sheet), or lets someone sign in as someone else, don't post it here. Report it in private: see [SECURITY.md](https://github.com/jsclayton/wishbone-ios/blob/main/SECURITY.md).
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What went wrong?
+      description: A short description of the problem.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open Lists
+        2. Tap '...'
+        3. See the error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead?
+      description: Add a screenshot if it helps. Remove anything private from it first.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: web
+    attributes:
+      label: Does the web app do the same?
+      description: If the web app has the same problem, it is probably in the server. Report it on [the server's repo](https://github.com/jsclayton/wishbone/issues) instead.
+      options:
+        - "No, only the app"
+        - "Yes, the web app does it too"
+        - "I haven't tried the web app"
+    validations:
+      required: true
+
+  - type: input
+    id: app-version
+    attributes:
+      label: App version and build
+      description: In the app, open Settings. The version and build are at the bottom.
+      placeholder: 1.0 (42)
+    validations:
+      required: true
+
+  - type: input
+    id: os-version
+    attributes:
+      label: iOS or iPadOS version
+      placeholder: iOS 27.1
+    validations:
+      required: true
+
+  - type: dropdown
+    id: device
+    attributes:
+      label: iPhone or iPad
+      options:
+        - iPhone
+        - iPad
+    validations:
+      required: true
+
+  - type: input
+    id: server-version
+    attributes:
+      label: Wishbone server version
+      description: The version your Wishbone server runs. It is at the bottom of Menu in the web app.
+      placeholder: 2.1.0
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Anything else?
