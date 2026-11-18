@@ -23,7 +23,8 @@ One gift in full. While a gift is open, its giver marks it bought here, changes 
 5. **Occasion**, with the reveal date under it.
 6. **From**: the from label, at most 60 characters.
 7. **Note**: the giver's private note.
-8. **I won't get this**.
+8. **Get another for a different occasion**, when the item can still be claimed and another occasion is free.
+9. **I won't get this**.
 
 ### A given gift
 
@@ -66,6 +67,7 @@ One gift in full. While a gift is open, its giver marks it bought here, changes 
 | Write the note | The Note field, from `can_edit` | Saves when the field loses focus |
 | OK | A button on a flag, from `can_acknowledge` | Clears that flag |
 | Keep it | A button on the "removed" flag | Clears the flag. The gift is given at its reveal |
+| Get another for a different occasion | A row, from the item's `can_claim`, when the giver has no gift on the item for some other occasion they can pick | Claims one for the soonest such occasion, after the server answers. The new gift's page is pushed |
 | I won't get this | A row at the foot, from `can_delete` | Unclaims, after a confirmation. The quantity goes back to all givers |
 | I didn't get this | A row at the foot, from `can_restore` | Restores, after a confirmation. The gift goes back to its giver |
 | Add again | A row at the foot, from `can_add_again` | Opens the add form filled from the gift. Add to starts on the gift's list |
@@ -91,6 +93,7 @@ Decided, as the web app has them: "I won't get this", "I didn't get this", "Add 
 | Flag: no longer shared | "This list is no longer shared with you. You can still give this, or not." |
 | Flag: the occasion moved | "The occasion changed. It's now for {occasion}." |
 | Answers | "OK", "Keep it" |
+| A second gift | "Get another for a different occasion" |
 | I won't get this, confirmation | "You won't get {title}? Other people can then claim it.", with the button "I won't get this" |
 | I didn't get this, confirmation | "You didn't get {title}? It leaves your Received. If the giver still uses Wishbone, they see that, and can give it again.", with the button "I didn't get this" |
 | I didn't get this, for a child | "{name} didn't get {title}?", with the button "{name} didn't get this" |

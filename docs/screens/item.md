@@ -21,7 +21,7 @@ From top to bottom:
 1. The images, the primary image first.
 2. The title, and the price or the price range.
 3. The list's name and its recipients.
-4. **For a giver:** how many are still wanted, then one line for each of the user's own open gifts on the item, then **I'll get this**.
+4. **For a giver:** how many are still wanted, then **I'll get this**. After a claim, one line for each of the user's own open gifts on the item takes the button's place.
 5. The notes.
 6. The store links, each with its store, its price, and when the price was read. A giver sees the lowest price first. A user who can edit sees them in the order added.
 7. "Added by {name}". It does not show when that user is the list's only recipient, or was deleted.
@@ -44,11 +44,10 @@ A sheet with the fields that the add form has, and the ones it leaves out:
 ## States
 
 - **Claiming:** I'll get this shows progress, and waits for the server's answer.
-- **Claimed:** the line "You claimed 1 for Christmas" shows, and I'll get this stays while more are still wanted.
+- **Claimed:** the line "You claimed 1 for Christmas" shows in place of I'll get this. The button shows only while the giver has no open gift on the item, because the server allows one gift for each item and occasion.
 - **Someone else got it** (409 `item_fully_claimed`): the line shows in place. The item leaves the giver's lists at the next sync.
 - **Can't reach {address}**, on a claim: the line shows by the button, and nothing is claimed.
-- **Fully claimed by this giver:** the gift lines show, and I'll get this does not.
-- **An unlimited item:** "Always wanted", and I'll get this never goes.
+- **An unlimited item:** "Always wanted". It never leaves a giver's list.
 - **Add link over the hourly limit:** nothing is added, and the words for `rate_limited` show.
 - **Add link to a blocked store:** nothing is added, and the words for `store_blocked` show.
 - **Gone:** a deleted item, or one that a giver can no longer see, shows the [not-found](not-found.md) page.
@@ -67,8 +66,8 @@ A sheet with the fields that the add form has, and the ones it leaves out:
 
 | Action | Route | What it does |
 |---|---|---|
-| I'll get this | A button, from `can_claim`. Also in the row's context menu on a list | Claims one, for the next occasion, at once. No sheet and no confirmation come first |
-| Open my gift | A tap on "You claimed 1 for Christmas" | Pushes the gift's page, where the occasion, how many, the from label, and the note change |
+| I'll get this | A button, from `can_claim`, while `my_claimed_quantity` is 0. Also in the row's context menu on a list | Claims one, for the next occasion, at once. No sheet and no confirmation come first |
+| Open my gift | A tap on "You claimed 1 for Christmas" | Pushes the gift's page. The giver raises how many there, changes the occasion, the from label, and the note, and can get another for a different occasion |
 | Open a store link | A tap on its row | Opens the store's page in the browser |
 | Copy link | The toolbar's menu, and the row's context menu, when the item has a store link | Copies the first store link, as a drag to another app carries it |
 | Edit | A toolbar button, from `can_edit` | Opens the Edit item sheet |

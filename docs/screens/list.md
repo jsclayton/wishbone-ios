@@ -64,7 +64,7 @@ A sheet with the users that the user can invite, with names and avatars, by name
 | Action | Route | What it does |
 |---|---|---|
 | Open an item | A tap on its row | Pushes the item's page |
-| I'll get this | An item's context menu, from `can_claim`. Also on the item's page | Claims one, for the next occasion, at once |
+| I'll get this | An item's context menu, from `can_claim`, while the giver has no open gift on the item. Also on the item's page | Claims one, for the next occasion, at once |
 | Move to… | An item's context menu, from the item's `can_edit`, when another list can take it. Also on the item's page | Opens a picker of the lists the viewer can edit. The item goes to the end of the list picked |
 | Copy link | An item's context menu, when it has a store link | Copies the first store link |
 | Edit, Delete | An item's context menu, from its `can_*` fields. Also on the item's page | As on the item's page |

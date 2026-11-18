@@ -218,7 +218,6 @@ The app shows its own words for each error code of the API, never the server's `
 | `too_many_images` | "An item can have 5 photos." |
 | `cannot_edit_target_list` | "You can't add to {list} any more." |
 | `item_fully_claimed` | "Someone else just got this." |
-| `already_claimed` | "You already have this for {occasion}." |
 | `recipient_cannot_claim` | "You can't claim on a list that is for you." |
 | `quantity_raise_not_allowed` | "You can only lower how many, because this list is now for you too." |
 | `occasion_not_allowed` | "That occasion can't be used for this gift. Pick another." |
@@ -234,7 +233,7 @@ The app shows its own words for each error code of the API, never the server's `
 | `occasion_is_everyone` | "This occasion is for everyone, so it takes no groups." |
 | `parent_loop`, `group_loop` | The server's `detail` |
 
-- These codes count as success, and show nothing: `already_invited`, `already_recipient`, `already_in_group`, `already_attached`, and `already_blocked`.
+- These codes count as success, and show nothing: `already_claimed`, `already_invited`, `already_recipient`, `already_in_group`, `already_attached`, and `already_blocked`.
 - These codes have their own screens or lines: `unauthorized` (signed out), `api_version_removed` ([version-block](version-block.md)), and `login_link_invalid` ([signed-out](signed-out.md)).
 - A 5xx is "Can't reach {address}".
 - A code that only a fault in the app can cause (`unknown_filter`, `unknown_sort`, `cursor_mismatch`, `image_attached`, `resource_changed`) shows "Something went wrong in Wishbone. Try again."
