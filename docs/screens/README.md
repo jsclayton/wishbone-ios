@@ -29,6 +29,7 @@ In a screen's spec, the **Content** section gives the plain default for the layo
 
 | Spec | What it is |
 |---|---|
+| [tabs-and-sidebar](tabs-and-sidebar.md) | The frame: the tab bar, and the sidebar in a wide window |
 | [home](home.md) | The Home tab: the countdown, your people, and Coming up |
 | [lists](lists.md) | The Lists tab, with the New list form |
 | [gifts](gifts.md) | The Gifts tab: Giving, Given, and Received |

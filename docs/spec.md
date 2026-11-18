@@ -227,7 +227,7 @@ Each acts for the one session, with no setting.
 
 Relies on the server spec's [Home](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#home) and [Navigation](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#navigation) for the rules the web app shares, and on the API's `can_*` fields. See [ADR 0001](adr/0001-tabs-that-become-a-sidebar-and-one-kind-of-window.md).
 
-Screens: [home](screens/home.md), [lists](screens/lists.md), [gifts](screens/gifts.md), [add](screens/add.md), [user](screens/user.md), [list](screens/list.md), [item](screens/item.md), [gift](screens/gift.md), [people](screens/people.md), [settings](screens/settings.md), [acknowledgements](screens/acknowledgements.md), [not-found](screens/not-found.md).
+Screens: [tabs-and-sidebar](screens/tabs-and-sidebar.md), [home](screens/home.md), [lists](screens/lists.md), [gifts](screens/gifts.md), [add](screens/add.md), [user](screens/user.md), [list](screens/list.md), [item](screens/item.md), [gift](screens/gift.md), [people](screens/people.md), [settings](screens/settings.md), [acknowledgements](screens/acknowledgements.md), [not-found](screens/not-found.md).
 
 ### Tabs that become a sidebar
 
