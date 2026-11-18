@@ -39,7 +39,8 @@ The link is made on the tap, and kept while the screen is open. Leaving the scre
 - **Every write here waits for the server:** making a link, Revoke, and a passkey's Rename and Delete. With no connection, the screen says "Can't reach {address}", and nothing changes.
 - **Revoking "This device"** is Sign out, with its warning.
 - **Deleting the last passkey** has a stronger confirmation.
-- **Can't reach, and the rest:** as every screen. The lists show from the local copy.
+- **Loading:** the screen fetches the devices and the passkeys each time it opens, and on pull to refresh. It shows a progress indicator until they arrive. They are never in the local copy.
+- **Can't reach {address}:** the line, with Try again, and no list. This screen shows nothing old.
 
 ## Windows
 

@@ -828,6 +828,7 @@ Screens: the states in [What every screen shares](screens/README.md#what-every-s
 
 - Everything a `GET` shows this user: people (summaries, and full records where allowed), lists and their recipients, items and store links, their gifts (Giving, Given, Received, and a parent's Received for a child), occasions, groups, invitations, and the blocked stores for the admin.
 - The first sync after sign-in fetches all of it: Home's data first, then the user's own lists, then everyone else's. Screens fill as rows arrive.
+- It never holds sessions or passkeys. The Sign-in and devices screen fetches them each time it opens, because an old answer there is a risk: a person who checks whether a lost device is still signed in must see the truth. With no connection, that screen shows no list.
 - It is family-sized, a few megabytes, with no limit and no pruning. Given and Received keep their whole history. Images are not in it.
 
 ### Unsent changes
@@ -883,7 +884,7 @@ A sync sends the unsent changes, then pulls. It runs:
 - at once when the share extension says that it added an item
 - in background app refresh: the unsent changes, a pull, then the reminders (section 8) and the widget's file are made again from the copy
 
-Opening a page fetches nothing of its own. The app never shows "Syncing".
+Opening a page fetches nothing of its own, except Sign-in and devices (see [What the copy holds](#what-the-copy-holds)). The app never shows "Syncing".
 
 ### Images
 
