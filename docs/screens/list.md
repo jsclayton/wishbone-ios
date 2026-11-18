@@ -46,7 +46,7 @@ A sheet with the users that the user can invite, with names and avatars, by name
 - **A claim is refused:** the words for the code show in place (see [item](item.md)).
 - **A move is refused:** the item goes back, and an alert says why (see [What the windows show after a drop](../spec.md#what-the-windows-show-after-a-drop)).
 - **Gone:** a list that was deleted, or that the viewer left and can no longer see, shows the [not-found](not-found.md) page in every window that shows it.
-- **Can't reach, and the rest:** as every screen. Every edit here is an unsent change. I'll get this needs the instance.
+- **Can't reach, and the rest:** as every screen. Edits to the list and its items, Invite, Withdraw, and Delete list are unsent changes. I'll get this, Leave, and Make {child} leave wait for the server.
 
 ## Windows
 
@@ -71,7 +71,6 @@ A sheet with the users that the user can invite, with names and avatars, by name
 | Add item | A row under the items | Opens the Add screen in a sheet, fixed to this list |
 | Sort | The toolbar's menu | List order, Price, or Newest. The choice belongs to this window and page, and is not saved |
 | Reorder | The toolbar's Edit button, in List order, from `can_edit` | The system's edit mode, with handles |
-| Refresh prices | The toolbar's menu, from `can_edit` | Reads the store links of every item again |
 | Edit list | The toolbar's menu, from `can_edit` | Opens the Edit list sheet |
 | Invite | A row, from `can_invite` | Opens the Invite sheet |
 | Withdraw | A button on a pending invitation, from `can_delete` | Removes it, with no confirmation |
@@ -82,7 +81,6 @@ A sheet with the users that the user can invite, with names and avatars, by name
 | Open in New Window | The toolbar's menu, where several windows are allowed | Opens a window with this page on top of Home |
 
 - **Price** sorts lowest first, with items that have no price last. **Newest** sorts by when the item was added.
-- Refresh prices needs the instance, and each link counts against the hourly limit.
 - No confirmation, and no words about gifts, come before a move or a reorder.
 - The words of the Delete and Leave confirmations never depend on the list's gifts.
 
@@ -107,7 +105,6 @@ Decided in the spec: "Move to…", "Reorder", "Add item", "Open in New Window".
 | Edit list, title | "Edit list" |
 | Invite, title | "Invite to {list}" |
 | Nobody to invite | "There's nobody else to invite. You can invite people you can see who aren't on this list." |
-| Refresh prices, done | "Prices checked." |
 | A refused move | "{title} couldn't be moved.", then the words for the code |
 
 ## Accessibility

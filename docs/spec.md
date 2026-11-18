@@ -840,7 +840,7 @@ Screens: the states in [What every screen shares](screens/README.md#what-every-s
   - lowering a gift's quantity
   - move and reorder
   - acknowledge, and accept or decline an invitation
-  - creates: an item filled in by hand, a list, an occasion, an invitation, a store link, an image upload, and Add again
+  - creates: an item filled in by hand, a list, an occasion, an invitation, an image upload, and Add again
 - Each create carries its own `Idempotency-Key`, so a resend after a lost answer can't make it twice.
 - A create that later changes refer to gets a local stand-in ID. When the create's answer comes, the app puts the server's ID in its place.
 - A late refusal rolls the change back in the copy, and shows once (see [Late refusals](#late-refusals)).
@@ -863,6 +863,8 @@ These writes are never unsent changes either. Each one changes what other people
 - making a login link, revoking a session, and deleting or renaming a passkey: a revoke that waits offline gives a false sense that a lost device is locked out
 - confirming the profile at the profile gate
 - asking to delete an account, and cancelling that request
+- adding a store link to an item, and Refresh prices: the server reads the store's page during the request, and can refuse it
+- leaving a list, and making a child leave: the device can't know what the list then shows until it syncs
 
 ### No If-Match
 
