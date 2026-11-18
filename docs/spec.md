@@ -370,14 +370,14 @@ The same in the app and the share extension.
 - **A blocked store** (422 `store_blocked`, before or after redirects): no form opens. The app says "Links from {store} are blocked on this Wishbone.", with "Add it without the link", which opens a blank form. If the add itself is refused with `store_blocked`, the form stays open with that line, and the link is dropped from it.
 - **Over the hourly limit** (429 `rate_limited`): the form opens with the link kept and the other fields blank, and the note "This link wasn't read: you've read 30 links and photos in the last hour. Fill it in yourself, or try again later." The 429 from search has no `Retry-After`, so the note names no time. A photo works the same way, with the title "Photo from {date}".
 - **Nothing found** (`found: false`, which includes a photo when the instance has no model): the form opens with what the input gave, and "Nothing could be read from {store}. Fill it in yourself." For a photo, it asks for a title.
-- **While a link is read**, "Fill it in myself" stops the wait and opens the form with only the link.
+- **"Fill it in myself"** always opens the form with what the user gave, and nothing else: a link as the store link, typed words as the title, or a photo as the item's image. While a link or a photo is read, it stops the wait.
 
 **Provisional.** The words above are drafts. Plain default: each line as a footer in the form, or an inline message on the Add screen.
 
 ### When the instance can't be reached
 
 - Search needs the instance. With no answer, the Add screen says "Can't reach {address}", with Try again, and the text stays in the field.
-- "Fill it in myself" then opens a blank form. An add filled in by hand is an **unsent change** (section 10), and it shows on its list at once.
+- "Fill it in myself" then opens the form with what the user gave. An add filled in by hand is an **unsent change** (section 10), and it shows on its list at once.
 - The share extension keeps nothing to send later (see below).
 
 ### After Add

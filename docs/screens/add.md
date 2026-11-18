@@ -23,7 +23,7 @@ The start of adding an item: paste a link, type what you want, or use a photo. T
 ## States
 
 - **Empty:** the field and the three rows.
-- **Reading a link or a photo:** a progress line, with **Fill it in myself**, which stops the wait and opens the form with only the link.
+- **Reading a link or a photo:** a progress line, with **Fill it in myself**, which stops the wait and opens the form with what the user gave.
 - **A blocked store:** no form opens. A message, with **Add it without the link**.
 - **Can't reach {address}:** the line, with Try again and **Fill it in myself**. The text stays in the field.
 - **Camera denied:** Take a photo says why, and offers Open Settings.
@@ -44,7 +44,7 @@ The start of adding an item: paste a link, type what you want, or use a photo. T
 | Paste | The system paste button | Searches the clipboard's content at once |
 | Take a photo | A row | Opens the system camera for one photo, then searches it |
 | Choose a photo | A row | Opens the system photo picker for one photo, then searches it |
-| Fill it in myself | A button, while reading or when unreachable | Opens the form with only what was typed |
+| Fill it in myself | A button, while reading or when unreachable | Opens the form with what the user gave: the link, the words, or the photo |
 | Add it without the link | A button, after a blocked store | Opens a blank form |
 | Open the added item | The "Added" row | Pushes the item's page |
 | Cancel | A button, in the sheet only | Closes the sheet |

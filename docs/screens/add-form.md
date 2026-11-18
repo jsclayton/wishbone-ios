@@ -36,7 +36,8 @@ Quantity, more store links, and more photos are on the [item's page](item.md), a
 - **Filled in** by a search.
 - **Over the hourly limit:** the link is kept, the other fields are blank, and the note says why.
 - **Nothing found:** the form has what the input gave, and the note says so. A photo gets the title "Photo from {date}".
-- **Blank,** from "Fill it in myself" or "Add it without the link".
+- **With only what the user gave,** from "Fill it in myself": a link as the store link, typed words as the title, or a photo as the image.
+- **Blank,** from "Add it without the link".
 - **Adding:** Add shows progress while the images upload and the item is added.
 - **The add is refused with `store_blocked`:** the form stays open with that line, and the link is dropped from it.
 - **An image can't be saved** (`image_fetch_failed`): the item is added without that image, and a line says so.

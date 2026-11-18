@@ -28,7 +28,7 @@ It takes one link, one text, or one image for each share. Wishbone is not offere
 |---|---|---|
 | Add | The main button | Uploads the images, adds the item, tells the app to sync, and closes |
 | Cancel | A button | Closes, and keeps nothing |
-| Fill it in myself | A button, while a link is read | Opens the form with only the link |
+| Fill it in myself | A button, while a link or a photo is read | Opens the form with what was shared, and nothing else |
 | Add it without the link | A button, after a blocked store | Opens a blank form |
 | Try again | A button, when the instance can't be reached | Tries the search, or the add, again |
 | Copy the link | A button, when the instance can't be reached | Copies the shared link, to add it later from the Add screen |
