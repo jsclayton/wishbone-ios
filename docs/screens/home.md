@@ -19,9 +19,9 @@ From top to bottom:
 1. **The countdown** to the next occasion in the next 60 days.
    - It names the occasion and the person, and says how many days are left. A birthday with a year also says the age.
    - It skips the user's own birthday and custom occasions, which stay in Coming up. Shared occasions count.
-   - When two occasions are on the same day, it shows both.
-   - For its occasion only, it says how many gifts the user has for it, and how many are still to buy: "2 from you · 1 still to buy".
-   - A shared occasion says who it reaches, and has "See who's on it".
+   - When two occasions are on the same day, it shows both. Each has its own gift counts, and its own tap.
+   - For each occasion only, it says how many gifts the user has for it, and how many are still to buy: "2 from you · 1 still to buy".
+   - A shared occasion has "See who's on it". One that is for everyone says "Everyone". The server tells only the admin which groups an occasion is attached to, so for anyone else a group occasion says nothing here.
 2. **People**: "Your children", then "Your parents", then one group for each of the user's groups, with "through {group}" for a group that the user is in by nesting. Each group lists its users by name. The user is not listed among their own people.
 3. **Coming up**: the occasions in the next 60 days for everyone the user can see, soonest first, the user's own included. A shared occasion is one row.
 
@@ -46,7 +46,7 @@ From top to bottom:
 
 | Action | Route | What it does |
 |---|---|---|
-| Open the countdown's occasion | A tap on the card | A person's occasion opens that person's page. A shared occasion opens its page |
+| Open the countdown's occasion | A tap on the occasion in the card | A person's occasion opens that person's page. A shared occasion opens its page |
 | See who's on it | A button on the card, for a shared occasion | Opens the shared occasion's page (see [Occasions](occasions.md)) |
 | Open a person | A tap on the avatar or the name | Pushes the user's page |
 | Open People | The "People" heading | Pushes the People page |

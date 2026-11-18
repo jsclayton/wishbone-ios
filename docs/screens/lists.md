@@ -62,7 +62,7 @@ Moving an item onto a row is a drag. Its way without a drag is Move to… on the
 
 ## Words
 
-Decided: "New list", "Accept", "Decline", "Deactivated", and the invitation lines "Mom invited you to Our house" and "Mom invited Emma to Cousins".
+Decided: "New list", "Accept", "Decline", "Deactivated", and the invitation line "Mom invited you to Our house". In the spec, marked as a draft there: "Mom invited Emma to Cousins".
 
 **Provisional.** These are drafts:
 

@@ -39,6 +39,7 @@ One gift in full. While a gift is open, its giver marks it bought here, changes 
 
 - **The item was removed from its list:** the page shows the item as it was, with no link to it. The answers are Keep it and I won't get this.
 - **The giver can't see the occasion:** the Occasion row shows only the reveal date.
+- **The giver can't see the list** (the gift has no `recipients`): the page shows no "For" line, and the list's name is not a link.
 - **The giver can see none of the other recipients:** the occasion can't be changed (`occasion_locked`). The row is not a button.
 - **The giver is now a recipient of the list:** How many can only go down.
 - **Raising how many** waits for the server. With no connection, it says "Can't reach {address}", and the number stays.
@@ -58,11 +59,11 @@ One gift in full. While a gift is open, its giver marks it bought here, changes 
 
 | Action | Route | What it does |
 |---|---|---|
-| Mark bought | The Bought toggle. Also on the row in Giving | Sets or clears the giver's private mark |
+| Mark bought | The Bought toggle, from `can_edit`. Also on the row in Giving | Sets or clears the giver's private mark |
 | Change how many | A stepper, from `can_edit`. Raising needs `can_raise_quantity` | Lowers at once. Raises after the server answers |
-| Pick the occasion | The Occasion row | A menu of the occasions that the giver can use, soonest first |
-| Set the from label | The From field | Saves when the field loses focus |
-| Write the note | The Note field | Saves when the field loses focus |
+| Pick the occasion | The Occasion row, from `can_edit` | A menu of the occasions that the giver can use, soonest first |
+| Set the from label | The From field, from `can_edit` | Saves when the field loses focus |
+| Write the note | The Note field, from `can_edit` | Saves when the field loses focus |
 | OK | A button on a flag, from `can_acknowledge` | Clears that flag |
 | Keep it | A button on the "removed" flag | Clears the flag. The gift is given at its reveal |
 | I won't get this | A row at the foot, from `can_delete` | Unclaims, after a confirmation. The quantity goes back to all givers |
@@ -74,7 +75,7 @@ One gift in full. While a gift is open, its giver marks it bought here, changes 
 
 ## Words
 
-Decided, as the web app has them: "I won't get this", "I didn't get this", "Add again", "Hidden until Dec 26", "From Emma · claimed by Mom", "Mom says they didn't get this", "Marked as not received", "Now for Mom", "The recipients changed", and "moved to {list}".
+Decided, as the web app has them: "I won't get this", "I didn't get this", "Add again", "Hidden until Dec 26", "From Emma · claimed by Mom", "Mom says they didn't get this", "Marked as not received", "Now for Mom", and "The recipients changed". The flag words in [gifts](gifts.md) are used here too.
 
 **Provisional.** These are drafts:
 
@@ -91,7 +92,7 @@ Decided, as the web app has them: "I won't get this", "I didn't get this", "Add 
 | Flag: the occasion moved | "The occasion changed. It's now for {occasion}." |
 | Answers | "OK", "Keep it" |
 | I won't get this, confirmation | "You won't get {title}? Other people can then claim it.", with the button "I won't get this" |
-| I didn't get this, confirmation | "You didn't get {title}? {giver} will see that, and can give it again.", with the button "I didn't get this" |
+| I didn't get this, confirmation | "You didn't get {title}? It leaves your Received. If the giver still uses Wishbone, they see that, and can give it again.", with the button "I didn't get this" |
 | I didn't get this, for a child | "{name} didn't get {title}?", with the button "{name} didn't get this" |
 | Raise, can't reach | "Can't reach {address}. The number didn't change." |
 | I didn't get this, can't reach | "Can't reach {address}. Nothing changed." |
@@ -108,5 +109,6 @@ Decided, as the web app has them: "I won't get this", "I didn't get this", "Add 
 - **An open gift** is seen only by its giver. For everyone else it does not exist, and the page can't be opened.
 - **A given gift** is seen by its giver, its recipients, and each recipient's parents. A recipient never sees the private note or the bought mark. The server doesn't send them.
 - The page never says who else claimed the same item.
-- "I didn't get this" hides the gift from the person who tapped it. That is the server's rule, and the confirmation says so.
+- "I didn't get this" hides the gift from the person who tapped it. That is the server's rule, and the confirmation says that the gift leaves Received.
+- The confirmation's words are the same whether the giver is active, deactivated, or deleted. A recipient can't tell these apart, and the words promise nothing about the giver.
 - Nothing on this page goes to a system surface or into the shared container.

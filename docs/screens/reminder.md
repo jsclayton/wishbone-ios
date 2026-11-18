@@ -19,7 +19,7 @@ A notification that the app schedules on the device, to say that an occasion is 
 | A shared occasion | "Christmas is in 2 weeks" | "It's Christmas today" |
 | The user's own | "Your birthday is in 2 weeks" | "It's your birthday today" |
 
-The title of each notification is "Wishbone". The time in the early reminder follows the setting: "in 1 week", "in 2 weeks", or "in 4 weeks".
+The title of each reminder is "Wishbone". The time in the early reminder follows the setting: "in 1 week", "in 2 weeks", or "in 4 weeks".
 
 ## What it never shows
 

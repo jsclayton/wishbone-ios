@@ -11,7 +11,7 @@ One list and its items. A giver reads it and claims. A recipient, or a recipient
 - An item's row pushes the [item's page](item.md). A recipient's name pushes their [user's page](user.md).
 - **Add item** opens the [Add screen](add.md) in a sheet, fixed to this list.
 - **Edit list**, **Invite**, and **Move to…** open sheets.
-- After the user leaves or deletes the list, the page closes, and the window shows what was under it.
+- After the user leaves or deletes the list, the page closes in the window that did it, and that window shows what was under it.
 
 ## Content
 
@@ -26,7 +26,7 @@ From top to bottom:
 7. For a recipient: the list's other pending invitations, each with who invited them and Withdraw, and **Invite**.
 8. **Leave**, **Make {child} leave**, and **Delete list**, from their `can_*` fields.
 
-**Provisional.** Plain default: a system list. The name is the navigation title, the recipients and the description are the first section, and the items are rows with the image at the leading edge. An item with no image has a tile in its recipient's person color. Edit list, Sort, Reorder, and Open in New Window are in the toolbar's menu.
+**Provisional.** Plain default: a system list. The name is the navigation title, the recipients and the description are the first section, and the items are rows with the image at the leading edge. An item with no image has a tile in its recipient's person color. Edit list, Sort, and Open in New Window are in the toolbar's menu, and Reorder is the toolbar's Edit button.
 
 ### Edit list
 
@@ -41,6 +41,7 @@ A sheet with the users that the user can invite, with names and avatars, by name
 - **No items yet:** the page says so. For a viewer who can edit, it points to Add item.
 - **Sorted by price or by newest:** Reorder is not offered, and a drop goes to the end.
 - **A deactivated recipient:** "Deactivated" beside their name, for a viewer who gets it. A parent who edits only through that child sees no edit controls.
+- **Leaving a list that the leaver can still see:** the confirmation adds a warning. It shows when that user's row in `GET /lists/{id}/recipients` has `sees_list_after_leaving` set to `true`, for Leave and for Make {child} leave.
 - **Nobody to invite:** the Invite sheet says so.
 - **A claim is refused:** the words for the code show in place (see [item](item.md)).
 - **A move is refused:** the item goes back, and an alert says why (see [What the windows show after a drop](../spec.md#what-the-windows-show-after-a-drop)).
@@ -64,7 +65,7 @@ A sheet with the users that the user can invite, with names and avatars, by name
 |---|---|---|
 | Open an item | A tap on its row | Pushes the item's page |
 | I'll get this | An item's context menu, from `can_claim`. Also on the item's page | Claims one, for the next occasion, at once |
-| Move to… | An item's context menu, when another list can take it. Also on the item's page | Opens a picker of the lists the viewer can edit. The item goes to the end of the list picked |
+| Move to… | An item's context menu, from the item's `can_edit`, when another list can take it. Also on the item's page | Opens a picker of the lists the viewer can edit. The item goes to the end of the list picked |
 | Copy link | An item's context menu, when it has a store link | Copies the first store link |
 | Edit, Delete | An item's context menu, from its `can_*` fields. Also on the item's page | As on the item's page |
 | Add item | A row under the items | Opens the Add screen in a sheet, fixed to this list |
@@ -87,7 +88,9 @@ A sheet with the users that the user can invite, with names and avatars, by name
 
 ## Words
 
-Decided, as the web app has them: "For {names}", "{n} of {m} still wanted", "Always wanted", "You claimed {n}", "You see what's been claimed here. Fully claimed items don't show.", "Mom invited you to this list", "Grandpa · invited by Mom", "Leave Our house", "Make Emma leave Our house", "Delete Cousins and its items", "You'll see what's been claimed on this list, including gifts for you.", and "Emma will see what's been claimed on this list, including gifts for Emma."
+Decided, as the web app has them: "For {names}", "{n} of {m} still wanted", "Always wanted", "You claimed {n}", "You see what's been claimed here. Fully claimed items don't show.", "Mom invited you to this list", "Grandpa · invited by Mom", "Leave Our house", "Delete Cousins and its items", and "You'll see what's been claimed on this list, including gifts for you."
+
+In the spec, marked as drafts there: "Make Emma leave Our house", and "Emma will see what's been claimed on this list, including gifts for Emma."
 
 Decided in the spec: "Move to…", "Reorder", "Add item", "Open in New Window".
 

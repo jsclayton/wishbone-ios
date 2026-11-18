@@ -13,8 +13,6 @@ The license notices that the app must show: its own, and those of the packages i
 1. The app's MPL-2.0 notice.
 2. The full license text of each package that the app ships, under the package's name.
 
-The build makes these texts from the pinned packages, so they never go out of date.
-
 **Provisional.** Plain default: a plain scrolling text screen, with a heading for each package.
 
 ## States
@@ -31,7 +29,9 @@ None. The text can be selected and copied.
 
 ## Words
 
-The notices are the licenses' own words, and are not translated. **Provisional.** The title "Acknowledgements" is decided. The line above the packages is a draft: "Wishbone uses these open source packages."
+The title "Acknowledgements" is decided. The notices are the licenses' own words, and are not translated.
+
+**Provisional.** The line above the packages is a draft: "Wishbone uses these open source packages."
 
 ## Accessibility
 

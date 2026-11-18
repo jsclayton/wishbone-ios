@@ -34,7 +34,7 @@ One column of readable width.
 | Action | Route | What it does |
 |---|---|---|
 | Add | The toolbar | Takes a host name or a pasted web address, and blocks that store |
-| Unblock | A swipe action, and a context menu item | Removes the block, with no confirmation |
+| Unblock | A swipe action, and a context menu item, from `can_delete` | Removes the block, with no confirmation |
 
 ## Words
 

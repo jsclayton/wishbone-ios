@@ -168,9 +168,8 @@ Two ways in, one way to get help, and nothing to type.
 
 ### Sign-in and devices
 
-This screen is in Settings (section 3).
+This screen is in Settings (section 3). Settings itself has the **Signed in** block: the user's name, the instance address with its scheme, and **Sign out**. The screen has:
 
-- A **Signed in** block: the user's name, the instance address with its scheme, and **Sign out**.
 - A **Devices** list from `GET /users/me/sessions`, newest use first. Each row has a readable name made from the user agent ("Wishbone on iPad", "Safari on Mac") and when it was last used. The current one is marked "This device". The term stays **session** in code and docs. "Devices" is UI copy only.
 - **Revoke** shows on a row when its `can_delete` is true, with a confirmation. Revoking "This device" is Sign out.
 - The app and both extensions send the user agent `Wishbone iOS/{version} ({iPhone or iPad})`. iOS no longer gives apps the device's own name.
@@ -521,7 +520,7 @@ The People page is reached from the "People" heading on Home, and from a sidebar
 - A sheet: Name, Last name, Birthday (the year is optional), Parents (any number, optional), and Groups (any number, optional).
 - Groups is the app's convenience: after `POST /users`, the app adds the user to each group with `POST /groups/{id}/users`. If one fails, the user is still made, and their page says which group didn't take them.
 - The app sends no time zone. The user's own device reports it.
-- After Save, the new user's page opens, with Sign {name} in, in the For part, as the next step. The sheet does not go to a login link, because many new users never sign in.
+- After Save, the new user's page opens. Sign-in and devices, in the For part, is the next step, because it has Sign {name} in on a device. The sheet does not go to a login link, because many new users never sign in.
 
 **Provisional.** Plain default: a system form in a sheet.
 

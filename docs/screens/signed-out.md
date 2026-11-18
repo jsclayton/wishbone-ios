@@ -50,6 +50,7 @@ Four cases, as the spec lists them. The last has a web link to the server projec
 - **Signed out with no connection:** the message from [Sign out](../spec.md#sign-out).
 - **The link is used or expired** (401 `login_link_invalid`): a message, and the buttons stay ready.
 - **Not a login link**, for a paste.
+- **Too many tries** (429 `rate_limited`): a message. The app keeps the link, and shows Try again and Cancel.
 - **Can't reach {address}**, during sign-in: the app keeps the link, and shows Try again and Cancel.
 - **A certificate the device doesn't trust:** its own message, with no way around it.
 - **No Wishbone at the address**, from the version check.
@@ -72,7 +73,8 @@ Four cases, as the spec lists them. The last has a web link to the server projec
 | Paste link | The system paste button | Signs in with the link on the clipboard |
 | I don't have a link | A text button | Opens the help sheet |
 | Diagnostics settings | The notice line | Opens Share diagnostics as a sheet |
-| Try again | A button, after "Can't reach" | Tries the same link again |
+| Try again | A button, after "Can't reach" or too many tries | Tries the same link again |
+| Cancel | A button beside Try again | Forgets the link, and returns to the plain state |
 | Open Settings | A button, when the camera is denied | Opens the app's page in iOS Settings |
 | Running your own Wishbone | A row in the help sheet | Opens the server project's page in the browser |
 
@@ -86,6 +88,7 @@ Decided in the spec: "Scan QR code", "Paste link", "I don't have a link", "Signe
 |---|---|
 | Signing in | "Signing in…" |
 | The link is used or expired | "That link was already used, or it has expired. Ask for a new one." |
+| Too many tries | "Too many tries. Wait a minute, then try again." |
 | Can't reach, during sign-in | "Can't reach {address}. Your link is kept. Try again when you're connected." |
 | Certificate not trusted | "This device doesn't trust the certificate of {address}. Ask the person who runs Wishbone." |
 | Camera denied | "Wishbone needs the camera to scan a QR code. You can turn it on in Settings, or paste a link." |

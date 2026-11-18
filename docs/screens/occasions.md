@@ -6,7 +6,7 @@ Every occasion the user can see, soonest first. For the admin, it is also where 
 
 ## How you get here, and where you go
 
-- **Pushed** from the "Coming up" heading on Home.
+- **Pushed** from the "Coming up" heading on Home. The spec marks this way in as provisional, and this is its plain default.
 - A tap on an occasion opens what it names:
   - a person's birthday or custom occasion: that person's [user's page](user.md)
   - the user's own occasion: their primary [list's page](list.md)
@@ -27,7 +27,7 @@ Every occasion the user can see, soonest first. For the admin, it is also where 
 
 The same for everyone, pushed from the countdown ("See who's on it"), from Coming up, and from this screen.
 
-1. The occasion's name, its date, the days left, and who it reaches.
+1. The occasion's name, its date, and the days left. One that is for everyone says "Everyone". The admin also sees the names of its groups, which the server gives to nobody else.
 2. The users it applies to whom the user can see, by name. Each is marked with how many open gifts the user has for them on this occasion, or "Nothing yet". Each row pushes that user's page.
 3. For the admin: **Edit** and **Delete**.
 
@@ -39,7 +39,7 @@ A sheet, for New and for Edit, with three fields:
 
 - **Name**
 - **When**: every year on a date, once on a date, the nth weekday of a month, or the last weekday of a month
-- **Who**: Everyone, or Groups, with a picker of the groups
+- **Who**: Everyone, or Groups, with a picker of the groups, from `can_attach_group`
 
 The app attaches the groups after the create, and names any group that failed. On Edit, the footer says what a change does.
 

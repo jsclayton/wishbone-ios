@@ -22,7 +22,7 @@ From top to bottom:
 4. **The items of their primary list**, in the page itself. Each row is as on a [list's page](list.md): the image, the title, the price, and, for a giver, how many are still wanted and "You claimed {n}".
 5. An **Add item** row, when the viewer can edit that list.
 6. **Other lists**: the extra lists that the user is a recipient of, by name, with the same rows as the Lists tab. Hidden when there are none.
-7. **For {name}**, when it has a row. The rows and their order are in the spec.
+7. **For {name}**, when it has a row. The rows and their order are in the spec. The part never shows on the user's own page, whatever the `can_*` fields say: the same screens are in Settings.
 
 The birthday shows the month and the day, and the age that the user is turning when the birthday has a year.
 
@@ -44,6 +44,7 @@ The admin's **Parents** row pushes a screen with the user's parents, each with R
 - **A user seen only through the admin's access:** the line that says so. The page has no items, because the server hides the primary list from that access.
 - **A deletion request is open:** a line in the For part says who asked, and when.
 - **New user, a group didn't take them:** a line names each group that failed (see [new-user](new-user.md)).
+- **The admin's writes wait for the server:** Add parent, Remove, Deactivate, Reactivate, and Delete. With no connection, the page says "Can't reach {address}", and nothing changes.
 - **Gone:** a user the viewer can no longer see shows the [not-found](not-found.md) page.
 
 ## Windows

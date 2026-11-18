@@ -54,11 +54,11 @@ One column of readable width. Nothing here opens in a new window, and nothing is
 | Share | A button on the login link | Opens the system share sheet with the link |
 | Revoke | A swipe action, and a context menu item, on a device | Signs that device out, after a confirmation |
 | Rename | A passkey's context menu, from `can_edit` | Opens an alert with the name |
-| Delete | A swipe action, and a context menu item, on a passkey | Deletes it, after a confirmation |
+| Delete | A swipe action, and a context menu item, on a passkey, from `can_delete` | Deletes it, after a confirmation |
 
 ## Words
 
-Decided in the spec: "Sign in on another device", "Sign {name} in on a device", "Devices", "This device", "Passkeys", "Revoke", "Wishbone on iPad", "Safari on Mac", and "Passkeys sign you in to Wishbone in a browser. Add one there." Decided, as the web app has them: "Not signed in on any device", "You'll need a new link or QR code to get back in.", and "{name} will need a new link or QR code to sign in on a new device."
+Decided in the spec: "Sign in on another device", "Sign {name} in on a device", "Devices", "This device", "Passkeys", "Revoke", "Wishbone on iPad", "Safari on Mac", and "Passkeys sign you in to Wishbone in a browser. Add one there." Decided, as the web app has it: "Not signed in on any device".
 
 **Provisional.** These are drafts:
 
@@ -73,6 +73,8 @@ Decided in the spec: "Sign in on another device", "Sign {name} in on a device", 
 | Copy, done | "Copied. The link leaves the clipboard in 10 minutes." |
 | Revoke, confirmation | "Sign out {device}? It needs a new login link to sign in again.", with the button "Sign out {device}" |
 | Delete a passkey | "Delete {passkey}?", with the button "Delete passkey" |
+| Delete the last passkey | "Delete {passkey}? It's the last one. After this, only a login link signs you in to Wishbone in a browser." |
+| Delete another user's last passkey | "Delete {passkey}? It's the last one. After this, {name} needs a login link to sign in to Wishbone in a browser." |
 | Passkey, for another user | "Passkeys sign {name} in to Wishbone in a browser." |
 
 ## Accessibility

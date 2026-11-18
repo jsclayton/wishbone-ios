@@ -7,7 +7,7 @@ The admin adds a person to the instance. Only the admin makes users: Wishbone ha
 ## How you get here, and where you go
 
 - **A sheet**, from New user in the add menu of the [People](people.md) page. For the admin only.
-- After Save, the sheet closes, and the new [user's page](user.md) is pushed. Sign {name} in, in the For part, is the next step there. The form does not go to a login link, because many new users never sign in.
+- After Save, the sheet closes, and the new [user's page](user.md) is pushed. Sign-in and devices, in the For part, is the next step there, because it has Sign {name} in on a device. The form does not go to a login link, because many new users never sign in.
 
 ## Content
 

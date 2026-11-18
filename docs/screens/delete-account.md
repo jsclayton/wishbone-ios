@@ -2,7 +2,7 @@
 
 ## Purpose
 
-A person asks for their account to be deleted, or a parent asks for a child. The admin completes the request. The screen says what goes and what stays before anyone asks. The rules are in the spec: [Account deletion](../spec.md#account-deletion).
+A person asks the admin to delete them from Wishbone, or a parent asks for a child. The admin completes the request. The screen says what goes and what stays before anyone asks. The rules are in the spec: [Account deletion](../spec.md#account-deletion).
 
 ## How you get here, and where you go
 
@@ -25,7 +25,7 @@ A person asks for their account to be deleted, or a parent asks for a child. The
 
 - **No request.**
 - **A request is open.** For a child, any of the child's parents, or the child, can cancel it.
-- **The admin's own account:** Settings shows a line in place of the row, and this screen is not reached.
+- **The admin:** Settings shows a line in place of the row, and this screen is not reached.
 - **Asking, and cancelling, wait for the server.** With no connection, the screen says "Can't reach {address}", and nothing changes.
 - **A deactivated child:** the row shows only when the server's `can_*` field allows it.
 

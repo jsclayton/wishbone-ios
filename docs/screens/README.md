@@ -158,7 +158,7 @@ These rules hold on every screen. A screen's spec repeats none of them, and says
 ### Forms and pickers
 
 - A form or a picker opens as a sheet over the page it belongs to, with Cancel and its main button (Save or Add). The add form is the exception: it is pushed (see [add-form](add-form.md)).
-- A sheet never opens a second sheet. A picker inside a form is pushed within that sheet.
+- A sheet never opens a second sheet. A picker inside a form is pushed within that sheet. The system's own sheets are exempt: the camera, the photo picker, and the share sheet.
 - A form with typed changes that are not saved asks before it closes, and before its window closes (see [Closing a window](../spec.md#closing-a-window)).
 - A 422 `invalid_input` marks the fields that the server's `errors` names.
 
@@ -208,7 +208,8 @@ The app shows its own words for each error code of the API, never the server's `
 | `not_found`, `reference_not_found`, `reference_not_allowed` | "This is gone, or it isn't shared with you." |
 | `user_deactivated` | "Only the admin can reactivate {name}. Until then, you can't change anything for {name}." |
 | `invalid_input` | "Some fields need another look.", with each named field marked |
-| `rate_limited` | "You've read 30 links and photos in the last hour. Try again later." |
+| `rate_limited`, from a search, Add link, or Refresh prices | "You've read 30 links and photos in the last hour. Try again later." |
+| `rate_limited`, from anything else | "Too many tries. Wait a minute, then try again." |
 | `request_too_large`, `image_too_large` | "That photo is too large. Choose a smaller one." |
 | `image_invalid` | "Wishbone can't use that file. Choose a JPEG, PNG, GIF, or WebP photo." |
 | `image_fetch_failed` | "One picture couldn't be saved, so the item was added without it." |

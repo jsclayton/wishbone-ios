@@ -41,6 +41,7 @@ A control that picks the part, then the part.
 
 ## States
 
+- **The giver can't see a gift's list** (the gift has no `recipients`): a Giving heading has only the occasion or the reveal date, and a Given row leaves out who it went to.
 - **Giving is empty:** it says so, and points to Home's people.
 - **Given is empty**, and **Received is empty:** each says so.
 - **A gift is taken into another** (the server merges two gifts for one occasion): its row goes at the next sync.
@@ -59,8 +60,8 @@ A control that picks the part, then the part.
 |---|---|---|
 | Change the part | The control at the top | Shows Giving, Given, or Received |
 | Open a gift | A tap on its row | Pushes the gift's page |
-| Mark bought | The toggle on a Giving row. Also on the gift's page | Sets or clears the giver's private mark |
-| I won't get this | A Giving row's context menu and swipe action. Also on the gift's page | Unclaims, after a confirmation |
+| Mark bought | The toggle on a Giving row, from `can_edit`. Also on the gift's page | Sets or clears the giver's private mark |
+| I won't get this | A Giving row's context menu and swipe action, from `can_delete`. Also on the gift's page | Unclaims, after a confirmation |
 | I didn't get this | A Received row's context menu, from `can_restore`. Also on the gift's page | Restores the gift, after a confirmation |
 | Add again | A Received row's context menu, from `can_add_again`. Also on the gift's page | Opens the add form, filled from the gift |
 

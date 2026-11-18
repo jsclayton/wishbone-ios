@@ -21,7 +21,7 @@ In order:
 3. **Title** (required).
 4. **Price**, with an optional "up to" price for a range.
 5. **Store link**: the store's name, when the search came from a link.
-6. **Add to**: the list. Hidden when the user can edit only one list, and when the form is fixed to a list. It starts on the primary list, in the Lists tab's order, with a child's lists under the child's name.
+6. **Add to**: the list. Hidden when the user can edit only one list, and when the form is fixed to a list. It starts on the primary list, or on the gift's list for Add again. The lists are in the Lists tab's order, with a child's lists under the child's name.
 7. **Options**, when the page lists them: one choice for each, set to what the link selected, or "Not sure".
 8. **Notes**, at most 2000 characters.
 9. The duplicate hint, when the target list has the same link or the same title.

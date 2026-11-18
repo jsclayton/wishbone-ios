@@ -17,7 +17,8 @@ To stop the app when it and the instance can't work together, and to say who mus
 1. A title.
 2. The message, which names the instance address.
 3. For the app too old: **Update Wishbone**, which opens the app's App Store page.
-4. **Sign out**, so that a person is never held on a block.
+4. For the instance too old: **Try again**.
+5. When signed in: **Sign out**, so that a person is never held on a block. During sign-in: **Back**.
 
 **Provisional.** Plain default: the system's unavailable-content view, with the buttons under the message.
 
@@ -44,7 +45,7 @@ Every window shows the block. It goes from every window together.
 
 Decided in the spec: "This version of Wishbone is too old for {address}. Update the app." and "{address} runs Wishbone {version}. The app needs {minimum} or later. Ask whoever runs it to update."
 
-**Provisional.** These are drafts: the titles "Update Wishbone" (app too old) and "This Wishbone needs an update" (instance too old), and the button "Update Wishbone".
+**Provisional.** These are drafts: the titles "Update Wishbone" (app too old) and "This Wishbone needs an update" (instance too old), and the buttons "Update Wishbone", "Try again", "Sign out", and "Back".
 
 ## Accessibility
 
