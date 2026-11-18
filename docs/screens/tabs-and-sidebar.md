@@ -10,7 +10,7 @@ The frame around every screen behind the sign-in: three tabs and the plus. In a 
 - A window opens on Home. A restored window opens on the tab it had.
 - Each tab keeps its own pushed pages. To change the tab keeps them.
 - A link from outside selects Home, and opens its page on top of Home. The "Add item" control selects the Add screen.
-- A sidebar shortcut selects the tab that owns the page, and pushes the page there: a list in Lists, and People or a user on Home.
+- A sidebar shortcut selects the tab that owns the page, and pushes the page there: one of your lists in Lists, and People or a user on Home. The page replaces whatever was pushed on that tab, and Back goes to the tab's first screen.
 
 ## Content
 

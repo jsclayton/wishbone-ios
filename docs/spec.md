@@ -239,6 +239,7 @@ Screens: [tabs-and-sidebar](screens/tabs-and-sidebar.md), [home](screens/home.md
   - **Gifts** has Giving, Given, and Received, as three parts of one screen. One part shows at a time, and to change the part is not a push.
 - There is no tab for people, Settings, or the admin.
 - The sidebar has more rows: your lists, People, and each group's users. They are shortcuts to pages that exist anyway.
+- A shortcut selects the tab that owns the page, and pushes the page there: one of your lists in Lists, and People or a user on Home. The page replaces whatever was pushed on that tab, as a link from outside does on Home.
 
 **Provisional.** Plain default for the sidebar's extra rows: your lists, then People, then one section for each group.
 
