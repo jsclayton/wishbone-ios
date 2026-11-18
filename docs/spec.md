@@ -1,6 +1,6 @@
 # Wishbone for iPhone and iPad: Specification
 
-This spec says what the iPhone and iPad app does, and it is the source of truth for the app. Terms in **bold** are defined in the server's [glossary](https://github.com/jsclayton/wishbone/blob/main/GLOSSARY.md) or in the app's [glossary](../GLOSSARY.md). Decisions that are hard to reverse are in [`docs/adr/`](adr/README.md).
+This spec says what the iPhone and iPad app does, and it is the source of truth for the app. Terms in **bold** are defined in the server's [glossary](https://github.com/jsclayton/wishbone/blob/main/GLOSSARY.md) or in the app's [glossary](../GLOSSARY.md). Decisions that are hard to reverse are in [`docs/adr/`](adr/README.md). Each screen and each system surface has a spec of its own in [`docs/screens/`](screens/README.md), and each section below names its screens.
 
 ## How to read this spec
 
@@ -76,6 +76,8 @@ Any other system feature waits for a decision against the three tests. The first
 ## 2. Sign-in, instances and the session
 
 Relies on the server spec's [Login links](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#login-links), [Sessions and passkeys](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#sessions-and-passkeys), [Sign-in](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#sign-in), and [Versions of the API](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#versions-of-the-api). The device holds a **session**: one user on one instance. The documents say "session", never "account".
+
+Screens: [signed-out](screens/signed-out.md), [version-block](screens/version-block.md), [profile-gate](screens/profile-gate.md), [sign-in-and-devices](screens/sign-in-and-devices.md), [settings](screens/settings.md).
 
 ### One session per device
 
@@ -187,10 +189,10 @@ This screen is in Settings (section 3).
 
 - A button with the Devices list, shown when `can_make_login_link` is true on the user's own record.
 - A tap first asks for the device owner check (see [Making a login link](#making-a-login-link)). Then the app makes one link with `POST /users/me/login-links`.
-- A sheet shows the QR code first, then Copy and Share, and when the link expires.
-- The link is made on the tap, and kept while the sheet is open. The server can't list or revoke links, and an unused link lives 7 days, so the app never makes one each time the screen draws.
+- The login link screen shows the QR code first, then Copy and Share, and when the link expires. It is a sheet over a user's page. Inside Settings, which is already a sheet, it is pushed, because a sheet never opens a second sheet.
+- The link is made on the tap, and kept while that screen is open. The server can't list or revoke links, and an unused link lives 7 days, so the app never makes one each time the screen draws.
 
-**Provisional.** Plain default: the QR code at the top of a sheet, with Copy and Share buttons under it and the expiry as a footer.
+**Provisional.** Plain default: the QR code at the top, with Copy and Share buttons under it and the expiry as a footer.
 
 ### Time zone
 
@@ -226,6 +228,8 @@ Each acts for the one session, with no setting.
 
 Relies on the server spec's [Home](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#home) and [Navigation](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#navigation) for the rules the web app shares, and on the API's `can_*` fields. See [ADR 0001](adr/0001-tabs-that-become-a-sidebar-and-one-kind-of-window.md).
 
+Screens: [home](screens/home.md), [lists](screens/lists.md), [gifts](screens/gifts.md), [add](screens/add.md), [user](screens/user.md), [list](screens/list.md), [item](screens/item.md), [gift](screens/gift.md), [people](screens/people.md), [settings](screens/settings.md), [acknowledgements](screens/acknowledgements.md), [not-found](screens/not-found.md).
+
 ### Tabs that become a sidebar
 
 - The app has a few fixed tabs. In a narrow window they are a tab bar at the bottom. In a wide window they become a sidebar.
@@ -233,7 +237,7 @@ Relies on the server spec's [Home](https://github.com/jsclayton/wishbone/blob/ma
 - The tabs are **Home**, **Lists**, and **Gifts**.
   - **Home** is about giving: the countdown to the next occasion, your people, and Coming up.
   - **Lists** has everything the user can edit: their own lists, a part for each child, and the invitations that wait.
-  - **Gifts** has Giving, Given, and Received.
+  - **Gifts** has Giving, Given, and Received, as three parts of one screen. One part shows at a time, and to change the part is not a push.
 - There is no tab for people, Settings, or the admin.
 - The sidebar has more rows: your lists, People, and each group's users. They are shortcuts to pages that exist anyway.
 
@@ -300,11 +304,11 @@ The app's one way to ask for support. Each rule has its reason beside it.
 
 | Thing | From inside the app |
 |---|---|
-| A user | Home's people, the People page, the sidebar, or any name that links |
+| A user | Home's people, the People page, the sidebar, or any name that links. The user's own page is the same page as anyone's |
 | A list | Your own and your children's: the Lists tab. Anyone else's: their user's page |
 | An item | Its list |
-| A gift | The Gifts tab, and the item's page ("You claimed 1 for…") |
-| An occasion | The countdown and Coming up on Home |
+| A gift | The Gifts tab, and the item's page ("You claimed 1 for…"). Each pushes the gift's page |
+| An occasion | The countdown and Coming up on Home. A person's occasion opens that person's page, the user's own opens their primary list, and a shared occasion opens its page. A birthday and a custom occasion have no page of their own |
 | Add | The plus at the end of the tab bar, and "Add item" on a list's page |
 | Settings | The avatar |
 
@@ -315,12 +319,14 @@ The app's one way to ask for support. Each rule has its reason beside it.
 - Lists and Gifts keep whatever they showed.
 - The "Add item" control opens the Add screen.
 - A page that is missing or hidden shows the one "not found" page, on top of Home. As in the web app, a missing page and a hidden page look the same.
-- Any list, item, user, or occasion can be opened from a link. Widget taps, reminder taps, and the control use this.
+- Any list, item, user, or occasion can be opened from a link. Widget taps, reminder taps, and the control use this. A gift has a page, but no link from outside opens it, because no system surface names a gift.
 - Which window the link opens in is in section 9.
 
 ## 4. Adding an item
 
 Relies on the server spec's [Search](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#search-1), [Images from a search](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#images-from-a-search), [On the device](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#on-the-device), [Store links](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#store-links), and [Blocked stores](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#server-wide-settings). The server spec calls the form "the add form", and so does this spec.
+
+Screens: [add](screens/add.md), [add-form](screens/add-form.md), [share-extension](screens/share-extension.md), [add-item-control](screens/add-item-control.md).
 
 ### The add form is pushed onto the Add screen
 
@@ -406,6 +412,8 @@ In the first release, every device sends typed words and photos to `POST /search
 
 Relies on the server spec's [Parents and children](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#parents-and-children), [Who acts while a user is deactivated](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#who-acts-while-a-user-is-deactivated), and [Received](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#restore).
 
+Screens: [user](screens/user.md), [lists](screens/lists.md), [list](screens/list.md), [profile](screens/profile.md), [sign-in-and-devices](screens/sign-in-and-devices.md), [gifts](screens/gifts.md).
+
 There is no parent mode. A parent acts for a child through their own session, with the child's ID on the ordinary routes. Every button shows from its `can_*` field.
 
 ### Whose list: name the recipient
@@ -469,6 +477,8 @@ The time zone is never shown or sent for a child. The Gifts tab's Received is th
 ## 6. The admin
 
 Relies on the server spec's [Admin and setup](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#admin-and-setup), [Shared occasions](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#shared-occasions), [Deactivation and deletion](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#deactivation-and-deletion), and [Groups](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#groups).
+
+Screens: [people](screens/people.md), [group](screens/group.md), [new-user](screens/new-user.md), [user](screens/user.md), [occasions](screens/occasions.md), [blocked-stores](screens/blocked-stores.md), [delete-account](screens/delete-account.md).
 
 ### Scope
 
@@ -567,6 +577,8 @@ Apple requires an app to let a person start the deletion of their own account in
 
 Relies on the server spec's [Who sees a gift](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#who-sees-a-gift).
 
+Screens: [countdown-widget](screens/countdown-widget.md), [reminder](screens/reminder.md), [share-extension](screens/share-extension.md), [add-item-control](screens/add-item-control.md), [app-icon](screens/app-icon.md), [sign-in-and-devices](screens/sign-in-and-devices.md).
+
 ### What is at risk
 
 The server already keeps claim state from a recipient's own session. So the only leak left on a device is the **giver's own data, seen by someone else**: the recipient who looks at the giver's Lock Screen or widget, picks up the giver's unlocked phone, or uses a shared iPad signed in as the giver.
@@ -629,6 +641,8 @@ The app shows the same whether its window is mirrored, shared, or recorded, and 
 
 Relies on the server spec's [Occasions of a user](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#occasions-of-a-user) and [Shared occasions](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#shared-occasions).
 
+Screens: [reminder](screens/reminder.md), [reminders-settings](screens/reminders-settings.md).
+
 ### One kind of reminder
 
 - The first release has one kind of **reminder**: an occasion is coming up. It is the same for every user, whatever they have claimed or bought.
@@ -687,6 +701,7 @@ By the rule in section 3, the page opens on top of Home.
 - A shared occasion: **Home** itself, where the countdown and Coming up show it.
 - A person that the user can no longer see gives the one "not found" page. A reminder from another session opens Home.
 - A reminder has no action buttons.
+- A tap on the countdown widget follows the same three rules.
 
 ### Why there is no push
 
@@ -697,6 +712,8 @@ By the rule in section 3, the page opens on top of Home.
 ## 9. Windows, dragging and keeping in step
 
 Relies on the server spec's [Moving an item](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#moving-an-item) and [Writes](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#writes). Every rule here goes by what the window and the system allow (one window or several), never by device.
+
+Screens: [list](screens/list.md), [item](screens/item.md), [lists](screens/lists.md), [add](screens/add.md), [not-found](screens/not-found.md), and the [keyboard shortcuts](screens/README.md#keyboard-shortcuts).
 
 ### A drag between lists is a move
 
@@ -798,6 +815,8 @@ These show only where the window and the system allow several windows.
 
 Relies on the server spec's [Collections](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#collections), [Writes](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#writes), [Images](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#images), and [Versions of the API](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#versions-of-the-api). The server at the minimum version gives a client a cheap way to keep a local copy current (conditional `GET`, and the changes since a point for each caller), and an optional `Idempotency-Key` on writes. See [ADR 0005](adr/0005-grdb-is-the-local-database-and-screens-read-only-it.md) and [ADR 0006](adr/0006-writes-are-a-journal-of-unsent-changes-the-server-decides-and-claims-are-online-only.md).
 
+Screens: the states in [What every screen shares](screens/README.md#what-every-screen-shares), and [add-form](screens/add-form.md), [gift](screens/gift.md), [item](screens/item.md).
+
 ### Screens read a local copy
 
 - The app keeps a local copy of everything the user can see, in one database. Screens read only that copy. The API only feeds it.
@@ -835,6 +854,16 @@ Relies on the server spec's [Collections](https://github.com/jsclayton/wishbone/
 - The button waits for the server's answer. With no connection, it says "Can't reach {address}".
 - A giver must never act on a claim that the server has not granted. A claim made offline and refused later is a double gift. No idempotency key changes this.
 - Search needs the instance by nature (section 4).
+
+### Other writes that wait for the server
+
+These writes are never unsent changes either. Each one changes what other people see or can do, or can't be undone on the device. The button waits for the server's answer. With no connection, it says "Can't reach {address}", and nothing changes.
+
+- restore ("I didn't get this"): it hides the gift from the person who tapped it, so a later refusal has nothing to roll back to
+- the admin's writes: New user, parent links, deactivate and reactivate, delete a user, groups, shared occasions, and blocked stores
+- making a login link, revoking a session, and deleting or renaming a passkey: a revoke that waits offline gives a false sense that a lost device is locked out
+- confirming the profile at the profile gate
+- asking to delete an account, and cancelling that request
 
 ### No If-Match
 
@@ -898,6 +927,8 @@ A late refusal shows once, the next time a window comes to the foreground.
 ## 11. Diagnostics
 
 Relies on nothing on the server: the server never sees diagnostics. See [ADR 0008](adr/0008-diagnostics-go-to-sentry-on-by-default-with-notice-and-send-only-what-the-app-names.md) and the [privacy policy](../PRIVACY.md).
+
+Screens: [share-diagnostics](screens/share-diagnostics.md), [signed-out](screens/signed-out.md).
 
 ### What may be sent
 
@@ -965,6 +996,8 @@ Every new error type picks its side: captured, a breadcrumb, or never.
 ## 12. Look, words, accessibility and languages
 
 Relies on the server spec's [Design](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#design) as background only: the app and the web share a principle, not a look.
+
+Screens: every spec in [`docs/screens/`](screens/README.md), and the [words for error codes](screens/README.md#words-for-error-codes).
 
 ### The look
 

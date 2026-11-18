@@ -44,11 +44,11 @@ A ticket with an open question is not `ready-for-agent`.
 
 - A behavior change changes the spec, the screen's spec, and the glossary in the same pull request, after the maintainer agrees to it. A screen and its spec always agree.
 - A ticket that contradicts the spec, or that touches a screen with no spec, stops and asks.
-- A new screen's spec lands in or before the pull request that builds it.
+- A new screen's spec lands in or before the pull request that builds it. It uses [the template](screens/README.md#the-template), and gets a row in the screen index.
 - No pending work goes in a doc. Plans, to-dos, and open questions are issues.
 - [`AGENTS.md`](../AGENTS.md), under "Where truth lives", is the one index of the docs. The README and `CONTRIBUTING.md` point to it. Keep `AGENTS.md` short: move long text to `docs/`.
 - Write the docs in plain English: short sentences, one word for one meaning, and the glossary's terms.
-- `just lint` checks that every relative link in a Markdown file leads somewhere, and that the ADR index matches its folder.
+- `just lint` checks that every relative link in a Markdown file leads somewhere, and that the ADR index and the [screen index](screens/README.md#index) each match their folder.
 - A presentation stays marked "**Provisional.**" until the maintainer has used the screen. A pull request that removes a mark says so (see [the spec](spec.md#placement-is-decided-presentation-is-provisional)).
 
 ## Review and the PR

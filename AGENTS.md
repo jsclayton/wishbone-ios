@@ -5,6 +5,7 @@ The native iPhone and iPad app for Wishbone, private self-hosted family wish lis
 ## Where truth lives
 
 - **Behavior:** [`docs/spec.md`](docs/spec.md) is the source of truth for the app. Read it before you implement or change a feature. The server's [spec](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md) and [route table](https://github.com/jsclayton/wishbone/blob/main/docs/routes.md) bind the app too.
+- **Screens:** [`docs/screens/`](docs/screens/README.md) has one spec for each screen and each system surface: where it is, what it holds, what each action does, and its words. Read the screen's spec before you build or change the screen, and change it in the same pull request.
 - **Terms:** [`GLOSSARY.md`](GLOSSARY.md) adds the app's terms to the server's [glossary](https://github.com/jsclayton/wishbone/blob/main/GLOSSARY.md). Use them in code, tests, UI copy, and docs.
 - **Decisions and reasons:** [`docs/adr/`](docs/adr/README.md). Read the relevant one before you change the navigation, the modules, the session model, the API client, the database, the sync, the tests, or diagnostics.
 - **Code:** [`docs/architecture.md`](docs/architecture.md) says where each rule lives. [`docs/development.md`](docs/development.md) has setup, signing, the repo layout, tests and the gate, and releases.
