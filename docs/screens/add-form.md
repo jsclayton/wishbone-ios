@@ -10,7 +10,7 @@ The user checks what search found, changes it, and adds the item. Nothing is sav
 - **In the share extension**, as its whole screen, with Cancel and Add (see [share-extension](share-extension.md)).
 - **From Add again**, on a given gift: the form opens in a sheet, filled from the gift (see [gift](gift.md)).
 - **From a drop** of a link, text, or an image from another app.
-- After Add, see [After Add](../spec.md#after-add). The duplicate hint pushes that item's page.
+- After Add, see [After Add](../spec.md#after-add). On the Add screen, the duplicate hint pushes that item's page. In a sheet, and in the share extension, the hint opens nothing.
 
 ## Content
 
@@ -60,7 +60,7 @@ Quantity, more store links, and more photos are on the [item's page](item.md), a
 | Tick or clear an image | A tap on the image | Chooses which images the item gets. The first ticked is the primary image |
 | Pick the list | The Add to row | Pushes a picker of the lists the user can edit |
 | Pick an option | The option's row | A menu of the page's values, and "Not sure" |
-| Open the duplicate | The hint | Pushes that item's page |
+| Open the duplicate | The hint, on the Add screen only | Pushes that item's page. In a sheet, and in the share extension, the hint is text and not a link |
 | Add | The toolbar's main button, and Return | Uploads the images, then adds the item |
 | Back, or Cancel | The toolbar | Leaves the form, after the confirmation when it has changes |
 

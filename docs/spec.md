@@ -357,7 +357,7 @@ Screens: [add](screens/add.md), [add-form](screens/add-form.md), [share-extensio
 - **Add to** (see [Which list](#which-list)).
 - **Options**, such as size or color: one choice for each, preset to what the link selected, or "Not sure". A chosen value is saved into the notes, as "Size: M". Wishbone never guesses an option.
 - **Notes**, at most 2000 characters. The form says when it cut longer text.
-- **The duplicate hint**: "Already on this list: {title}", which opens that item. It shows when the target list has an item with the same link, or the same title (case and extra spaces ignored). It never blocks the add. The server doesn't find duplicates, so the hint is the app's own.
+- **The duplicate hint**: "Already on this list: {title}". On the Add screen it opens that item. Where the form is in a sheet, and in the share extension, it is not a link, because a sheet never opens a second sheet. It shows when the target list has an item with the same link, or the same title (case and extra spaces ignored). It never blocks the add. The server doesn't find duplicates, so the hint is the app's own.
 - The item's page holds the rest: quantity (it starts at 1), more store links, and more photos of the user's own.
 - On Add, the app uploads each image with `POST /images`, then adds the item with `image_ids` and `primary_image_id`.
 
