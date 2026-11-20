@@ -86,7 +86,12 @@ You can file a GitHub issue for a problem that is out of the ticket's scope: a b
   - Someone who wrote none of the change approved it in review, for the current head commit. A push after the review needs a new review.
   - `PR Title` and `CI OK` pass.
   - No spec question in the pull request is still open.
-- A contributor doesn't merge their own pull request. The maintainer merges it.
+- A pull request for a `ready-for-agent` ticket can merge without the maintainer, once every condition above is true.
+- The maintainer merges, or says to merge, a pull request that does any of these:
+  - It changes `docs/spec.md`, a decided part of a screen's spec, an ADR, `PRIVACY.md`, or `GLOSSARY.md`.
+  - It removes a "**Provisional.**" mark.
+  - It adds a dependency, lowers the gate's floor, or changes a workflow or `ci_scripts/`.
+- An outside contributor doesn't merge their own pull request. The maintainer merges it.
 - Never turn on auto-merge for a pull request. The setting is on only for Renovate.
 - Exception, Renovate: Renovate merges its own minor and patch updates of tools when CI is green, with no review. A major update, and every update of sentry-cocoa or GRDB, gets a review like any other pull request.
 - The Xcode version and the pinned test server move by hand, not through Renovate. The server pin moves with the copy of the OpenAPI document and the minimum server version.
