@@ -1,0 +1,45 @@
+name: Question
+description: Ask how something in the iPhone and iPad app works, or get help with it
+labels: ["needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ask here when you are not sure whether something is a bug, or how the app is meant to work. [The app's spec](https://github.com/jsclayton/wishbone-ios/blob/main/docs/spec.md) says what the app does, and may already have the answer.
+
+        A question about running a Wishbone server, or about the web app, goes to [the server's repo](https://github.com/jsclayton/wishbone/issues) instead.
+
+        Don't post a login link, your server's address, or anything from your family's lists.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: What do you want to know?
+      description: What are you trying to do, and where are you stuck?
+    validations:
+      required: true
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: What have you tried?
+      description: What you did, and what the app did.
+
+  - type: input
+    id: app-version
+    attributes:
+      label: App version and build
+      description: In the app, open Settings. The version and build are at the bottom. Leave this empty if your question is not about a build you use.
+      placeholder: 1.0 (12)
+
+  - type: input
+    id: os-version
+    attributes:
+      label: iOS or iPadOS version, and device
+      placeholder: iOS 27.2, iPhone
+
+  - type: input
+    id: server-version
+    attributes:
+      label: Wishbone server version
+      description: The person who runs your Wishbone can tell you. Leave it empty if you don't know.
