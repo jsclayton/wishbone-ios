@@ -5,18 +5,18 @@ How work moves from the spec to merged code. These rules apply to everyone who c
 ## Overview
 
 ```
-spec.md ──► tickets (GitHub issues, with blockers) ──► branch and PR ──► review ──► CI ──► squash merge
+spec.md ──► tickets (GitHub issues) ──► branch and PR ──► review ──► CI ──► squash merge
 ```
 
-The maintainer is the person who owns the repo and decides what the app does. They approve the ticket breakdown, decide product and spec questions, and can revert any merge.
+The maintainer is the person who owns the repo and decides what the app does. They decide what is built and in what order, decide product and spec questions, and can revert any merge.
 
 ## Tickets
 
 A ticket is a GitHub issue that describes one piece of work.
 
-- Break `docs/spec.md` into **tracer-bullet tickets**: each one a thin slice through every layer it touches (the API client, the session model, the screens, and the tests). Each one can be demoed on its own, and fits in one working session.
-- Each ticket lists the tickets that **block** it, and cites the spec sections it implements.
-- The maintainer approves the breakdown before any ticket is published as an issue.
+- Each ticket is a **tracer bullet**: a thin slice through every layer it touches (the API client, the session model, the screens, and the tests). It can be demoed on its own, and fits in one working session.
+- A ticket cites the spec sections and the screen specs it implements, and says what done looks like.
+- The maintainer opens the issue for planned work when that work starts. So the open issues show what is being worked on, not everything that is planned.
 - A behavior change starts with an issue. A typo or a small fix needs none.
 
 ### Labels
@@ -25,7 +25,7 @@ A ticket is a GitHub issue that describes one piece of work.
 |---|---|
 | `needs-triage` | New. The maintainer hasn't looked at it yet |
 | `needs-info` | A product or spec question is open, and waits on the maintainer |
-| `ready-for-agent` | Ready to work on, by an agent or a person, once its blockers are merged |
+| `ready-for-agent` | Ready to work on, by an agent or a person |
 | `ready-for-human` | Ready to work on, by a person only |
 | `wontfix` | It won't be done |
 
