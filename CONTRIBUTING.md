@@ -62,4 +62,4 @@ The name "Wishbone" and the app icon are not under the MPL-2.0 (see [`TRADEMARKS
 - **Use the pull request template.** Say what changed and why, and the choices you made.
 - **You don't have to file issues for what you find.** If you notice a problem outside your change, mention it in the pull request, or open an issue.
 
-Questions are welcome in the server's [Discussions](https://github.com/jsclayton/wishbone/discussions), in the iOS app category.
+Questions are welcome. Open an [issue](https://github.com/jsclayton/wishbone-ios/issues/new/choose) and pick **Question**.
