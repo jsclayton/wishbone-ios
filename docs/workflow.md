@@ -115,7 +115,7 @@ These GitHub settings enforce the merge rules:
 The workflows:
 
 - **CI**, with three jobs:
-  - **Changes** finds what changed. It also fails when a private file is tracked: `.agent/`, `.claude/`, `.beads/`, or `*.local.md`. It runs the docs check (`just lint-docs`) on every change, so a change to docs only can't merge a broken link.
+  - **Changes** finds what changed. It also fails when a private file is tracked: `.agent/`, `.claude/`, `.beads/`, or `*.local.md`. It runs the docs check (`node scripts/check-docs.mjs`, which is `just lint-docs` on a Mac) on every change, so a change to docs only can't merge a broken link.
   - **Gate** runs `just gate` on a macOS runner, unsigned, with no secrets.
   - **CI OK** is the required check. It fails if Gate failed or was cancelled. A skipped job counts as passed.
 - **PR Title** checks that the pull request's title is a Conventional Commit.
