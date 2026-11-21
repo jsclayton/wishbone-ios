@@ -75,6 +75,15 @@ public final class SessionModel {
   /// saved under the line "Can't reach {address}". A sync that stops on a fault of the copy leaves it as it was.
   public private(set) var isInstanceUnreachable = false
 
+  /// Whether a sync has succeeded since this session model began. Until one has, the copy has never been seen to
+  /// agree with the instance in this launch, so a screen with no rows shows Loading or Can't reach, never its empty
+  /// state. A copy that is dropped is dropped when the database opens, before the session model begins, so the
+  /// screens are back at Loading or Can't reach until a sync succeeds. See `screenState(hasRows:)`.
+  public private(set) var hasSynced = false
+
+  /// Whether a sync runs now.
+  public var isSyncing: Bool { running != nil }
+
   /// The version block that every window shows in place of the profile gate and the tabs. Nil while nothing blocks.
   /// The session stays while a block shows. See "Version checks" in `docs/spec.md`.
   public private(set) var versionBlock: VersionBlock?
@@ -263,6 +272,21 @@ public final class SessionModel {
     memberships.first { $0.kind == kind && $0.ownerID == ownerID }?.memberIDs
   }
 
+  // MARK: - What a screen shows
+
+  /// What a screen shows, from whether it has rows in the copy and from the outcome of the syncs. See "What every
+  /// screen shares" in `docs/screens/README.md`, and "Screens read a local copy" in `docs/spec.md`.
+  ///
+  /// - A screen with rows shows them, under the line "Can't reach {address}" while the last sync found the instance
+  ///   unreachable. The line blocks nothing.
+  /// - A screen with no rows shows Can't reach while the instance can't be reached, with Try again.
+  /// - Otherwise it shows its empty state only after a sync that succeeded, and Loading until one has.
+  public func screenState(hasRows: Bool) -> ScreenState {
+    if hasRows { return .saved(cantReach: isInstanceUnreachable) }
+    if isInstanceUnreachable { return .cantReach }
+    return hasSynced ? .empty : .loading
+  }
+
   // MARK: - Sync now
 
   /// Sync now: brings the instance and the copy in step. A sync sends the unsent changes, then pulls. Pull to
@@ -322,7 +346,10 @@ public final class SessionModel {
       }
     guard !hasEnded else { return outcome }
     switch end {
-    case .succeeded, .refused: isInstanceUnreachable = false
+    case .succeeded:
+      isInstanceUnreachable = false
+      hasSynced = true
+    case .refused: isInstanceUnreachable = false
     case .unreachable: isInstanceUnreachable = true
     // A fault of the copy says nothing of the instance. So the line about it stays as it was.
     case .faulted, .endedByServer: break
@@ -481,6 +508,7 @@ public final class SessionModel {
     occasions = []
     memberships = []
     isInstanceUnreachable = false
+    hasSynced = false
     versionBlock = nil
     database.close()
   }
