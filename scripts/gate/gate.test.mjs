@@ -268,3 +268,26 @@ test('a time reads as minutes and seconds', () => {
   assert.equal(duration(242_400), '4m02s');
   assert.equal(duration(600_000), '10m00s');
 });
+
+test("a step's `after` runs however the step ends: it passes, it fails, or it is stopped at its limit", async (t) => {
+  for (const [command, limitMs, expected] of [
+    [['true'], 10_000, /^GATE PASS/],
+    [['false'], 10_000, /^GATE FAIL step 1 \(simulator\): exit 1/],
+    [['sleep', '30'], 200, /^GATE FAIL step 1 \(simulator\): stopped at its limit/],
+  ]) {
+    const { options } = gateIn(t);
+    let ran = 0;
+    const steps = [{ name: 'simulator', command, limitMs, after: () => (ran += 1) }, passes('later')];
+    const result = await runGate({ ...options, steps });
+    assert.match(result.line, expected);
+    assert.equal(ran, 1, `after ${command.join(' ')}`);
+  }
+});
+
+test("a step's `after` doesn't run for a step that is skipped", async (t) => {
+  const { options } = gateIn(t);
+  let ran = 0;
+  const result = await runGate({ ...options, steps: [{ name: 'simulator', skip: 'not yet', after: () => (ran += 1) }] });
+  assert.equal(result.ok, true);
+  assert.equal(ran, 0);
+});

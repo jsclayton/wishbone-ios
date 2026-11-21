@@ -6,6 +6,8 @@
 // - `counts`: the test counts that the step gives, such as `['package']`. Each is held against the floor.
 // - `check({ exit, logPath })`: reads the step's own results after it ends, and its log. It returns
 //   `{ fail, counts }`: `fail` is the reason why the step fails, and `counts` are its test counts.
+// - `after()`: runs when the step has ended, however it ended: it passed, it failed, it was stopped at its limit,
+//   or the gate was interrupted. It stops what the step started and doesn't own, such as a simulator.
 
 import { appendFileSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
@@ -107,7 +109,12 @@ export async function runGate({
       say(`── step ${number} of ${steps.length}: ${step.name} (limit ${duration(step.limitMs)})`);
       const logPath = path.join(runDirectory, `${number}-${step.name}.log`);
       const logName = path.relative(root, logPath);
-      const result = await runStep({ command: step.command, limitMs: step.limitMs, logPath, cwd: root, signal, echo: out, onStart: (pid) => slot?.watch(pid) });
+      let result;
+      try {
+        result = await runStep({ command: step.command, limitMs: step.limitMs, logPath, cwd: root, signal, echo: out, onStart: (pid) => slot?.watch(pid) });
+      } finally {
+        await step.after?.();
+      }
       slot?.forget(result.pid);
       times[step.name] = result.ms;
 

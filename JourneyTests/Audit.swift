@@ -7,6 +7,23 @@ enum Audit {
   /// it audits in the simulator's own settings.
   static let setting = ProcessInfo.processInfo.environment["WISHBONE_AUDIT_SETTING"] ?? "the simulator's settings"
 
+  /// Whether the gate asked for the double-length pseudo-language, in which iOS shows each string of the String
+  /// Catalog twice. Text that is cut short then fails the audit, and text that is not in the catalog stays single.
+  static let isDoubleLength = ProcessInfo.processInfo.environment["WISHBONE_DOUBLE_LENGTH"] == "YES"
+
+  /// The app to launch, in the language that the gate asked for.
+  static func app() -> XCUIApplication {
+    let app = XCUIApplication()
+    if isDoubleLength { app.launchArguments += ["-NSDoubleLocalizedStrings", "YES"] }
+    return app
+  }
+
+  /// The words of the app as the run shows them: twice in the double-length pseudo-language. What comes from the
+  /// instance, such as a title, is never doubled, so a journey doesn't pass it through here.
+  static func words(_ words: String) -> String {
+    isDoubleLength ? "\(words) \(words)" : words
+  }
+
   /// Attaches a screenshot of the screen that shows, and runs the audit on it. Any issue fails.
   ///
   /// An exception is allowed one at a time, here, with a reason.

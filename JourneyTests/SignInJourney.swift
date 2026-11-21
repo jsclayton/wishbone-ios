@@ -30,17 +30,18 @@ nonisolated final class SignInJourney: XCTestCase {
     }
 
     // The signed-out screen.
-    let app = XCUIApplication()
+    let app = Audit.app()
     app.launchEnvironment["WISHBONE_JOURNEY_START_SIGNED_OUT"] = "1"
     app.launch()
-    XCTAssertTrue(app.buttons["Scan QR code"].waitForExistence(timeout: 30), "The signed-out screen didn't show.")
+    let scan = app.buttons[Audit.words("Scan QR code")]
+    XCTAssertTrue(scan.waitForExistence(timeout: 60), "The signed-out screen didn't show.")
     try Audit.run(on: app, showing: "the signed-out screen", in: self)
     app.terminate()
 
     // The same launch, with a login link passed in as if pasted.
     app.launchEnvironment["WISHBONE_JOURNEY_LOGIN_LINK"] = try await builder.loginLink(for: robin).absoluteString
     app.launch()
-    XCTAssertTrue(app.staticTexts["Kite"].waitForExistence(timeout: 30), "The list didn't show after the sign-in.")
+    XCTAssertTrue(app.staticTexts["Kite"].waitForExistence(timeout: 60), "The list didn't show after the sign-in.")
     XCTAssertTrue(app.staticTexts["Puzzle"].exists)
     XCTAssertTrue(app.navigationBars[robin.name].exists)
     try Audit.run(on: app, showing: "the list after the sign-in", in: self)

@@ -23,7 +23,7 @@ gate:
 # Build
 # ============================================================================
 
-# Build the app and both extensions for the simulator, then add new strings to the String Catalog
+# Build the app and both extensions for the simulator, then add new strings to the String Catalog, and make the Acknowledgements
 build:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -49,6 +49,7 @@ build:
         exit 1
     fi
     just sync-strings
+    just acknowledgements
     echo "✓ Built Wishbone, ShareExtension and WidgetExtension for the simulator (log: build/xcodebuild.log)"
 
 # Xcode adds new strings to the catalog when it builds. A build from the command line only writes
@@ -74,6 +75,14 @@ sync-strings:
     done < <(find "$sources" -name '*.swift' | sort)
     xcrun xcstringstool sync {{catalog}} "${args[@]}"
 
+# The Acknowledgements screen shows the license of each package that the app ships. The texts come from the
+# packages that the build fetched, at their pinned commits, and go into a file in git.
+
+# Make the license texts of the Acknowledgements screen from the pinned packages
+[private]
+acknowledgements:
+    node scripts/acknowledgements.mjs
+
 # ============================================================================
 # Test
 # ============================================================================
@@ -90,6 +99,11 @@ server-openapi:
 [positional-arguments]
 test *args: server
     swift test --package-path WishboneKit "$@"
+
+# Run the hosted tests and the journeys on the gate's own simulator. The results go to the folder
+[positional-arguments]
+simulator results="build/simulator": server
+    node scripts/gate/simulator.mjs "$1"
 
 # ============================================================================
 # Lint and format
@@ -113,9 +127,9 @@ lint-ci:
 lint-docs:
     node scripts/check-docs.mjs
 
-# Run the tests of the gate's own scripts, and of the script that builds the test server
+# Run the tests of the gate's own scripts, and of the scripts that the recipes run
 test-gate:
-    node --test 'scripts/gate/*.test.mjs' 'scripts/server/*.test.mjs'
+    node --test 'scripts/*.test.mjs' 'scripts/gate/*.test.mjs' 'scripts/server/*.test.mjs'
 
 # Format the Swift files in place with swift-format
 fmt:
