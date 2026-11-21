@@ -63,9 +63,10 @@ struct ProfileGateScreen: View {
       } action: {
         width = $0
       }
-      // The window's title. The bar doesn't draw it: the form's first row does.
-      .navigationTitle(Text("Finish your profile", bundle: #bundle))
-      .toolbar(removing: .title)
+      // The bar has no title, and holds only Sign out and Continue: the form's first row is the title.
+      #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+      #endif
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
           Button {
