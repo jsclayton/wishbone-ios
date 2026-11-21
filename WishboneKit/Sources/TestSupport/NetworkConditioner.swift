@@ -299,6 +299,9 @@ extension NetworkConditioner {
       var connections: [ObjectIdentifier: NWConnection] = [:]
       var listener: NWListener?
       var requests: [SeenRequest] = []
+      /// The session of each request that is on its way to the server, or back. A stop cancels them.
+      var forwards: [ObjectIdentifier: URLSession] = [:]
+      var isStopped = false
     }
 
     var requests: [SeenRequest] {
@@ -308,15 +311,6 @@ extension NetworkConditioner {
     private let server: URL
     private let state = Mutex(State())
     private let queue = DispatchQueue(label: "wishbone.network-conditioner")
-
-    private let upstream: URLSession = {
-      let configuration = URLSessionConfiguration.ephemeral
-      configuration.httpCookieStorage = nil
-      configuration.httpShouldSetCookies = false
-      configuration.urlCache = nil
-      configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-      return URLSession(configuration: configuration)
-    }()
 
     init(server: URL) {
       self.server = server
@@ -351,18 +345,20 @@ extension NetworkConditioner {
     }
 
     func stop() {
-      let (listener, connections) = state.withLock { state in
+      let (listener, connections, forwards) = state.withLock { state in
         defer {
           state.listener = nil
           state.connections = [:]
+          state.forwards = [:]
+          state.isStopped = true
         }
-        return (state.listener, Array(state.connections.values))
+        return (state.listener, Array(state.connections.values), Array(state.forwards.values))
       }
       listener?.newConnectionHandler = nil
       listener?.cancel()
       connections.forEach { $0.cancel() }
       releaseHolds()
-      upstream.invalidateAndCancel()
+      forwards.forEach { $0.invalidateAndCancel() }
     }
 
     func add(_ rule: Rule) {
@@ -453,6 +449,11 @@ extension NetworkConditioner {
     }
 
     /// Sends the request to the real server, and returns its answer.
+    ///
+    /// The request goes on a new connection, to `127.0.0.1` and with `Connection: close`, as each request of
+    /// `TestHTTP` does (see `TestHTTP.alone(_:)`), and for the same reason: the server can close a kept connection
+    /// just as the next request goes on it. The code under test would then see a lost connection that no real
+    /// network caused.
     private func forward(_ request: HTTPReader.Request) async throws -> CannedAnswer {
       guard let url = URL(string: server.absoluteString + request.target) else { throw URLError(.badURL) }
       var forwarded = URLRequest(url: url)
@@ -461,7 +462,17 @@ extension NetworkConditioner {
         forwarded.addValue(value, forHTTPHeaderField: name)
       }
       if !request.body.isEmpty { forwarded.httpBody = request.body }
-      let (body, response) = try await upstream.data(for: forwarded, delegate: NoRedirects())
+      let session = TestHTTP.newSession()
+      let isStopped = state.withLock { state in
+        if !state.isStopped { state.forwards[ObjectIdentifier(session)] = session }
+        return state.isStopped
+      }
+      defer {
+        state.withLock { _ = $0.forwards.removeValue(forKey: ObjectIdentifier(session)) }
+        session.finishTasksAndInvalidate()
+      }
+      guard !isStopped else { throw CancellationError() }
+      let (body, response) = try await session.data(for: TestHTTP.alone(forwarded), delegate: NoRedirects())
       guard let response = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
       var headers: [String: String] = [:]
       for (name, value) in response.allHeaderFields {
