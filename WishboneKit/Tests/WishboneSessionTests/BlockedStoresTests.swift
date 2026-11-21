@@ -26,9 +26,11 @@ final class BlockedStoresTests {
 
   /// A device signed in as the person, with the first sync over. A second person signs in on another instance,
   /// because a device on the same one shares its session keychain, and would be the first person's relaunch.
-  private func signedIn(as person: Fixture.Person, on instance: Instance? = nil) async throws -> SessionModel {
+  private func signedIn(
+    as person: Fixture.Person, on instance: Instance? = nil, diagnostics: RecordingDiagnostics? = nil
+  ) async throws -> SessionModel {
     let instance = instance ?? self.instance
-    let device = instance.device()
+    let device = diagnostics.map { instance.device(diagnostics: $0) } ?? instance.device()
     await device.signIn(pasting: try await instance.loginLink(for: person))
     let session = try #require(device.session)
     await until { session.user?.record != nil }
@@ -188,6 +190,21 @@ final class BlockedStoresTests {
     #expect(admin.blockedStores == before)
   }
 
+  @Test("Text that the device lets through and the server refuses is marked, and captured by its code")
+  func refusedByTheServer() async throws {
+    let diagnostics = RecordingDiagnostics()
+    let admin = try await signedIn(as: instance.builder.admin, diagnostics: diagnostics)
+    let before = admin.blockedStores
+    let mark = instance.conditioner.requests.count
+
+    // The host has a dot, so the device sends it. The server takes off "www." and finds no dot in "example".
+    #expect(StoreEntry("www.example") != nil)
+    #expect(await admin.block("www.example") == .notAStore)
+    #expect(instance.conditioner.requests.dropFirst(mark).filter { $0.isOn(Self.block) }.count == 1)
+    #expect(admin.blockedStores == before)
+    #expect(diagnostics.faults == [.refusedWrite(.blockStore, code: "invalid_input")])
+  }
+
   @Test("The check of the text takes a host name or a web address, and keeps the text as typed")
   func storeEntry() {
     #expect(StoreEntry("example.com")?.text == "example.com")
@@ -195,7 +212,20 @@ final class BlockedStoresTests {
     #expect(StoreEntry("https://www.example.com/a/b?c=d")?.text == "https://www.example.com/a/b?c=d")
     #expect(StoreEntry("http://example.com")?.text == "http://example.com")
     #expect(StoreEntry("example.com/kite")?.text == "example.com/kite")
-    for typed in ["", "kite", "example.", "ftp://example.com", "https://", "a b.com", "example..com"] {
+    // As on the server, the dots at the end of the host come off before the checks.
+    #expect(StoreEntry("example.com.")?.text == "example.com.")
+    #expect(StoreEntry("example.com..")?.text == "example.com..")
+    #expect(StoreEntry("https://example.com./p/1")?.text == "https://example.com./p/1")
+    // The rest of the server's own list of text that it blocks (`internal/blocklist/blocklist_test.go`).
+    for typed in [
+      "TEMU.com", "www.temu.com", "https://www.temu.com/p/phone-case?utm_source=x", "http://temu.com:8080/x",
+      "https://ｔｅｍｕ.com/p", "xn--bcher-kva.de", "bücher.de", "https://user:pw@temu.com/x", "https://temu.com#top",
+    ] {
+      #expect(StoreEntry(typed)?.text == typed, "\(typed)")
+    }
+    for typed in [
+      "", "kite", "example.", "ftp://example.com", "https://", "a b.com", "example..com", ".com", "a..com", ".",
+    ] {
       #expect(StoreEntry(typed) == nil, "\(typed)")
     }
   }

@@ -12,15 +12,17 @@ public struct StoreEntry: Sendable, Equatable {
   public let text: String
 
   /// Nil for text that is not a host name or a web address: empty, with a space in it, with no host, or with a
-  /// host that has no dot, or a dot at either end, or two dots in a row.
+  /// host that has no dot, a dot at its start, or two dots in a row. As on the server, the dots at the end of the
+  /// host come off first, so `example.com.` names `example.com`, and `example.` has no dot.
   public init?(_ typed: String) {
     let text = typed.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty, !text.contains(where: \.isWhitespace) else { return nil }
     let address = text.contains("://") ? text : "https://\(text)"
     guard let url = URL(string: address), let scheme = url.scheme?.lowercased(),
-      scheme == "https" || scheme == "http", let host = url.host(percentEncoded: false)?.lowercased()
+      scheme == "https" || scheme == "http", var host = url.host(percentEncoded: false)?.lowercased()
     else { return nil }
-    guard host.contains("."), !host.hasPrefix("."), !host.hasSuffix("."), !host.contains("..") else { return nil }
+    while host.hasSuffix(".") { host.removeLast() }
+    guard host.contains("."), !host.hasPrefix("."), !host.contains("..") else { return nil }
     self.text = text
   }
 }
