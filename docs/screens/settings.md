@@ -53,7 +53,7 @@ In order:
 
 ## Words
 
-Decided in the spec: the row names above, "For the admin", "Blocked stores", "Source code", "Acknowledgements", the Sign out warnings. Decided in the spec, marked as drafts there: the help line on Require Face ID, the For the admin footer, and the Support Wishbone header, row, and footer.
+Decided in the spec: the row names above, "For the admin", "Blocked stores", "Source code", "Acknowledgements", and the Sign out warnings. Decided in the spec, marked as drafts there: the help line on Require Face ID, the For the admin footer, and the Support Wishbone header, row, and footer.
 
 **Provisional.** These are drafts:
 

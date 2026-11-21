@@ -481,7 +481,7 @@ Screens: [people](screens/people.md), [group](screens/group.md), [new-user](scre
 
 ### Scope
 
-- The app does every admin job that the API offers: New user, linking and unlinking parents, deactivate and reactivate, groups (create, rename, delete, add and remove users, nest groups), shared occasions (create, edit, delete, attach groups, or mark Everyone), blocked stores, Sign-in and devices for any active user.
+- The app does every admin job that the API offers: New user, linking and unlinking parents, deactivate and reactivate, groups (create, rename, delete, add and remove users, nest groups), shared occasions (create, edit, delete, attach groups, or mark Everyone), blocked stores, and Sign-in and devices for any active user.
 - There is no Admin tab. Each admin part shows from `is_admin` or a `can_*` field, so an everyday user never meets one.
 - The app never names a CLI command or an environment variable. The UI says "the person who runs Wishbone". Code and docs say **operator**.
 
@@ -509,7 +509,7 @@ The People page is reached from the "People" heading on Home, and from a sidebar
 
 1. Everyone's parts: Your children, Your parents, and your groups.
 2. **For the admin**: **All users** (every user by name, searchable, with "Deactivated" beside a deactivated user, which is also how to reach a user in no group), **All groups**, and **Deactivated**.
-4. **New user** and **New group**, in the toolbar's add menu.
+3. **New user** and **New group**, in the toolbar's add menu.
 
 **Provisional.** Plain default: a system list in the order above. The add menu's symbol is `person.badge.plus`, so that it differs from the tab bar's plus.
 

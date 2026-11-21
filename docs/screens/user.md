@@ -71,7 +71,7 @@ The item rows have the actions of a [list's page](list.md): I'll get this, Open,
 
 ## Words
 
-Decided in the spec, some marked as drafts there: the For rows, "Deactivated", the deactivated lines for a parent and for the admin, the admin's-access line, Decided, as the web app has them: "Good to know", "Other lists", "For {name}", "{n} of {m} still wanted", "Always wanted", "You claimed {n}".
+Decided in the spec, some marked as drafts there: the For rows, "Deactivated", the deactivated lines for a parent and for the admin, and the admin's-access line. Decided, as the web app has them: "Good to know", "Other lists", "For {name}", "{n} of {m} still wanted", "Always wanted", "You claimed {n}".
 
 **Provisional.** These are drafts:
 
