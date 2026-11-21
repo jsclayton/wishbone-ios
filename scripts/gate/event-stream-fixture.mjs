@@ -6,7 +6,8 @@ const event = (kind, rest) => record('event', { kind, ...rest });
 
 /**
  * `tests` maps a test's ID, such as `Tests.Suite/adds()/Suite.swift:5:4`, to how it ends: `pass`, `fail`,
- * `known` (it passes with a known issue), or `skip`. `ended: false` leaves the summary out, as a run that died.
+ * `known` (it passes with a known issue), `skip`, `cancel` (the test calls `Test.cancel`), or `cancel-case` (one
+ * case of a parameterized test calls it). `ended: false` leaves the summary out, as a run that died.
  */
 export function eventStream(tests, { ended = true } = {}) {
   const lines = [];
@@ -22,6 +23,13 @@ export function eventStream(tests, { ended = true } = {}) {
       continue;
     }
     lines.push(event('testStarted', { testID: id, messages: [] }));
+    // Swift Testing writes no message for a cancelled test or case, and counts neither as an issue.
+    if (outcome === 'cancel') lines.push(event('testCancelled', { testID: id, messages: [] }));
+    if (outcome === 'cancel-case') {
+      lines.push(event('testCaseStarted', { testID: id, messages: [] }));
+      lines.push(event('testCaseCancelled', { testID: id, messages: [] }));
+      lines.push(event('testCaseEnded', { testID: id, messages: [] }));
+    }
     if (outcome === 'fail' || outcome === 'known') {
       issues += 1;
       if (outcome === 'known') known += 1;

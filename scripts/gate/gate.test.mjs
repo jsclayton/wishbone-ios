@@ -133,6 +133,14 @@ test('a skip that is not on the named list fails, and one that is on it passes',
   assert.match(named.line, /^GATE PASS package=3 /);
 });
 
+test('a test that cancels itself fails like a skip, and gives no reason to raise the floor', async (t) => {
+  const { root, options, lines } = gateIn(t);
+  const tests = { ...twoPassing, 'Tests.Suite/cancels()/S.swift:3:2': 'cancel' };
+  const result = await runGate({ ...options, steps: [testStep(root, tests)], floor: { package: 2, hosted: 0, ui: 0 } });
+  assert.equal(result.line, 'GATE FAIL step 1 (package): 1 skipped, and not on the named list: Tests.Suite/cancels()');
+  assert.equal(lines().some((line) => line.startsWith('note:')), false);
+});
+
 test('a step past its limit fails the gate, and the next step does not run', async (t) => {
   const { root, options } = gateIn(t);
   const later = path.join(root, 'later-ran');

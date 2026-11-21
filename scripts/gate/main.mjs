@@ -17,10 +17,14 @@ const runDirectory = path.join(gateDirectory, 'run');
 const floorFile = path.join(root, 'scripts', 'gate', 'floor.json');
 const packageEvents = path.join(runDirectory, 'package-events.jsonl');
 
-// The tests that may be skipped. Each entry is a test's name as the gate prints it (`Module.Suite/function()`),
-// with a comment that says why. A skipped test that is not here fails the gate.
+// The tests that may be skipped, or may cancel themselves. Each entry is a test's name as the gate prints it
+// (`Module.Suite/function()`), with a comment that says why. A skipped or cancelled test that is not here fails
+// the gate.
 const allowedSkips = [];
 
+// Keep the sum of the steps' limits under the Gate job's `timeout-minutes` in .github/workflows/ci.yml. If the
+// sum is over it, the job's limit can cut the gate off before a step's limit does, and the run ends with no
+// result line. A step that is skipped gets its limit when it gets its command.
 const steps = [
   {
     name: 'lint',

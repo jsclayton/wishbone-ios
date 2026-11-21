@@ -46,6 +46,20 @@ test('a skipped test fails unless it is on the named list', () => {
   assert.equal(judge(reading, ['Tests.Suite/off()']), null);
 });
 
+test('a test that cancels itself is a skip', () => {
+  const reading = readEventStream(eventStream({ 'Tests.Suite/a()/S.swift:1:2': 'pass', 'Tests.Suite/cancels()/S.swift:2:2': 'cancel' }));
+  assert.equal(reading.tests, 2, 'Swift Testing counts a cancelled test');
+  assert.deepEqual(reading.skipped, ['Tests.Suite/cancels()']);
+  assert.equal(judge(reading), '1 skipped, and not on the named list: Tests.Suite/cancels()');
+  assert.equal(judge(reading, ['Tests.Suite/cancels()']), null);
+});
+
+test('a test with a cancelled case is a skip', () => {
+  const reading = readEventStream(eventStream({ 'Tests.Suite/a()/S.swift:1:2': 'pass', 'Tests.Suite/cases(n:)/S.swift:2:2': 'cancel-case' }));
+  assert.deepEqual(reading.skipped, ['Tests.Suite/cases(n:)']);
+  assert.equal(judge(reading), '1 skipped, and not on the named list: Tests.Suite/cases(n:)');
+});
+
 test('a skipped suite is not a skipped test', () => {
   const suite = JSON.stringify({ kind: 'event', payload: { kind: 'testSkipped', testID: 'Tests.Suite' }, version: 0 });
   const text = eventStream({ 'Tests.Suite/off()/S.swift:2:2': 'skip' });

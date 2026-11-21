@@ -71,7 +71,9 @@ jobs:
               exit 0
             fi
           fi
-          files=$(git diff --name-only "$base" HEAD)
+          # --no-renames lists both names of a renamed file. With only the new
+          # name, a source file that moves into docs/ would read as docs only.
+          files=$(git diff --name-only --no-renames "$base" HEAD)
           printf 'Changed files:\n%s\n' "$files"
 
           docs_only='^(docs/|LICENSE$|\.github/ISSUE_TEMPLATE/|\.github/pull_request_template\.md$)|\.md$'
@@ -89,8 +91,8 @@ jobs:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: xcode-27
-    # Above the sum of the limits of the gate's steps, so that a hung step is
-    # stopped by the gate, which says which step it was.
+    # Above the sum of the limits of the gate's steps (scripts/gate/main.mjs),
+    # so that a hung step is stopped by the gate, which says which step it was.
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

@@ -14,7 +14,8 @@ function testName(id) {
  * Reads an event stream.
  *
  * Returns `{ tests, failed, known, skipped, strayIssues, summary }`. `tests` is the count in Swift Testing's
- * summary, or null when the stream has no summary: the run didn't finish. The lists hold test names.
+ * summary, or null when the stream has no summary: the run didn't finish. The lists hold test names. `skipped`
+ * holds each test that was skipped, that cancelled itself, or that had a case cancelled.
  */
 export function readEventStream(text) {
   const kinds = new Map();
@@ -45,7 +46,11 @@ export function readEventStream(text) {
         else list.add(testName(payload.testID));
         break;
       }
+      // A test that cancels itself (`Test.cancel`) is a skip from inside the test. In a parameterized test, the
+      // call cancels one case, and the event names the test. Either way, some of the test didn't run.
       case 'testSkipped':
+      case 'testCancelled':
+      case 'testCaseCancelled':
         // A suite that is skipped reports each of its tests too.
         if (kinds.get(payload.testID) !== 'suite') skipped.add(testName(payload.testID));
         break;
@@ -87,7 +92,7 @@ function listed(names, limit = 10) {
  * Says why a reading fails the gate, or null when it passes.
  *
  * It fails on a run with no summary, on any failure or recorded issue (a known issue is a recorded issue), on a
- * run with 0 tests, and on a skipped test that is not in `allowedSkips`.
+ * run with 0 tests, and on a skipped or cancelled test that is not in `allowedSkips`.
  */
 export function judge(reading, allowedSkips = []) {
   if (reading.tests === null) return 'the test run has no summary';

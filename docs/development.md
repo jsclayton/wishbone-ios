@@ -120,7 +120,7 @@ docs/               The spec, the ADRs, and the guides
 ### A real server
 
 - The session model's tests run against a real Wishbone server, built from a pinned commit (see [ADR 0007](adr/0007-the-tests-run-against-a-real-wishbone-server-built-from-a-pinned-commit.md)).
-- One file holds the pinned commit, beside the copy of the server's OpenAPI document and the app's minimum server version. All three change together, in one commit.
+- One file holds the pinned commit, beside the copy of the server's OpenAPI document and the app's minimum server version. All three change together, in one commit. The file's name starts with `server-pin`: CI finds it by that name.
 - A script fetches the pinned commit over HTTPS, builds it with `-tags e2e`, and stamps its version. An unstamped build reports `dev`, which the app's version check refuses. Go's version comes from that commit's `go.mod`, through mise. The built server is reused until the pin moves.
 - A test that needs the server fails, never skips, when Go or the server is missing.
 
@@ -136,7 +136,7 @@ docs/               The spec, the ADRs, and the guides
 - `ScratchDirectory` in `TestSupport` is the one place where a test names a temporary folder. A fitness test bans `temporaryDirectory`, `NSTemporaryDirectory(`, and `mkdtemp(` everywhere else.
 - Each test process has one root. A folder is removed when its last holder goes, and the root is removed when the process exits. At the next start, the roots of dead processes are removed.
 - Each server's data folder is under that root, with its process ID beside it. A server stops when its holder goes, and when its test process exits. The sweep at start-up stops a server whose test process is dead before it removes the root, so a crashed run cleans up too.
-- The built server and its source live in the checkout's build folder, one for each pin. Moving the pin deletes the old one.
+- The built server and its source live in the checkout's build folder, under `build/server/`, one for each pin. Moving the pin deletes the old one.
 
 ### What a real server can't do: the network conditioner
 
@@ -196,10 +196,11 @@ The gate reads its own results:
 - It counts the tests from Swift Testing's summary and from each result bundle.
 - It fails on any failure or recorded issue, on a bundle with 0 tests, and on a skip that is not on a short named list.
 - A known issue is a recorded issue, so it fails too.
+- A test that cancels itself with `Test.cancel`, or that has a case cancelled, is a skip.
 - It fails when a count falls below the **floor**: the counts (package, hosted, and UI) in a small file in git, `scripts/gate/floor.json`. A change that adds tests can raise the floor. A commit that lowers it must say why.
 - The named list of skips is `allowedSkips` in `scripts/gate/main.mjs`. Each entry has a comment that says why.
 - It ends with one line, for example `GATE PASS package=412 hosted=38 ui=7 · 4m12s`, or `GATE FAIL step 3 (package): 2 failed`, then the names of the failed tests. A pull request quotes that line.
-- A step that the gate skips is named in that line.
+- A gate that passes names each step that it skipped in that line.
 
 What "zero warnings" means in the build step:
 
@@ -232,7 +233,7 @@ None.
 
 - GitHub Actions runs the same `just gate`, on a macOS runner with the pinned Xcode, for every pull request and on `main`. The runner is GitHub's `xcode-27` image.
 - CI builds unsigned, with no secrets, so a fork's pull request runs the whole gate.
-- CI caches the built server, Go's caches, and SwiftPM's, keyed on the pin and `Package.resolved`.
+- CI caches the built server, Go's caches, and SwiftPM's, keyed on the pin and `Package.resolved`. The workflow finds the pin file by its name (`server-pin`, in any folder) and caches `build/server/`. A pin file with another name, or a server built in another folder, gets no cache and no error.
 - The workflows and the required checks are in [`workflow.md`](workflow.md#ci).
 
 ## Releases
