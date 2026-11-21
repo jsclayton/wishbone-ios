@@ -69,10 +69,14 @@ struct SessionKeychainTests {
     let storage = URL.cachesDirectory.appending(path: "SignOutTest-\(UUID().uuidString)", directoryHint: .isDirectory)
     defer { try? FileManager.default.removeItem(at: storage) }
     let sessions = storage.appending(path: "Sessions", directoryHint: .isDirectory)
+    // The session is this install's: its marker is placed.
+    let marker = FileInstallMarker(container: storage)
+    try marker.place()
 
     let device = Device(
       Device.Setup(
-        userAgent: UserAgent(version: "1.0", isPad: false), keychain: keychain, storage: .folder(storage)))
+        userAgent: UserAgent(version: "1.0", isPad: false), keychain: keychain, marker: marker,
+        storage: .folder(storage)))
     #expect(device.session != nil)
     let folders = try FileManager.default.contentsOfDirectory(at: sessions, includingPropertiesForKeys: nil)
     #expect(folders.count == 1)
