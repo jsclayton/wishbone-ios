@@ -11,7 +11,8 @@ enum StringScan {
   /// Banned where the UI is: `WishboneUI` and the three targets. Each joins text into a UI string.
   static let inUI = [
     #"\)\s*\+\s*Text\s*\("#: "Text joined to Text",
-    #""\s*\+|\+\s*#*""#: "a string joined with +",
+    #""\s*\+|\+=?\s*#*""#: "a string joined with +",
+    #"\.appending\s*\(\s*#*""#: "a string joined with appending()",
     #"\.joined\s*\("#: "strings joined with joined()",
   ]
 
@@ -88,6 +89,9 @@ struct StringScanTests {
       #"let title = name + "'s profile""#,
       #"let title = "Edit " + name"#,
       ##"let title = name + #"'s profile"#"##,
+      #"title += " (shared)""#,
+      ##"title += #" (shared)"#"##,
+      #"let title = name.appending("'s profile")"#,
       #"let people = names.joined(separator: ", ")"#,
     ]
   )
@@ -102,6 +106,8 @@ struct StringScanTests {
     let source = """
       Text("Edit \\(name)'s profile", bundle: #bundle)
       let width = base + 12
+      total += 1
+      let folder = root.appending(path: "Lists")
       // Text(verbatim: name) + "a" + "b"
       """
     #expect(StringScan.findings(in: [SourceFile(path: "Planted.swift", source: source)]) { _ in true }.isEmpty)

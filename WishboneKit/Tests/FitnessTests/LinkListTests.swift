@@ -38,21 +38,27 @@ struct LinkListTests {
 
   @Test("A target imports only the modules on its list", arguments: linkLists.keys.sorted())
   func imports(target: String) throws {
-    let allowed = Set(linkLists[target] ?? [])
+    let list = linkLists[target] ?? []
     let findings = Imports.findings(in: try Repo.swiftFiles(under: [target])) { module in
-      (module.hasPrefix("Wishbone") || module == "TestSupport") && !allowed.contains(module)
+      isOurs(module) && !list.contains(module)
     }
     #expect(findings.isEmpty, "\(findings.report)")
   }
 
-  @Test("No module imports WishboneDiagnostics or TestSupport")
-  func moduleImports() throws {
-    let modules = try Repo.swiftFiles(under: [Repo.modules]).filter {
-      !$0.path.hasPrefix(Repo.module("WishboneDiagnostics") + "/")
-        && !$0.path.hasPrefix(Repo.module("TestSupport") + "/")
+  /// The libraries are static, so a target carries every module that a module on its list imports. This test
+  /// keeps a target from carrying a module that is not on its list.
+  @Test("A module on a target's list imports only the modules on that list", arguments: linkLists.keys.sorted())
+  func moduleImports(target: String) throws {
+    let list = linkLists[target] ?? []
+    let findings = Imports.findings(in: try Repo.swiftFiles(under: list.map(Repo.module))) { module in
+      isOurs(module) && !list.contains(module)
     }
-    let findings = Imports.findings(in: modules) { $0 == "WishboneDiagnostics" || $0 == "TestSupport" }
     #expect(findings.isEmpty, "\(findings.report)")
+  }
+
+  /// Whether the module is one of the package's.
+  private func isOurs(_ module: String) -> Bool {
+    module.hasPrefix("Wishbone") || module == "TestSupport"
   }
 
   @Test("The scan reads every form of import")

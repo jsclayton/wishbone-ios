@@ -41,15 +41,31 @@ struct StringCatalog: Decodable {
   ///
   /// A key that the build found in the code is its own English, so it needs none written out. A key that a person
   /// added by hand has no English until someone writes it. English that is written out must be whole: not empty,
-  /// and not waiting for review.
+  /// and not waiting for review. The build writes the `defaultValue:` of a string in the state `new`, and that
+  /// English is whole too.
   var keysWithoutEnglish: [String] {
     strings.filter { key, entry in
       guard let english = entry.localizations?[sourceLanguage] else {
         return entry.extractionState == "manual" || key.allSatisfy(\.isWhitespace)
       }
-      return english.units.isEmpty || english.units.contains { $0.state != "translated" || $0.value.isEmpty }
+      let fromTheBuild = entry.extractionState == "extracted_with_value"
+      return english.units.isEmpty
+        || english.units.contains { unit in
+          unit.value.isEmpty || !(unit.state == "translated" || (unit.state == "new" && fromTheBuild))
+        }
     }.keys.sorted()
   }
+
+  /// The String Catalogs that are out of place. The package has one, in `WishboneUI`. A target may hold only
+  /// `InfoPlist.xcstrings`, for its permission strings. See "Strings" in `docs/architecture.md`.
+  static func outOfPlace(_ paths: [String]) -> [String] {
+    paths.filter { path in
+      let inTarget = Repo.targets.contains { path.hasPrefix("\($0)/") }
+      return inTarget ? !path.hasSuffix("/InfoPlist.xcstrings") : path != packageCatalog
+    }.sorted()
+  }
+
+  static let packageCatalog = Repo.module("WishboneUI") + "/Resources/Localizable.xcstrings"
 }
 
 @Suite("The String Catalog", .timeLimit(.minutes(1)))
@@ -65,13 +81,38 @@ struct StringCatalogTests {
     )
   }
 
-  @Test("The package has one String Catalog, in WishboneUI, in English")
+  @Test("The package has one String Catalog, in WishboneUI, and a target holds only InfoPlist.xcstrings")
   func oneCatalog() throws {
-    let inPackage = catalogs.keys.filter { $0.hasPrefix(Repo.modules + "/") }
-    #expect(inPackage == [Repo.module("WishboneUI") + "/Resources/Localizable.xcstrings"])
+    #expect(catalogs.keys.contains(StringCatalog.packageCatalog))
+    #expect(StringCatalog.outOfPlace(Array(catalogs.keys)) == [])
+  }
+
+  @Test("The check catches a String Catalog that is out of place")
+  func outOfPlace() {
+    let paths = [
+      StringCatalog.packageCatalog,
+      "Wishbone/InfoPlist.xcstrings",
+      "Wishbone/Localizable.xcstrings",
+      "ShareExtension/Strings/Other.xcstrings",
+      "WishboneKit/Sources/WishboneAPI/Resources/Localizable.xcstrings",
+      "WishboneKit/Sources/WishboneUI/Resources/Other.xcstrings",
+    ]
+    #expect(
+      StringCatalog.outOfPlace(paths) == [
+        "ShareExtension/Strings/Other.xcstrings",
+        "Wishbone/Localizable.xcstrings",
+        "WishboneKit/Sources/WishboneAPI/Resources/Localizable.xcstrings",
+        "WishboneKit/Sources/WishboneUI/Resources/Other.xcstrings",
+      ]
+    )
+  }
+
+  @Test("Every String Catalog is in English, and the package's has strings")
+  func english() throws {
     #expect(catalogs.values.allSatisfy { $0.sourceLanguage == "en" })
     // The signed-out screen has strings, so an empty catalog is one that the build never filled.
-    #expect(catalogs.values.contains { !$0.strings.isEmpty })
+    let package = try #require(catalogs[StringCatalog.packageCatalog])
+    #expect(!package.strings.isEmpty)
   }
 
   @Test("No String Catalog has a stale entry")
@@ -105,6 +146,14 @@ struct StringCatalogTests {
               "other" : { "stringUnit" : { "state" : "translated", "value" : "%lld gifts" } }
             } } } }
           },
+          "reminder.title" : {
+            "extractionState" : "extracted_with_value",
+            "localizations" : { "en" : { "stringUnit" : { "state" : "new", "value" : "A birthday is soon" } } }
+          },
+          "reminder.body" : {
+            "extractionState" : "extracted_with_value",
+            "localizations" : { "en" : { "stringUnit" : { "state" : "new", "value" : "" } } }
+          },
           "Old words" : { "extractionState" : "stale" },
           "signedOut.title" : { "extractionState" : "manual" },
           "empty.english" : {
@@ -131,6 +180,9 @@ struct StringCatalogTests {
     )
     #expect(catalog.staleKeys == ["Old words"])
     #expect(
-      catalog.keysWithoutEnglish == ["%lld lists", "empty.english", "new.english", "only.french", "signedOut.title"])
+      catalog.keysWithoutEnglish == [
+        "%lld lists", "empty.english", "new.english", "only.french", "reminder.body", "signedOut.title",
+      ]
+    )
   }
 }

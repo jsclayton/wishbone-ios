@@ -35,6 +35,27 @@ struct SourceFile {
     return Finding(path: path, line: line, what: what)
   }
 
+  /// The opening parenthesis of the call that the index is inside, if it is inside one.
+  func openingParenthesis(around index: String.Index) -> String.Index? {
+    var depth = 0
+    var index = index
+    while index > code.startIndex {
+      index = code.index(before: index)
+      switch code[index] {
+      case ")":
+        depth += 1
+      case "(":
+        if depth == 0 {
+          return index
+        }
+        depth -= 1
+      default:
+        break
+      }
+    }
+    return nil
+  }
+
   /// The text between an opening parenthesis and the one that closes it.
   func arguments(openedAt open: String.Index) -> Substring {
     var depth = 0
