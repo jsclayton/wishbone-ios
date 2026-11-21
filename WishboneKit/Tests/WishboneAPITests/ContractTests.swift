@@ -12,9 +12,33 @@ struct ContractTests {
     let server = try await TestServer.shared()
     let served = try await TestHTTP.send("GET", server.url("/openapi")).expecting(200).json
     let copy = try JSON(parsing: Data(contentsOf: ServerBuild.current.openAPIFile))
-    #expect(copy["paths"] == served["paths"])
-    #expect(copy["components"] == served["components"])
-    #expect(copy == served, "Run `just server-openapi` to take the copy again.")
+    #expect(copy["paths"] != .null)
+    // The message names the places that differ. The documents themselves are too long to read in a failure.
+    let places = differences(between: copy, and: served)
+    #expect(
+      places.isEmpty,
+      """
+      The copy differs from the served document. The first of \(places.count) places:
+      \(places.prefix(10).joined(separator: "\n"))
+      Run `just server-openapi` to take the copy again.
+      """
+    )
+  }
+
+  /// The places where two JSON values differ, as paths such as `paths./api/v2/health.get.summary`.
+  private func differences(between copy: JSON, and served: JSON, at path: String = "") -> [String] {
+    switch (copy, served) {
+    case (.object(let copy), .object(let served)):
+      return Set(copy.keys).union(served.keys).sorted().flatMap { key in
+        differences(between: copy[key] ?? .null, and: served[key] ?? .null, at: path.isEmpty ? key : "\(path).\(key)")
+      }
+    case (.array(let copy), .array(let served)) where copy.count == served.count:
+      return zip(copy, served).enumerated().flatMap { index, pair in
+        differences(between: pair.0, and: pair.1, at: "\(path)[\(index)]")
+      }
+    default:
+      return copy == served ? [] : [path]
+    }
   }
 
   @Test("The pinned server reports the minimum server version")
