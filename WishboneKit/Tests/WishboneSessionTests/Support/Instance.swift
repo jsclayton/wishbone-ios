@@ -28,11 +28,17 @@ struct Instance {
     }
   }
 
-  /// A device as the app's composition root builds it, with the test's keychain.
-  func device(storage: SessionStorage = .memory, clock: any Clock<Duration> = ContinuousClock()) -> Device {
+  /// A device as the app's composition root builds it, with the test's keychain. Its time zone is the one given,
+  /// so a test never depends on the zone of the Mac that runs it.
+  func device(
+    storage: SessionStorage = .memory,
+    clock: any Clock<Duration> = ContinuousClock(),
+    timeZone: TimeZoneSource = .fixed("UTC")
+  ) -> Device {
     Device(
       Device.Setup(
-        userAgent: UserAgent(version: "1.0", isPad: false), keychain: keychain, storage: storage, clock: clock))
+        userAgent: UserAgent(version: "1.0", isPad: false), keychain: keychain, storage: storage, clock: clock,
+        timeZone: timeZone))
   }
 
   /// A user with the items on their primary list, in order.

@@ -58,6 +58,11 @@ public struct APIClient: Sendable {
     try await load(.me)
   }
 
+  /// `PATCH /users/me` with the time zone: sets the IANA zone on the session's own user, and gives back the user.
+  public func reportTimeZone(_ identifier: String) async throws(APIError) -> User {
+    try await load(.reportTimeZone(identifier))
+  }
+
   /// `GET /lists/{id}/items`: every item on the list, in the list's order. It follows `next_cursor` to the last
   /// page.
   public func items(ofList id: String) async throws(APIError) -> [Item] {

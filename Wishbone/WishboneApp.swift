@@ -8,6 +8,9 @@ struct WishboneApp: App {
   /// The one device of the app. Every window scene reads it from the environment.
   @State private var device = Device(.app)
 
+  /// The phase of the whole app: active while any window is in the foreground.
+  @Environment(\.scenePhase) private var scenePhase
+
   var body: some Scene {
     WindowGroup {
       WindowRoot()
@@ -15,6 +18,12 @@ struct WishboneApp: App {
         #if DEBUG
           .task { await Journey.pasteLoginLink(into: device) }
         #endif
+    }
+    .onChange(of: scenePhase) { _, phase in
+      // Each time the app comes to the foreground, the session syncs and reports the time zone. Nothing waits for
+      // it. See "Time zone" in `docs/spec.md`.
+      guard phase == .active, let session = device.session else { return }
+      Task { await session.cameToForeground() }
     }
   }
 }
