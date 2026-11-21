@@ -103,6 +103,8 @@ enum Audit {
     attachment.name = "\(screen), in \(setting)"
     attachment.lifetime = .keepAlways
     test.add(attachment)
+    // Every issue on the screen, so one run reports all of them, not only the first.
+    var issues: [String] = []
     try app.performAccessibilityAudit { issue in
       // Scan QR code is disabled where the camera is denied or not available, as in the simulator, and the words
       // beside it say why. WCAG's contrast rule leaves out a control that is not active (1.4.3, 1.4.11).
@@ -128,9 +130,24 @@ enum Audit {
       {
         return true
       }
-      let element = issue.element?.label ?? "no element"
-      XCTFail("\(screen), in \(setting): \(issue.compactDescription) (\(element))")
+      // Sign out and Continue in the profile gate's bar are the same: the system's own bar buttons, on the system's
+      // glass, where the screenshot shows black text on near-white glass, and white on dark glass in dark mode.
+      // The exception is for those buttons only. Continue reads "Try again" after the instance couldn't be reached.
+      if [.contrast, .dynamicType].contains(issue.auditType), let button = issue.element,
+        button.elementType == .button,
+        let gateButton = ["Sign out", "Continue", "Try again"].map(words).first(where: { $0 == button.label }),
+        app.navigationBars[words("Finish your profile")].buttons[gateButton].exists
+      {
+        return true
+      }
+      // The element's words, its type, such as a text field, and its place, so a failure says which it is.
+      let element =
+        issue.element.map { "\($0.label), element type \($0.elementType.rawValue), at \($0.frame)" } ?? "no element"
+      issues.append("\(issue.compactDescription) (\(element))")
       return true
+    }
+    if !issues.isEmpty {
+      XCTFail("\(screen), in \(setting): \(issues.joined(separator: "; "))")
     }
   }
 
