@@ -16,6 +16,9 @@ struct TimeZoneTests {
 
   let instance: Instance
 
+  /// The one window of the app, as it comes to the foreground.
+  let window = UUID()
+
   init() async throws {
     instance = try await Instance()
   }
@@ -40,7 +43,7 @@ struct TimeZoneTests {
     // The report's answer is the user's record, and it is in the copy. So the next sync fetches no user.
     await until { session.user?.record?.timezone == .shown("Europe/Paris") }
     let mark = instance.conditioner.requests.count
-    await session.sync()
+    await session.syncNow()
     let fetched = instance.conditioner.requests.dropFirst(mark).map(\.target)
     #expect(fetched.first == "/api/v2/versions")
     #expect(!fetched.contains { $0 == "/api/v2/users/\(robin.id)" || $0.hasPrefix("/api/v2/users?limit=") })
@@ -54,7 +57,7 @@ struct TimeZoneTests {
     let device = instance.device(timeZone: .fixed("America/Denver"))
     await device.signIn(pasting: try await instance.loginLink(for: robin))
     let session = try #require(device.session)
-    await session.cameToForeground()
+    await session.cameToForeground(window: window)
 
     #expect(!instance.conditioner.requests.contains { $0.method == "PATCH" })
     #expect(try await recordedZone(of: robin) == "America/Denver")
@@ -70,10 +73,10 @@ struct TimeZoneTests {
     #expect(try await recordedZone(of: robin) == "Europe/Paris")
 
     zone.name.withLock { $0 = "Asia/Tokyo" }
-    await session.cameToForeground()
+    await session.cameToForeground(window: window)
     #expect(try await recordedZone(of: robin) == "Asia/Tokyo")
 
-    await session.cameToForeground()
+    await session.cameToForeground(window: window)
     #expect(instance.conditioner.requests.filter { $0.isOn(Self.patchMe) }.count == 2)
   }
 
@@ -89,7 +92,7 @@ struct TimeZoneTests {
       let device = instance.device(storage: .folder(folder.url), timeZone: .fixed("Europe/Paris"))
       await device.signIn(pasting: try await instance.loginLink(for: robin))
       // The report changed the user's record. This sync brings the copy in step with it.
-      try await #require(device.session).cameToForeground()
+      try await #require(device.session).cameToForeground(window: window)
     }
     #expect(try await recordedZone(of: robin) == "Europe/Paris")
 
@@ -97,7 +100,7 @@ struct TimeZoneTests {
     let relaunched = instance.device(storage: .folder(folder.url), timeZone: .fixed("Asia/Tokyo"))
     let session = try #require(relaunched.session)
     let mark = instance.conditioner.requests.count
-    await session.cameToForeground()
+    await session.cameToForeground(window: window)
 
     // After the version check, the sync is one request, which the instance answers with a 304. So the record's zone
     // comes from the copy.
@@ -129,7 +132,7 @@ struct TimeZoneTests {
     #expect(try await recordedZone(of: robin) == nil)
 
     instance.conditioner.passEverything()
-    await session.cameToForeground()
+    await session.cameToForeground(window: window)
     #expect(try await recordedZone(of: robin) == "Australia/Sydney")
     #expect(!session.isInstanceUnreachable)
   }
@@ -144,7 +147,7 @@ struct TimeZoneTests {
     #expect(try await recordedZone(of: robin) == nil)
 
     instance.conditioner.passEverything()
-    await session.cameToForeground()
+    await session.cameToForeground(window: window)
     #expect(try await recordedZone(of: robin) == "Europe/Paris")
   }
 
@@ -154,7 +157,7 @@ struct TimeZoneTests {
     let device = instance.device(timeZone: .fixed("Pacific/Auckland"))
     await device.signIn(pasting: try await instance.loginLink(for: family.parent))
     let session = try #require(device.session)
-    await session.cameToForeground()
+    await session.cameToForeground(window: window)
 
     let patches = instance.conditioner.requests.filter { $0.method == "PATCH" }
     #expect(!patches.isEmpty)

@@ -14,6 +14,9 @@ struct SignOutTests {
 
   let instance: Instance
 
+  /// The one window of the app, as it comes to the foreground.
+  let window = UUID()
+
   init() async throws {
     instance = try await Instance()
   }
@@ -170,8 +173,8 @@ struct SignOutTests {
     #expect(first.memberships.isEmpty)
     #expect(first.user(id: robin.id) == nil)
     let asked = instance.conditioner.requests.count
-    await first.sync()
-    await first.cameToForeground()
+    await first.syncNow()
+    await first.cameToForeground(window: window)
     #expect(instance.conditioner.requests.count == asked)
   }
 

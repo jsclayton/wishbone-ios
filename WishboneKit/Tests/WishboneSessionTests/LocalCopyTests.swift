@@ -41,7 +41,7 @@ struct LocalCopyTests {
     #expect(relaunched.signInState == .plain)
 
     // Unreachable never ends the session, and the copy stays.
-    await session.sync()
+    await session.syncNow()
     #expect(session.isInstanceUnreachable)
     #expect(relaunched.session != nil)
     #expect(session.primaryListItems.map(\.title) == ["Kite", "Puzzle"])
@@ -62,7 +62,7 @@ struct LocalCopyTests {
     try await own.send("DELETE", "/items/\(tent.id)").expecting(204)
     _ = try await instance.builder.item("Bike", on: try await instance.builder.primaryList(of: robin), as: robin)
 
-    await session.sync()
+    await session.syncNow()
     await until { session.primaryListItems.map(\.title) == ["Kite", "Jigsaw", "Bike"] }
     #expect(!session.isInstanceUnreachable)
   }
@@ -140,7 +140,7 @@ struct LocalCopyTests {
     #expect(session.primaryListItems.isEmpty)
     // The file is a database again, in the same place.
     #expect(try Data(contentsOf: file).starts(with: Data("SQLite format 3".utf8)))
-    await session.sync()
+    await session.syncNow()
     await until { session.primaryListItems.map(\.title) == ["Kite"] }
   }
 

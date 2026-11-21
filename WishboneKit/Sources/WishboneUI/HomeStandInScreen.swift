@@ -27,7 +27,6 @@ struct HomeStandInScreen: View {
       }
     }
     .navigationTitle(Text(session.primaryList?.name ?? session.user?.name ?? ""))
-    .refreshable { await session.sync() }
   }
 
   private var cantReach: some View {
@@ -45,7 +44,7 @@ struct HomeStandInScreen: View {
       }
     } actions: {
       Button {
-        Task { await session.sync() }
+        Task { await session.syncNow() }
       } label: {
         Text("Try again", bundle: #bundle)
           .frame(minHeight: 44)

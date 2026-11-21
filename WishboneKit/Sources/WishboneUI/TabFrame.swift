@@ -80,6 +80,9 @@ public struct TabFrame: View {
     // The plus opens the Add screen with its field ready.
     .tabViewSearchActivation(.searchTabSelection)
     .tabViewSidebarFooter { shortcuts }
+    // Pull to refresh, on every screen of every tab that scrolls. It syncs everything, and ends when the sync
+    // ends. See "What every screen shares" in `docs/screens/README.md`.
+    .refreshable { await session.syncNow() }
     .sheet(isPresented: $isShowingSettings) {
       SettingsSheet(session: session)
     }

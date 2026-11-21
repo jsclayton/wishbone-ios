@@ -18,6 +18,9 @@ struct VersionBlockTests {
 
   let instance: Instance
 
+  /// The one window of the app, as it comes to the foreground.
+  let window = UUID()
+
   init() async throws {
     instance = try await Instance()
   }
@@ -52,7 +55,7 @@ struct VersionBlockTests {
 
     try instanceRuns("2.1.9+0ld0ld0")
     let pulls = count(Self.versions)
-    await session.cameToForeground()
+    await session.cameToForeground(window: window)
 
     #expect(session.versionBlock == .instanceTooOld(version: "2.1.9", minimum: minimumServerVersion))
     // The session stays, with its copy, and nothing is asked of an instance that the app can't work with.
@@ -60,7 +63,7 @@ struct VersionBlockTests {
     #expect(instance.keychain.read() == kept)
     #expect(session.primaryListItems.map(\.title) == ["Kite"])
     #expect(count(Self.versions) == pulls)
-    await session.sync()
+    await session.syncNow()
     #expect(count(Self.versions) == pulls)
   }
 
@@ -72,7 +75,7 @@ struct VersionBlockTests {
     let session = try #require(device.session)
 
     try instanceRuns("2.1.9")
-    await session.cameToForeground()
+    await session.cameToForeground(window: window)
     #expect(session.versionBlock != nil)
 
     // Try again, with the instance still too old: the block stays.
@@ -90,10 +93,10 @@ struct VersionBlockTests {
 
     // At a foreground, the check lifts it too.
     try instanceRuns("2.1.9")
-    await session.cameToForeground()
+    await session.cameToForeground(window: window)
     #expect(session.versionBlock != nil)
     instance.conditioner.passEverything()
-    await session.cameToForeground()
+    await session.cameToForeground(window: window)
     #expect(session.versionBlock == nil)
     #expect(device.session === session)
   }
@@ -105,18 +108,18 @@ struct VersionBlockTests {
     let session = try #require(device.session)
 
     try instanceRuns("2.1.9")
-    await session.cameToForeground()
+    await session.cameToForeground(window: window)
     instance.conditioner.passEverything()
     instance.conditioner.dropEverything()
-    await session.cameToForeground()
+    await session.cameToForeground(window: window)
     #expect(session.versionBlock == .instanceTooOld(version: "2.1.9", minimum: minimumServerVersion))
 
     // With no block, the check that can't reach the instance holds nothing back: the sync says it can't reach it.
     instance.conditioner.passEverything()
-    await session.cameToForeground()
+    await session.cameToForeground(window: window)
     #expect(session.versionBlock == nil)
     instance.conditioner.dropEverything()
-    await session.cameToForeground()
+    await session.cameToForeground(window: window)
     #expect(session.versionBlock == nil)
     #expect(session.isInstanceUnreachable)
   }
@@ -130,7 +133,7 @@ struct VersionBlockTests {
     // An instance below the minimum has no GET /versions.
     try instanceRuns("2.1.9")
     instance.conditioner.answer(Self.versions, with: try .problem(404, code: "not_found"))
-    await session.sync()
+    await session.syncNow()
 
     #expect(session.versionBlock == .instanceTooOld(version: "2.1.9", minimum: minimumServerVersion))
     #expect(!session.isInstanceUnreachable)
@@ -145,7 +148,7 @@ struct VersionBlockTests {
     let kept = try #require(instance.keychain.read())
 
     instance.conditioner.answer(Self.versions, with: try .problem(410, code: "api_version_removed"))
-    await session.sync()
+    await session.syncNow()
 
     #expect(session.versionBlock == .appTooOld)
     #expect(device.session === session)
@@ -154,7 +157,7 @@ struct VersionBlockTests {
 
     // Only an update of the app lifts it: a version check that passes does not.
     let pulls = count(Self.versions)
-    await session.cameToForeground()
+    await session.cameToForeground(window: window)
     #expect(session.versionBlock == .appTooOld)
     #expect(count(Self.versions) == pulls)
   }
@@ -169,10 +172,10 @@ struct VersionBlockTests {
     // The device moves to another zone, so the next foreground reports it.
     let moved = instance.device(timeZone: .fixed("Europe/Paris"))
     let movedSession = try #require(moved.session)
-    await movedSession.sync()
+    await movedSession.syncNow()
     instance.conditioner.answer(Self.patchMe, with: try .problem(410, code: "api_version_removed"))
     let reports = count(Self.patchMe)
-    await movedSession.cameToForeground()
+    await movedSession.cameToForeground(window: window)
 
     #expect(count(Self.patchMe) == reports + 1)
     #expect(movedSession.versionBlock == .appTooOld)
@@ -188,7 +191,7 @@ struct VersionBlockTests {
     let page = Data("<html><body>Gone</body></html>".utf8)
     instance.conditioner.answer(
       Self.versions, with: .init(status: 410, headers: ["Content-Type": "text/html; charset=utf-8"], body: page))
-    await session.sync()
+    await session.syncNow()
 
     #expect(session.versionBlock == nil)
     #expect(session.isInstanceUnreachable)
@@ -204,7 +207,7 @@ struct VersionBlockTests {
 
     try instanceRuns("dev")
     _ = try await instance.builder.item("Tent", on: list, as: robin)
-    await session.cameToForeground()
+    await session.cameToForeground(window: window)
 
     #expect(session.versionBlock == nil)
     #expect(session.primaryListItems.map(\.title) == ["Kite", "Tent"])
@@ -253,7 +256,7 @@ struct VersionBlockTests {
     let session = try #require(device.session)
 
     try instanceRuns("2.1.9")
-    await session.cameToForeground()
+    await session.cameToForeground(window: window)
     #expect(session.versionBlock != nil)
 
     await device.signOut()

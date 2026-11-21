@@ -288,7 +288,7 @@ struct PeopleTests {
     #expect(try await family.relative.signedIn().status(of: "/users/\(family.parent.id)") == 404)
 
     let mark = relative.mark
-    await relative.session.sync()
+    await relative.session.syncNow()
     try await inStep(relative)
 
     let after = try user(family.parent, in: relative.session)
@@ -321,7 +321,7 @@ struct PeopleTests {
     try await family.admin.signedIn().send(
       "DELETE", "/groups/\(family.household.id)/users/\(family.parent.id)"
     ).expecting(204)
-    await relative.session.sync()
+    await relative.session.syncNow()
     try await inStep(relative)
     let session = relative.session
     #expect(try user(family.parent, in: session).isSummary)
@@ -330,13 +330,13 @@ struct PeopleTests {
     try await family.child.signedIn().send("PATCH", "/users/me", json: ["name": .string(builder.name("Robyn"))])
       .expecting(200)
     let hold = relative.instance.conditioner.hold(Route("GET", "/users/{id}"), at: .request)
-    async let syncing: Void = session.sync()
+    async let syncing = session.syncNow()
     await hold.waitUntilHeld()
     // The parent changes their name while that fetch is on its way.
     let renamed = builder.name("Morgana")
     try await family.parent.signedIn().send("PATCH", "/users/me", json: ["name": .string(renamed)]).expecting(200)
     hold.release()
-    await syncing
+    _ = await syncing
 
     // The body came with the new name, which is newer than the version that the answer named for the summary.
     await until { session.users.first { $0.id == family.parent.id }?.name == renamed }
@@ -345,13 +345,13 @@ struct PeopleTests {
     // A summary has no address. The next answer names another version for it, so the pull reads the body that
     // holds it, from that body's own address.
     var mark = relative.mark
-    await session.sync()
+    await session.syncNow()
     try await inStep(relative)
     #expect(relative.asked(since: mark) == ["GET /versions", "GET /users/\(family.child.id)"])
     #expect(try user(family.parent, in: session).name == renamed)
 
     mark = relative.mark
-    await session.sync()
+    await session.syncNow()
     #expect(relative.asked(since: mark) == ["GET /versions"])
     #expect(relative.instance.conditioner.requests.last?.headers["if-none-match"] != nil)
   }
@@ -492,7 +492,7 @@ struct PeopleTests {
     let renamed = builder.name("Jordy")
     try await family.relative.signedIn().send("PATCH", "/users/me", json: ["name": .string(renamed)]).expecting(200)
     var mark = parent.mark
-    await session.sync()
+    await session.syncNow()
     try await inStep(parent)
     #expect(try user(family.relative, in: session).name == renamed)
     #expect(session.list(id: relativesList)?.name == renamed)
@@ -509,7 +509,7 @@ struct PeopleTests {
     try await family.admin.signedIn().post(
       "/groups/\(family.household.id)/users", ["user_id": .string(family.outsider.id)])
     mark = parent.mark
-    await session.sync()
+    await session.syncNow()
     try await inStep(parent)
     #expect(try !user(family.outsider, in: session).isSummary)
     #expect(session.members(.groupUsers, of: family.household.id)?.contains(family.outsider.id) == true)
@@ -536,7 +536,7 @@ struct PeopleTests {
     #expect(session.members(.usersOfOccasion, of: custom.id) == [family.child.id])
     try await family.child.signedIn().send("DELETE", "/occasions/\(custom.id)").expecting(204)
     mark = parent.mark
-    await session.sync()
+    await session.syncNow()
     try await inStep(parent)
     #expect(!session.occasions.contains { $0.id == custom.id })
     #expect(session.members(.usersOfOccasion, of: custom.id) == nil)
@@ -544,7 +544,7 @@ struct PeopleTests {
 
     // The copy agrees with that answer, so the next sync is one request, answered 304.
     mark = parent.mark
-    await session.sync()
+    await session.syncNow()
     #expect(parent.asked(since: mark) == ["GET /versions"])
     #expect(parent.instance.conditioner.requests.last?.headers["if-none-match"] != nil)
     #expect(!session.isInstanceUnreachable)
@@ -643,7 +643,7 @@ struct PeopleTests {
     // The instance has answered with the first page, and that answer is on its way.
     let hold = signed.instance.conditioner.hold(Route("GET", "/occasions"))
     var mark = signed.mark
-    async let syncing: Void = session.sync()
+    async let syncing = session.syncNow()
     await hold.waitUntilHeld()
     // The last occasion moves to an earlier date: its place is now on the first page, which is already made.
     let moved = builder.name("Moved")
@@ -652,7 +652,7 @@ struct PeopleTests {
       json: ["name": .string(moved), "rule": ["kind": "once", "year": 2039, "month": 1, "day": 1]]
     ).expecting(200)
     hold.release()
-    await syncing
+    _ = await syncing
 
     // Neither page had it. Its own address did.
     await until { session.occasions.first { $0.id == last }?.name == moved }
@@ -664,7 +664,7 @@ struct PeopleTests {
     // The fetch gave another version than the answer named, so that answer's ETag is not kept. The next sync
     // compares again, and the copy already has every version that the instance names.
     mark = signed.mark
-    await session.sync()
+    await session.syncNow()
     #expect(signed.asked(since: mark) == ["GET /versions"])
     #expect(signed.instance.conditioner.requests.last?.headers["if-none-match"] == nil)
   }
@@ -700,7 +700,7 @@ struct PeopleTests {
     #expect(session.memberships == saved.memberships)
     #expect(session.user?.id == family.child.id)
 
-    await session.sync()
+    await session.syncNow()
     #expect(session.isInstanceUnreachable)
     #expect(session.users == saved.users)
     #expect(session.memberships == saved.memberships)
@@ -728,12 +728,12 @@ struct PeopleTests {
     // The inner group goes into the outer one. The next answer of GET /versions names that.
     try await own.send("POST", "/groups/\(outer.id)/groups", json: ["group_id": .string(inner.id)]).expecting(201)
     let hold = admin.instance.conditioner.hold(Route("GET", "/groups/{id}/groups"), at: .request)
-    async let syncing: Void = session.sync()
+    async let syncing = session.syncNow()
     await hold.waitUntilHeld()
     // While the fetch is on its way, the inner group comes out again. The fetch reads the outer group as empty.
     try await own.send("DELETE", "/groups/\(outer.id)/groups/\(inner.id)").expecting(204)
     hold.release()
-    await syncing
+    _ = await syncing
     #expect(session.members(.groupGroups, of: outer.id) == [])
 
     // And it goes back in. The instance names what it named at the start of the last sync, so that sync's answer
@@ -741,7 +741,7 @@ struct PeopleTests {
     // group for good.
     try await own.send("POST", "/groups/\(outer.id)/groups", json: ["group_id": .string(inner.id)]).expecting(201)
     let mark = admin.mark
-    await session.sync()
+    await session.syncNow()
     #expect(admin.asked(since: mark).first == "GET /versions")
     #expect(admin.instance.conditioner.requests[mark].headers["if-none-match"] == nil)
     #expect(session.members(.groupGroups, of: outer.id) == [inner.id])
@@ -780,13 +780,13 @@ struct PeopleTests {
     // The instance has answered with the first page, and that answer is on its way.
     let hold = signed.instance.conditioner.hold(Route("GET", "/groups/{id}/users"))
     let mark = signed.mark
-    async let syncing: Void = session.sync()
+    async let syncing = session.syncNow()
     await hold.waitUntilHeld()
     // Another user joins before the second page is asked for. So the second page's ETag is not the first one's.
     let second = try await builder.person("Joined second", signedIn: false)
     try await admin.send("POST", "/groups/\(group.id)/users", json: ["user_id": .string(second.id)]).expecting(201)
     hold.release()
-    await syncing
+    _ = await syncing
 
     // The two pages differed, so the pull read the collection again, from its first page.
     let pages = signed.asked(since: mark).filter { $0.hasPrefix("GET /groups/\(group.id)/users") }
@@ -802,7 +802,7 @@ struct PeopleTests {
 
     // The user who joined second came after the pull read the users. The next sync brings them, and then the copy
     // agrees with the instance.
-    await session.sync()
+    await session.syncNow()
     try await inStep(signed)
   }
 }

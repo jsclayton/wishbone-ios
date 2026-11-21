@@ -54,7 +54,7 @@ struct SignedOutByServerTests {
     _ = try DatabaseFile(under: folder.url)
 
     try await revokeDevice(of: robin)
-    await session.sync()
+    await session.syncNow()
 
     #expect(device.session == nil)
     #expect(device.signInState == .signedOutByServer(try instance.address))
@@ -81,7 +81,7 @@ struct SignedOutByServerTests {
     let session = try #require(device.session)
 
     _ = try await instance.builder.deactivate(robin)
-    await session.sync()
+    await session.syncNow()
 
     #expect(device.session == nil)
     #expect(device.signInState == .signedOutByServer(try instance.address))
@@ -100,7 +100,7 @@ struct SignedOutByServerTests {
     let page = Data("<html><body>Sign in to the gateway</body></html>".utf8)
     instance.conditioner.answer(
       Self.versions, with: .init(status: 401, headers: ["Content-Type": "text/html; charset=utf-8"], body: page))
-    await session.sync()
+    await session.syncNow()
 
     #expect(device.session === session)
     #expect(session.isInstanceUnreachable)
@@ -111,7 +111,7 @@ struct SignedOutByServerTests {
 
     // The instance answers again, and the session goes on.
     instance.conditioner.passEverything()
-    await session.sync()
+    await session.syncNow()
     #expect(!session.isInstanceUnreachable)
     #expect(device.session === session)
   }
@@ -125,7 +125,7 @@ struct SignedOutByServerTests {
     let kept = try #require(instance.keychain.read())
 
     instance.conditioner.answer(Self.versions, with: try .problem(401, code: "login_link_invalid"))
-    await session.sync()
+    await session.syncNow()
 
     #expect(device.session === session)
     #expect(device.signInState == .signedIn(name: robin.name))
@@ -152,7 +152,7 @@ struct SignedOutByServerTests {
     // A sync is under way, with an answer in flight that has a new item for the copy.
     _ = try await instance.builder.item("Tent", on: list, as: robin)
     let pull = instance.conditioner.hold(Self.versions, at: .answer)
-    async let syncing: Void = session.sync()
+    async let syncing = session.syncNow()
     await pull.waitUntilHeld()
 
     // The session is revoked, and the report gets the API's own 401.
@@ -165,7 +165,7 @@ struct SignedOutByServerTests {
 
     // The pull's answer arrives after the sign-out. Nothing is written, and no database file comes back.
     pull.release()
-    await syncing
+    _ = await syncing
     await signingIn
     #expect(device.session == nil)
     #expect(device.signInState == .signedOutByServer(address))

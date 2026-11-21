@@ -92,6 +92,12 @@ public final class TestClock: Clock, Sendable {
     due.forEach { $0.continuation.resume() }
   }
 
+  /// How many sleepers wait on the clock now. A test reads it once the code under test can have started no sleep
+  /// that it still waits to place, for example after that code's next action has ended.
+  public var sleeperCount: Int {
+    state.withLock { $0.sleepers.count }
+  }
+
   /// Returns when at least `count` sleepers wait on the clock.
   public func waitForSleepers(_ count: Int = 1) async {
     await withCheckedContinuation { continuation in

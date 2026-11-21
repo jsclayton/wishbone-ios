@@ -136,16 +136,16 @@ struct FaultReportTests {
     let session = try #require(device.session)
 
     instance.conditioner.answer(Route("GET", "/versions"), with: try .problem(404, code: "not_found"))
-    await session.sync()
+    await session.syncNow()
     instance.conditioner.passEverything()
     instance.conditioner.answer(Route("GET", "/versions"), with: .init(status: 503))
-    await session.sync()
+    await session.syncNow()
     instance.conditioner.passEverything()
     instance.conditioner.dropEverything()
-    await session.sync()
+    await session.syncNow()
     instance.conditioner.passEverything()
     instance.conditioner.answer(Route("GET", "/versions"), with: try .problem(401, code: "unauthorized"))
-    await session.sync()
+    await session.syncNow()
     await until { device.session == nil }
 
     #expect(diagnostics.faults.isEmpty, "\(diagnostics.faults)")
@@ -169,7 +169,7 @@ struct FaultReportTests {
     #expect(diagnostics.version != nil)
 
     instance.conditioner.dropEverything()
-    await session.sync()
+    await session.syncNow()
     #expect(diagnostics.breadcrumbs.last == .request(.versions, .none))
 
     instance.conditioner.passEverything()

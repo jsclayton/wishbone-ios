@@ -67,7 +67,7 @@ struct PullTests {
     let before = try file.contents
     let mark = self.mark
 
-    await session.sync()
+    await session.syncNow()
 
     // One request, with no query: the server refuses any query on this route.
     #expect(asked(since: mark) == ["GET /versions"])
@@ -90,13 +90,13 @@ struct PullTests {
     try await robin.signedIn().send("PATCH", "/items/\(puzzle.id)", json: ["title": "Jigsaw"]).expecting(200)
 
     var mark = self.mark
-    await session.sync()
+    await session.syncNow()
     #expect(asked(since: mark) == ["GET /versions", "GET /items/\(puzzle.id)"])
     await until { session.primaryListItems.map(\.title) == ["Kite", "Jigsaw", "Tent"] }
 
     // The copy agrees with that answer, so its ETag is kept, and the next sync is one request again.
     mark = self.mark
-    await session.sync()
+    await session.syncNow()
     #expect(asked(since: mark) == ["GET /versions"])
     #expect(requests(since: mark).first?.headers["if-none-match"] != nil)
   }
@@ -111,7 +111,7 @@ struct PullTests {
     try await robin.signedIn().send("PATCH", "/items/\(tent.id)", json: ["position": 0]).expecting(200)
 
     let mark = self.mark
-    await session.sync()
+    await session.syncNow()
     #expect(asked(since: mark) == ["GET /versions", "GET /lists/\(list.id)/items?limit=200"])
     await until { session.primaryListItems.map(\.title) == ["Tent", "Kite", "Puzzle"] }
   }
@@ -126,7 +126,7 @@ struct PullTests {
       .expecting(200)
     try await own.send("DELETE", "/items/\(try item("Puzzle", in: session).id)").expecting(204)
 
-    await session.sync()
+    await session.syncNow()
     await until { session.primaryListItems.map(\.title) == ["Kite"] }
     #expect(session.items(onList: camping.id).map(\.title) == ["Tent"])
     #expect(!session.isInstanceUnreachable)
@@ -151,13 +151,13 @@ struct PullTests {
     // The instance has answered with the versions, and the fetch of the items is on its way.
     let hold = instance.conditioner.hold(Route("GET", "/lists/{id}/items"), at: .request)
     var mark = self.mark
-    async let syncing: Void = session.sync()
+    async let syncing = session.syncNow()
     await hold.waitUntilHeld()
     #expect(asked(since: mark).first == "GET /versions")
     try await own.send("PATCH", "/items/\(kite.id)", json: ["title": "Stunt kite"]).expecting(200)
     try await own.send("DELETE", "/items/\(puzzle.id)").expecting(204)
     hold.release()
-    await syncing
+    _ = await syncing
 
     await until { session.primaryListItems.map(\.title) == ["Stunt kite", "Bike"] }
     #expect(!session.isInstanceUnreachable)
@@ -165,13 +165,13 @@ struct PullTests {
     // The fetch gave other versions than the answer named, so that answer's ETag is not kept. The next sync
     // compares again, and the copy already has every version that the instance names.
     mark = self.mark
-    await session.sync()
+    await session.syncNow()
     #expect(asked(since: mark) == ["GET /versions"])
     #expect(requests(since: mark).first?.headers["if-none-match"] == nil)
 
     // The copy agreed with that answer, so its ETag is kept.
     mark = self.mark
-    await session.sync()
+    await session.syncNow()
     #expect(asked(since: mark) == ["GET /versions"])
     #expect(requests(since: mark).first?.headers["if-none-match"] != nil)
     #expect(session.primaryListItems.map(\.title) == ["Stunt kite", "Bike"])
@@ -193,11 +193,11 @@ struct PullTests {
 
     // The versions name no Tent on the primary list. It moves back, to the same place, before the items come.
     let hold = instance.conditioner.hold(Route("GET", "/lists/{id}/items"), at: .request)
-    async let syncing: Void = session.sync()
+    async let syncing = session.syncNow()
     await hold.waitUntilHeld()
     try await own.send("PATCH", "/items/\(tent.id)", json: ["list_id": .string(list.id)]).expecting(200)
     hold.release()
-    await syncing
+    _ = await syncing
 
     await until { session.primaryListItems.map(\.title) == ["Box kite", "Jigsaw", "Tent"] }
     #expect(session.primaryListItems.first { $0.id == tent.id }?.version == tent.version)
@@ -220,18 +220,18 @@ struct PullTests {
     try await own.send("PATCH", "/items/\(kite.id)", json: ["title": "Box kite"]).expecting(200)
     var hold = instance.conditioner.hold(Route("GET", "/items/{id}"), at: .request)
     var mark = self.mark
-    async let renaming: Void = session.sync()
+    async let renaming = session.syncNow()
     await hold.waitUntilHeld()
     try await own.send("PATCH", "/items/\(kite.id)", json: ["title": "Stunt kite"]).expecting(200)
     hold.release()
-    await renaming
+    _ = await renaming
     await until { session.primaryListItems.map(\.title) == ["Stunt kite", "Puzzle"] }
     #expect(asked(since: mark) == ["GET /versions", "GET /items/\(kite.id)"])
 
     // The row has the version of its own answer, not the one that the versions named. So no ETag is kept, and
     // the next sync compares again and finds nothing to fetch.
     mark = self.mark
-    await session.sync()
+    await session.syncNow()
     #expect(asked(since: mark) == ["GET /versions"])
     #expect(requests(since: mark).first?.headers["if-none-match"] == nil)
 
@@ -240,11 +240,11 @@ struct PullTests {
     try await own.send("PATCH", "/lists/\(list.id)", json: ["description": "For the summer"]).expecting(200)
     hold = instance.conditioner.hold(Route("GET", "/items/{id}"), at: .request)
     mark = self.mark
-    async let removing: Void = session.sync()
+    async let removing = session.syncNow()
     await hold.waitUntilHeld()
     try await own.send("DELETE", "/items/\(kite.id)").expecting(204)
     hold.release()
-    await removing
+    _ = await removing
 
     // The item's own address answered 404. The row went, and the pull went on to the list.
     await until { session.primaryListItems.map(\.title) == ["Puzzle"] }
@@ -277,7 +277,7 @@ struct PullTests {
     #expect(session.primaryListItems.isEmpty)
 
     instance.conditioner.passEverything()
-    await session.sync()
+    await session.syncNow()
     await until { session.primaryListItems.map(\.title) == ["Kite", "Puzzle"] }
     #expect(session.primaryList != nil)
   }
@@ -306,7 +306,7 @@ struct PullTests {
         body: try JSON.object(["data": .array(entries)]).data))
 
     let mark = self.mark
-    await session.sync()
+    await session.syncNow()
     await until { session.primaryListItems.map(\.title) == ["Box kite", "Puzzle"] }
     #expect(asked(since: mark) == ["GET /versions", "GET /items/\(kite.id)"])
     #expect(!session.isInstanceUnreachable)
@@ -324,7 +324,7 @@ struct PullTests {
 
     // The user arrives, and then the instance gives no answer for the item.
     instance.conditioner.answer(Route("GET", "/items/{id}"), with: .init(status: 503))
-    await session.sync()
+    await session.syncNow()
     await until { session.user?.name == renamed }
     #expect(session.isInstanceUnreachable)
     #expect(session.primaryListItems.map(\.title) == ["Kite"])
@@ -333,7 +333,7 @@ struct PullTests {
     // user again.
     instance.conditioner.passEverything()
     let mark = self.mark
-    await session.sync()
+    await session.syncNow()
     await until { session.primaryListItems.map(\.title) == ["Box kite"] }
     #expect(requests(since: mark).first?.headers["if-none-match"] == nil)
     #expect(asked(since: mark).first == "GET /versions")
@@ -366,7 +366,7 @@ struct PullTests {
     // The kept ETag went with the copy, so the sync fetches everything again.
     instance.conditioner.passEverything()
     let mark = self.mark
-    await session.sync()
+    await session.syncNow()
     await until { session.primaryListItems.map(\.title) == ["Kite", "Puzzle"] }
     #expect(requests(since: mark).first?.headers["if-none-match"] == nil)
     #expect(session.user?.name == robin.name)
@@ -381,7 +381,7 @@ struct PullTests {
 
     instance.conditioner.answer(Route("GET", "/versions"), with: try .problem(404, code: "not_found"))
     var mark = self.mark
-    await session.sync()
+    await session.syncNow()
     // The version check finds the instance's version passes: the 404 was something else, and nothing blocks.
     #expect(asked(since: mark) == ["GET /versions", "GET /health"])
     #expect(session.versionBlock == nil)
@@ -393,7 +393,7 @@ struct PullTests {
     // The copy still agrees with the answer that it agreed with before, so the next sync sends that ETag.
     instance.conditioner.passEverything()
     mark = self.mark
-    await session.sync()
+    await session.syncNow()
     await until { session.primaryListItems.map(\.title) == ["Box kite"] }
     #expect(requests(since: mark).first?.headers["if-none-match"] != nil)
   }
