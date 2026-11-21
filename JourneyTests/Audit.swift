@@ -85,6 +85,11 @@ enum Audit {
     attachment.lifetime = .keepAlways
     test.add(attachment)
     try app.performAccessibilityAudit { issue in
+      // Scan QR code is disabled where the camera is denied or not available, as in the simulator, and the words
+      // beside it say why. WCAG's contrast rule leaves out a control that is not active (1.4.3, 1.4.11).
+      if issue.auditType == .contrast, let scan = issue.element, scan.label == words("Scan QR code"), !scan.isEnabled {
+        return true
+      }
       let element = issue.element?.label ?? "no element"
       XCTFail("\(screen), in \(setting): \(issue.compactDescription) (\(element))")
       return true
