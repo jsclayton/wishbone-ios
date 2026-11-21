@@ -72,7 +72,7 @@ public final class SessionModel {
   public private(set) var memberships: [MembershipRow] = []
 
   /// Whether the last sync found that the instance can't be reached. The session stays, and screens show what is
-  /// saved under the line "Can't reach {address}".
+  /// saved under the line "Can't reach {address}". A sync that stops on a fault of the copy leaves it as it was.
   public private(set) var isInstanceUnreachable = false
 
   /// The version block that every window shows in place of the profile gate and the tabs. Nil while nothing blocks.
@@ -300,30 +300,35 @@ public final class SessionModel {
   /// One sync. Nothing is sent yet: the unsent changes come with their journal.
   private func runSync() async -> SyncOutcome {
     let end = await pull()
-    let outcome: SyncOutcome
-    switch end {
-    case .succeeded: outcome = .succeeded
-    case .unreachable: outcome = .unreachable
-    case .stopped: outcome = .stopped
-    case .endedByServer:
+    if end == .endedByServer {
       // The session is over. No sync starts after this one, and the end of the session waits for no sync: this one
       // is over.
       hasEnded = true
       running = nil
       updateTimer()
       await endedByServer(self)
-      outcome = .stopped
     }
-    syncEnded(outcome)
-    return outcome
+    return syncEnded(end)
   }
 
-  /// Where every sync ends, with its outcome. It publishes whether the instance could be reached, and starts or
+  /// Where every sync ends, and gets its outcome. It publishes whether the instance could be reached, and starts or
   /// stops the timer. Work that follows a sync that succeeded goes here. An ended session model does nothing here.
-  private func syncEnded(_ outcome: SyncOutcome) {
-    guard !hasEnded else { return }
-    isInstanceUnreachable = outcome == .unreachable
+  private func syncEnded(_ end: PullEnd) -> SyncOutcome {
+    let outcome: SyncOutcome =
+      switch end {
+      case .succeeded: .succeeded
+      case .unreachable: .unreachable
+      case .refused, .faulted, .endedByServer: .stopped
+      }
+    guard !hasEnded else { return outcome }
+    switch end {
+    case .succeeded, .refused: isInstanceUnreachable = false
+    case .unreachable: isInstanceUnreachable = true
+    // A fault of the copy says nothing of the instance. So the line about it stays as it was.
+    case .faulted, .endedByServer: break
+    }
     updateTimer()
+    return outcome
   }
 
   /// How a pull ended.
@@ -332,8 +337,11 @@ public final class SessionModel {
     case succeeded
     /// The instance could not be reached. The session goes on.
     case unreachable
-    /// The pull stopped, and the session goes on.
-    case stopped
+    /// The instance answered, and the pull stopped on its answer: a refusal, a version block, or an answer that
+    /// can't be decoded. The session goes on.
+    case refused
+    /// The pull stopped on the copy, which can't be read or written, or on a cancel. The session goes on.
+    case faulted
     /// The instance answered with the API's own 401: the session is over.
     case endedByServer
   }
@@ -364,10 +372,15 @@ public final class SessionModel {
     } catch APIError.appTooOld {
       // The API's own 410: this version of the app is too old for the instance. The session stays.
       blockAppTooOld()
+      return .refused
     } catch APIError.refused(let refusal) where refusal.status == 404 {
       // A 404 for the versions is an instance below the minimum server version. The version check says so, and
       // finds nothing when the 404 was for something else. The copy keeps what the pull wrote before it stopped.
       await checkVersion()
+      return .refused
+    } catch APIError.cancelled {
+      // A sign-out cancels the pull's request. The instance said nothing.
+      return .faulted
     } catch let error as APIError {
       // The instance answered. Another refusal, a 401 with another code included, keeps the session. The copy
       // keeps what the pull wrote before it stopped.
@@ -376,13 +389,15 @@ public final class SessionModel {
           .session, "An answer of the pull can't be decoded.",
           detail: "\(answer.route.method) \(answer.route.template) \(answer.keyPath)")
       }
+      return .refused
     } catch is CancellationError {
       // A sign-out cancels the pull, and the database can throw this from a write that sees it. It is no fault of
       // the copy, so it is not logged as one.
+      return .faulted
     } catch {
       Log.fault(.session, "The copy can't be read or written.", detail: "\(error)")
+      return .faulted
     }
-    return .stopped
   }
 
   // MARK: - The timer

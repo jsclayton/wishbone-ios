@@ -194,6 +194,32 @@ struct KeepInStepTests {
     #expect(await second.value == .stopped)
   }
 
+  @Test("A sync that can't write the copy says nothing of the instance: whether it can be reached stays as it was")
+  func faultOfTheCopy() async throws {
+    let robin = try await instance.person(items: ["Kite"])
+    let list = try await instance.builder.primaryList(of: robin)
+    let folder = try ScratchDirectory("device")
+    let (_, session) = try await signedIn(as: robin, storage: .folder(folder.url))
+    let file = try DatabaseFile(under: folder.url)
+
+    // The instance answers. The pull has a new item to write, and the copy can't take it.
+    _ = try await instance.builder.item("Tent", on: list, as: robin)
+    #expect(try await file.lockingWrites { await session.syncNow() } == .stopped)
+    #expect(!session.isInstanceUnreachable)
+
+    // The instance can't be reached. Then a sync stops on the copy: the line stays.
+    instance.conditioner.dropEverything()
+    #expect(await session.syncNow() == .unreachable)
+    instance.conditioner.passEverything()
+    #expect(try await file.lockingWrites { await session.syncNow() } == .stopped)
+    #expect(session.isInstanceUnreachable)
+
+    // The copy takes writes again, and the next sync reaches the instance.
+    #expect(await session.syncNow() == .succeeded)
+    #expect(!session.isInstanceUnreachable)
+    await until { session.primaryListItems.map(\.title) == ["Kite", "Tent"] }
+  }
+
   @Test("Three syncs asked for during a sync give one more sync, after it, and never two at once")
   func oneSyncAtATime() async throws {
     let robin = try await instance.person(items: ["Kite"])
