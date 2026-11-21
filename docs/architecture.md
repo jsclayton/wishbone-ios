@@ -13,10 +13,10 @@ Where each rule lives in the code, and the rules that hold the code together. Wh
 
 | Module | Holds | Builds on | Linked by |
 |---|---|---|---|
-| `WishboneAPI` | The Codable models, the API client, the error codes, the session keychain and the install marker, the version check against `GET /health`, and the one `Logger` file | macOS and iOS | the app, the share extension, the widget |
+| `WishboneAPI` | The Codable models, the API client, the error codes, the session keychain and the install marker, the version check against `GET /health`, the one `Logger` file, and the diagnostics vocabulary with its reporter protocol | macOS and iOS | the app, the share extension, the widget |
 | `WishboneSession` | The session model, the local database (GRDB) with the unsent changes and the sync, the server's shift rule for a move, and the reminder plan | macOS and iOS | the app, the share extension |
 | `WishboneUI` | Every screen and component (the add form included), the one String Catalog, the person palette, the words for each error code, and the markdown renderer | iOS | the app, the share extension |
-| `WishboneDiagnostics` | The one file that imports Sentry, the event vocabulary, and the scrubber | iOS | the app only |
+| `WishboneDiagnostics` | The one file that imports Sentry, the switch, the reporter, and the scrubber | iOS | the app only |
 | `TestSupport` | The server harness, `ScratchDirectory`, the network conditioner, the fixture builder, and fakes | macOS and iOS | test targets only |
 
 - Every package module builds with extension-only API. Anything that needs `UIApplication.shared` stays in the app target.
@@ -100,10 +100,14 @@ See [ADR 0008](adr/0008-diagnostics-go-to-sentry-on-by-default-with-notice-and-s
 
 - One file imports Sentry, in `WishboneDiagnostics`. Only the app target links it.
 - Everything sent is a case of one event type, from a closed vocabulary. No free-form strings, and an error goes as its domain and code, never its message.
-- **Every new error type picks its side:** captured, a breadcrumb, or never. Write the choice where the error type is defined, and add the case to the vocabulary if it is captured.
-- A request is reported by method and path template only, from an allow list.
-- The scrubber runs in `beforeSend` and `beforeBreadcrumb`, and is tested at the envelope.
-- The app's privacy manifest declares the collected data types. A fitness test holds them against the event vocabulary.
+- The vocabulary is in `WishboneAPI` (`DiagnosticsVocabulary.swift`): the one event type `Fault`, the typed `Breadcrumb`, and the `DiagnosticsReporter` protocol. It is there because the modules that the extensions link name a fault where it happens. Only `WishboneDiagnostics` turns a value into what leaves the device.
+- The app gives its `Device` the reporter of `WishboneDiagnostics`, and the windows get it from the environment. An extension gives none (`.none`), so it sends nothing. The reporter records nothing while the SDK doesn't run.
+- **Every new error type picks its side:** captured, a breadcrumb, or never. An error type of the app conforms to `Diagnosed`, whose `diagnosticSide` writes the choice where the type is defined. A fitness test holds this. Add the case to the vocabulary if it is captured.
+- The API client reports in its one load: a breadcrumb for each request, and each error as its side asks. The local database captures a file that will not open, and a copy that the schema number drops.
+- A request is reported by method and path template only, from an allow list (`Breadcrumb.pathTemplates`). A fitness test holds every route to it.
+- Every event is tagged with the instance's Wishbone version, from the last `GET /health`. The reporter keeps it in the app's own defaults, so the next launch tags its events before it reads `/health` again. Sign-out clears it.
+- The scrubber runs in `beforeSend` and `beforeBreadcrumb`, and is tested at the envelope. It holds each event and breadcrumb to the vocabulary first, and drops the runtime's free text (an exception's value, a thread's name, the extra). Then it strips tokens, login links, hosts, and addresses from every string that is left.
+- The app's privacy manifest declares the collected data types. A fitness test holds them to exactly what `DiagnosticsReport` can send.
 
 ## Secrecy
 
@@ -125,6 +129,7 @@ These tests hold the rules above. They run in `just gate`.
 - No app icon badge.
 - The app icon is the layered icon in the app target, with a light and a dark fill.
 - No `Text(verbatim:)`, `String(format:)`, or text joined into UI strings outside a short allow list. The String Catalog has no stale entry and no key without English.
-- The app's privacy manifest against the diagnostics vocabulary.
+- The app's privacy manifest against the diagnostics vocabulary, and every route's path template against the allow list.
+- Every error type of the app's code conforms to `Diagnosed`, so it names its side.
 - Every write to the local database goes through one function, which drops the kept `ETag` of `GET /versions` in the same change. A write only of the blocked stores keeps it, because `GET /versions` doesn't cover them.
 - The local copy's schema number against what the copy keeps: its tables, its rows, and the values in them. A change to any of them fails until the number rises.
