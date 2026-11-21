@@ -27,6 +27,13 @@ test('a test with arguments is one test, and one failing case fails it', () => {
   assert.equal(judge(reading), '1 failed: HostedTests.PaletteTests/contrast(color:)');
 });
 
+test("a failed test's failure messages are read, in order, also from a failing case", () => {
+  const contrast = 'HostedTests.PaletteTests/contrast(color:)';
+  const messages = { [signIn]: ['SignInJourney.swift:37: one', 'SignInJourney.swift:40: two'] };
+  const reading = readTestResults(testResults({ [signIn]: 'fail', [contrast]: 'fail-case', [item]: 'pass' }, { messages }));
+  assert.deepEqual(reading.messages, { [signIn]: ['SignInJourney.swift:37: one', 'SignInJourney.swift:40: two'], [contrast]: ['planted'] });
+});
+
 test('an expected failure is a known issue, and fails', () => {
   const reading = readTestResults(testResults({ [item]: 'known' }));
   assert.equal(judge(reading), `1 with a known issue: ${item}`);

@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
+
+import { testResults } from './xcresult-fixture.mjs';
+import { readTestResults } from './xcresult.mjs';
 
 import {
   buildArguments,
@@ -10,11 +13,15 @@ import {
   gateSimulators,
   helperAnswerLimitMs,
   journeyRuns,
+  keepFirstTry,
+  launchFlake,
+  launchFlakeIn,
   parseArguments,
   pickDevice,
   readinessAnswerLimitMs,
   readinessCallLimitMs,
   resultBundles,
+  runAgainOnLaunchFlake,
   settingCallLimitMs,
   settingPauseMs,
   settingReadLimitMs,
@@ -448,4 +455,136 @@ test("a journey waits for the helper longer than the helper's longest answer", (
   assert.ok(seconds * 1000 > helperAnswerLimitMs, `Audit.swift waits ${seconds}s, and the helper can take ${helperAnswerLimitMs / 1000}s`);
   // A call that hangs gets at least two tries more in a change.
   assert.ok(helperAnswerLimitMs >= 3 * settingCallLimitMs + 2 * (settingPauseMs + settingReadLimitMs));
+});
+
+const signIn = 'JourneyTests.SignInJourney/testSignIn()';
+const signOut = 'JourneyTests.SignOutJourney/testSignOut()';
+const runnerError = 'JourneyTests.JourneyTests-Runner (27397) encountered an error';
+const noProcessID = "SignInJourney.swift:37: Application 'com.codemonkeylabs.wishbone' does not have a process ID";
+/** A reading of a run of the journeys, with `tests` mapping a name to its outcome, and `messages` as the fixture's. */
+const journeysReading = (tests, messages = {}) => readTestResults(testResults(tests, { messages }));
+
+test("a launch that got no process ID is the launch flake, as it shows on a busy Mac", () => {
+  const reading = journeysReading({ [signIn]: 'fail', [signOut]: 'pass' }, { [signIn]: [noProcessID] });
+  assert.deepEqual(launchFlakeIn(reading), [signIn]);
+});
+
+test("a launch that got no process ID is the launch flake also when the test runner's error follows, as on CI", () => {
+  const reading = journeysReading({ [signIn]: 'fail', [runnerError]: 'fail', [signOut]: 'pass' }, { [signIn]: [noProcessID], [runnerError]: ['The test runner encountered an error'] });
+  assert.deepEqual(launchFlakeIn(reading), [signIn]);
+});
+
+test('each journey whose launch got no process ID is named', () => {
+  const signOutMessage = "SignOutJourney.swift:36: Application 'com.codemonkeylabs.wishbone' does not have a process ID";
+  const reading = journeysReading({ [signIn]: 'fail', [signOut]: 'fail' }, { [signIn]: [noProcessID], [signOut]: [signOutMessage] });
+  assert.deepEqual(launchFlakeIn(reading), [signIn, signOut]);
+});
+
+test('a launch that got its process ID and then crashed is not the launch flake', () => {
+  const crashed = "SignInJourney.swift:48: com.codemonkeylabs.wishbone (4242) crashed in Session.restore() (EXC_BAD_ACCESS)";
+  assert.equal(launchFlakeIn(journeysReading({ [signIn]: 'fail' }, { [signIn]: [crashed] })), null);
+});
+
+test("the test runner's error with no launch that failed is not the launch flake", () => {
+  assert.equal(launchFlakeIn(journeysReading({ [signIn]: 'pass', [runnerError]: 'fail' }, { [runnerError]: ['The test runner encountered an error'] })), null);
+});
+
+test('a failure of any other kind beside the launch flake is not the launch flake', () => {
+  const tests = { [signIn]: 'fail', [signOut]: 'fail' };
+  assert.equal(launchFlakeIn(journeysReading(tests, { [signIn]: [noProcessID], [signOut]: ['SignOutJourney.swift:60: Sign out did not show'] })), null);
+  // A journey whose launch got no process ID in one place, and that failed in another, failed in the other too.
+  assert.equal(launchFlakeIn(journeysReading({ [signIn]: 'fail' }, { [signIn]: [noProcessID, 'SignInJourney.swift:80: Home did not show'] })), null);
+  // A failed test with no message says nothing about why.
+  assert.equal(launchFlakeIn(journeysReading({ [signIn]: 'fail' }, { [signIn]: [] })), null);
+});
+
+test('a run that passed, or that has no summary, is not the launch flake', () => {
+  assert.equal(launchFlakeIn(journeysReading({ [signIn]: 'pass' })), null);
+  assert.equal(launchFlakeIn(readTestResults(undefined)), null);
+});
+
+test("the launch flake's message is XCTest's, for any app", () => {
+  assert.match("Application 'com.example.other' does not have a process ID", launchFlake.message);
+  assert.doesNotMatch("Application 'com.codemonkeylabs.wishbone' has a process ID", launchFlake.message);
+});
+
+/** A run of the journeys that ends as each of `outcomes` says in turn: `flake`, `fail`, or `pass`. */
+function journeysRuns(...outcomes) {
+  const runs = [];
+  const readings = {
+    flake: { passed: false, reading: journeysReading({ [signIn]: 'fail' }, { [signIn]: [noProcessID] }) },
+    fail: { passed: false, reading: journeysReading({ [signIn]: 'fail' }, { [signIn]: ['SignInJourney.swift:80: Home did not show'] }) },
+    pass: { passed: true, reading: journeysReading({ [signIn]: 'pass' }) },
+  };
+  return {
+    runOnce: async () => {
+      runs.push(outcomes[runs.length]);
+      return readings[outcomes[runs.length - 1]];
+    },
+    runs,
+  };
+}
+
+test('journeys that fail with the launch flake run again once, keep the first run, and pass when the second run passes', async () => {
+  const { runOnce, runs } = journeysRuns('flake', 'pass');
+  const lines = [];
+  let kept = 0;
+  const passed = await runAgainOnLaunchFlake(runOnce, { keep: () => (kept += 1, ['first.xcresult', 'first.log']), say: (line) => lines.push(line) });
+  assert.equal(passed, true);
+  assert.deepEqual(runs, ['flake', 'pass']);
+  assert.equal(kept, 1);
+  assert.deepEqual(lines, [
+    `  ${signIn}: the launch got no process ID (the named flake "${launchFlake.name}"), so these journeys run again, once. The first run is in first.xcresult and first.log.`,
+  ]);
+});
+
+test('journeys that fail with the launch flake twice are red: they run again only once', async () => {
+  const { runOnce, runs } = journeysRuns('flake', 'flake', 'pass');
+  assert.equal(await runAgainOnLaunchFlake(runOnce, { keep: () => [], say: () => {} }), false);
+  assert.deepEqual(runs, ['flake', 'flake']);
+});
+
+test('journeys that fail in another way, after the launch flake, are red', async () => {
+  const { runOnce, runs } = journeysRuns('flake', 'fail');
+  assert.equal(await runAgainOnLaunchFlake(runOnce, { keep: () => [], say: () => {} }), false);
+  assert.deepEqual(runs, ['flake', 'fail']);
+});
+
+test('journeys that pass, or that fail in another way, run once', async () => {
+  for (const outcome of ['pass', 'fail']) {
+    const { runOnce, runs } = journeysRuns(outcome, 'pass');
+    const lines = [];
+    let kept = 0;
+    assert.equal(await runAgainOnLaunchFlake(runOnce, { keep: () => (kept += 1, []), say: (line) => lines.push(line) }), outcome === 'pass');
+    assert.deepEqual(runs, [outcome]);
+    assert.equal(kept, 0);
+    assert.deepEqual(lines, []);
+  }
+});
+
+test("the first run's bundle and log move aside, so the second run writes its own at the run's paths", (t) => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'wishbone-gate-test-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const bundle = path.join(directory, 'journeys-settings.xcresult');
+  mkdirSync(bundle);
+  writeFileSync(path.join(bundle, 'Info.plist'), 'first');
+  writeFileSync(path.join(directory, 'journeys-settings.log'), 'first log');
+  // A first try from an earlier gate's run is replaced.
+  mkdirSync(path.join(directory, 'journeys-settings-first.xcresult'));
+  writeFileSync(path.join(directory, 'journeys-settings-first.log'), 'older');
+
+  const kept = keepFirstTry(directory, bundle, 'journeys-settings.log');
+  assert.deepEqual(kept, [path.join(directory, 'journeys-settings-first.xcresult'), path.join(directory, 'journeys-settings-first.log')]);
+  assert.equal(existsSync(bundle), false);
+  assert.equal(existsSync(path.join(directory, 'journeys-settings.log')), false);
+  assert.equal(readFileSync(path.join(kept[0], 'Info.plist'), 'utf8'), 'first');
+  assert.equal(readFileSync(kept[1], 'utf8'), 'first log');
+});
+
+test('a run that died before it wrote its bundle or its log has nothing to move aside', (t) => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'wishbone-gate-test-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const kept = keepFirstTry(directory, path.join(directory, 'journeys-settings.xcresult'), 'journeys-settings.log');
+  assert.equal(existsSync(kept[0]), false);
+  assert.equal(existsSync(kept[1]), false);
 });
