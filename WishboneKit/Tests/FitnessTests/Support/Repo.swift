@@ -20,6 +20,9 @@ enum Repo {
   /// Everything that ships: the three targets and the package modules.
   static let shipped = targets + [modules]
 
+  /// Every test: the package tests, the tests hosted in the app, and the journeys.
+  static let tests = ["WishboneKit/Tests", "HostedTests", "JourneyTests"]
+
   /// The folder of one package module.
   static func module(_ name: String) -> String {
     "\(modules)/\(name)"
