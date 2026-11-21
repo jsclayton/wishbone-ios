@@ -369,8 +369,12 @@ struct LocalDatabase: Sendable {
       ).fetchAll(database)
       snapshot.memberships = try MembershipRow.order(Column("kind"), Column("ownerID")).fetchAll(database)
       snapshot.user = snapshot.users.first { $0.id == id && !$0.isSummary }
-      guard let listID = snapshot.user?.record?.primaryListID else { return snapshot }
-      snapshot.primaryList = try ListRow.fetchOne(database, key: listID)
+      // The pull saves the items before their list, in another write. Items whose list is not in the copy yet
+      // are not published, so the list and its items show in the same change.
+      guard let listID = snapshot.user?.record?.primaryListID,
+        let list = try ListRow.fetchOne(database, key: listID)
+      else { return snapshot }
+      snapshot.primaryList = list
       snapshot.primaryListItems = try ItemRow.filter(Column("listID") == listID)
         .order(Column("position"), Column("id")).fetchAll(database)
       return snapshot

@@ -252,6 +252,36 @@ struct PullTests {
     #expect(!session.isInstanceUnreachable)
   }
 
+  @Test("A first sync that stops between the items and their list publishes neither, and the next sync fills both")
+  func stopsBeforeTheList() async throws {
+    let robin = try await instance.person(items: ["Kite", "Puzzle"])
+    try await robin.signedIn().send("PATCH", "/users/me", json: ["timezone": .string(Self.zone)]).expecting(200)
+    let folder = try ScratchDirectory("device")
+    do {
+      // The items are in the copy when the list's request goes. The network goes before it arrives.
+      let device = instance.device(storage: .folder(folder.url), timeZone: .fixed(Self.zone))
+      let link = try await instance.loginLink(for: robin)
+      let hold = instance.conditioner.hold(Route("GET", "/lists/{id}"), at: .request)
+      async let signingIn: Void = device.signIn(pasting: link)
+      await hold.waitUntilHeld()
+      instance.conditioner.dropEverything()
+      hold.release()
+      await signingIn
+    }
+
+    // The first snapshot comes at once in a new launch, so it shows what the copy holds with no wait.
+    let relaunched = instance.device(storage: .folder(folder.url), timeZone: .fixed(Self.zone))
+    let session = try #require(relaunched.session)
+    #expect(session.user != nil)
+    #expect(session.primaryList == nil)
+    #expect(session.primaryListItems.isEmpty)
+
+    instance.conditioner.passEverything()
+    await session.sync()
+    await until { session.primaryListItems.map(\.title) == ["Kite", "Puzzle"] }
+    #expect(session.primaryList != nil)
+  }
+
   @Test("An entry of a kind that the app doesn't know is ignored, and the sync succeeds")
   func unknownKind() async throws {
     let robin = try await instance.person(items: ["Kite", "Puzzle"])
