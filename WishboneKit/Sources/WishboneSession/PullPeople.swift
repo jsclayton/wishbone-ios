@@ -3,11 +3,14 @@ import WishboneAPI
 // The pull of Home's data: the users, the groups, the occasions, and the memberships, and the summaries that are
 // left at the end of the pull. See `Pull`.
 //
-// **Two things have no answer that carries a version:** a user whom the session's user gets only as a summary,
-// and a membership. `GET /versions` gives each a version, which is a hash that the app can't make. So each is
-// saved with the version that its entry named, and the pull can't tell one that changed between the two requests.
-// Such a row is then newer than its version says. The next answer of `GET /versions` names another version for
-// it, and it is fetched again.
+// **A summary has no answer that carries a version.** `GET /versions` gives it a version, which is a hash that the
+// app can't make. So it is saved with the version that its entry named, and the pull can't tell one that changed
+// between the two requests. Such a row is then newer than its version says. The next answer of `GET /versions`
+// names another version for it, and it is fetched again.
+//
+// **A membership's answers carry its version,** as their `ETag`. So a membership is saved with the version of what
+// was read, as every resource is. The users of a birthday or a custom occasion are the exception: the copy takes
+// them from the occasion's row, with no request, and saves them with the version that the entry named.
 
 extension Pull {
   // MARK: - Users
@@ -161,6 +164,10 @@ extension Pull {
   /// **The answer has an entry only for a membership that the session's user can read.** So the copy has a row
   /// only for those, and a membership with no entry gets no row. The absence is never saved as "no members".
   ///
+  /// **Each is saved with the version that its own answers carried,** never with the one that the entry named. A
+  /// membership that changed between the two requests, and changed back before the next pull, is then still
+  /// fetched again: its row has the version of what was read, and the answer's `ETag` is not kept.
+  ///
   /// **A birthday or a custom occasion applies to its own user, and to nobody else.** The copy takes that user
   /// from the occasion's row, and sends no request. Only the users of a shared occasion are fetched.
   func pullMemberships(_ named: Named, agrees: inout Bool) async throws {
@@ -182,21 +189,22 @@ extension Pull {
       return places.0 != places.1 ? places.0 < places.1 : first.ownerID < second.ownerID
     }
     for key in keys {
-      guard let version = changed[key] else { continue }
+      guard let named = changed[key] else { continue }
       guard let members = try await ifReadable({ () async throws(APIError) in try await members(of: key) }) else {
         // The group or the occasion went between the two requests, or the user may no longer read its members.
         agrees = false
         if rows[key] != nil { try await database.save([], removingMemberships: [key]) }
         continue
       }
+      if members.version != named { agrees = false }
       try await database.save([
-        MembershipRow(kind: key.kind, ownerID: key.ownerID, memberIDs: members, version: version)
+        MembershipRow(kind: key.kind, ownerID: key.ownerID, memberIDs: members.resource, version: members.version)
       ])
     }
   }
 
-  /// The members of a membership, from its collection.
-  private func members(of key: MembershipRow.Key) async throws(APIError) -> [String] {
+  /// The members of a membership, from its collection, with the version that its answers carried.
+  private func members(of key: MembershipRow.Key) async throws(APIError) -> Versioned<[String]> {
     switch key.kind {
     case .groupUsers: try await client.userIDs(directlyInGroup: key.ownerID)
     case .usersInGroup: try await client.userIDs(inGroup: key.ownerID)

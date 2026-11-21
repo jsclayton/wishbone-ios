@@ -13,8 +13,12 @@ extension LocalDatabase {
   /// that the copy starts to hold. A database with another number drops its copy, and the next sync fills the new
   /// tables. Without that, the kept `ETag` could answer a pull with a 304 for a copy that never held the new kind.
   ///
+  /// Also raise it when a row's version starts to mean what its answer read, where it meant what an entry named: a
+  /// copy saved before can hold a row that the version claims is current, and no pull would fetch it again. 5 is
+  /// that change for the memberships.
+  ///
   /// The number is SQLite's `user_version`. The first version of the copy had none, which is 0.
-  static let copySchema = 4
+  static let copySchema = 5
 
   /// One row at most: the `ETag` of the last answer of `GET /versions` that the copy agreed with.
   static let keptETagTable = "keptETag"

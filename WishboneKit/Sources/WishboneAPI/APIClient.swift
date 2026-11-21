@@ -105,32 +105,33 @@ public struct APIClient: Sendable {
   // MARK: - Memberships
 
   // Each membership is the IDs that its collection gives the session's user, in the collection's order. These are
-  // the IDs that `GET /versions` hashes for the membership's entry.
+  // the IDs that `GET /versions` hashes for the membership's entry. Its version is the `ETag` of the collection's
+  // answers, which is the same value as that entry's version (see `members`).
 
   /// `GET /groups/{id}/users`: the users directly in the group.
-  public func userIDs(directlyInGroup id: String) async throws(APIError) -> [String] {
+  public func userIDs(directlyInGroup id: String) async throws(APIError) -> Versioned<[String]> {
     try await members { cursor in .page(of: .groupUsers, id: id, cursor: cursor) }
   }
 
   /// `GET /users?group_id=`: the users in the group, directly or through nesting, whom the session's user can see.
   /// A group that is gone, or hidden, gives none.
-  public func userIDs(inGroup id: String) async throws(APIError) -> [String] {
+  public func userIDs(inGroup id: String) async throws(APIError) -> Versioned<[String]> {
     try await members { cursor in .page(of: .users, filters: ["group_id": id], cursor: cursor) }
   }
 
   /// `GET /users?occasion_id=`: the users that the occasion applies to, whom the session's user can see. An
   /// occasion that is gone, or hidden, gives none.
-  public func userIDs(ofOccasion id: String) async throws(APIError) -> [String] {
+  public func userIDs(ofOccasion id: String) async throws(APIError) -> Versioned<[String]> {
     try await members { cursor in .page(of: .users, filters: ["occasion_id": id], cursor: cursor) }
   }
 
   /// `GET /groups/{id}/groups`: the groups directly in the group. Only the admin can read it.
-  public func groupIDs(directlyInGroup id: String) async throws(APIError) -> [String] {
+  public func groupIDs(directlyInGroup id: String) async throws(APIError) -> Versioned<[String]> {
     try await members { cursor in .page(of: .groupGroups, id: id, cursor: cursor) }
   }
 
   /// `GET /occasions/{id}/groups`: the groups that the shared occasion is attached to. Only the admin can read it.
-  public func groupIDs(ofOccasion id: String) async throws(APIError) -> [String] {
+  public func groupIDs(ofOccasion id: String) async throws(APIError) -> Versioned<[String]> {
     try await members { cursor in .page(of: .occasionGroups, id: id, cursor: cursor) }
   }
 
@@ -226,11 +227,37 @@ public struct APIClient: Sendable {
     return FetchedCollection(rows: collection.rows.map(\.row), isOnePage: collection.isOnePage)
   }
 
-  /// The IDs of a membership, in the collection's order. An ID that came on two pages is there once, at its first
-  /// place.
-  private func members(_ page: (_ cursor: String?) -> Endpoint<Page<Member>>) async throws(APIError) -> [String] {
+  /// How many times the client reads a membership whose pages keep differing, before it takes the last read.
+  static let membershipReads = 3
+
+  /// The IDs of a membership, in the collection's order, with the membership's version: the `ETag` of its answers.
+  /// An ID that came on two pages is there once, at its first place.
+  ///
+  /// The server gives a membership's whole collection one `ETag`, the same on every page. Two pages with different
+  /// `ETag`s mean that the membership changed between them, so the client reads it again from its first page. A
+  /// membership that still differs after `membershipReads` reads has the empty version, which agrees with nothing
+  /// that `GET /versions` names, so the next pull reads it again. See "Versions" in the server's route table.
+  private func members(
+    _ page: (_ cursor: String?) -> Endpoint<Page<Member>>
+  ) async throws(APIError) -> Versioned<[String]> {
+    var ids: [String] = []
+    var versions: Set<String> = []
+    for _ in 0..<Self.membershipReads {
+      ids = []
+      versions = []
+      var cursor: String?
+      repeat {
+        // A 304 answers only a request with `If-None-Match`, so this request has an answer.
+        guard let answer = try await answer(to: page(cursor)) else { throw .unreachable(.notTheAPI) }
+        ids += answer.body.data.map(\.id)
+        versions.insert(Self.version(ofETag: answer.etag))
+        cursor = answer.body.nextCursor
+      } while cursor != nil
+      if versions.count == 1 { break }
+    }
     var seen: Set<String> = []
-    return try await collection(page).rows.map(\.id).filter { seen.insert($0).inserted }
+    let version = versions.count == 1 ? versions.first ?? "" : ""
+    return Versioned(resource: ids.filter { seen.insert($0).inserted }, version: version)
   }
 
   // MARK: - The one load
