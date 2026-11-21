@@ -1,8 +1,10 @@
 import SwiftUI
+import WishboneAPI
 import WishboneSession
 
-/// What a window shows: the signed-out screen while the device holds no session, the profile gate while the user's
-/// profile is not confirmed, and then the tabs. See "What sits in front of the tabs" in `docs/spec.md`.
+/// What a window shows: the signed-out screen while the device holds no session, a version block while the app and
+/// the instance can't work together, the profile gate while the user's profile is not confirmed, and then the tabs.
+/// See "What sits in front of the tabs" in `docs/spec.md`.
 ///
 /// Every window reads the one `Device` that the app's composition root puts in the environment, so a sign-in in
 /// one window signs in every window. Each window has its own place, and saves it for its scene.
@@ -18,7 +20,10 @@ public struct WindowRoot: View {
     Group {
       if let session = device.session, !isWelcoming {
         Group {
-          if session.needsProfileGate, let user = session.user {
+          if let block = session.versionBlock {
+            // In place of everything else, in every window. When it goes, the tabs start again at the saved place.
+            VersionBlockScreen(block: block, address: session.session.instance, way: .signedIn(session))
+          } else if session.needsProfileGate, let user = session.user {
             // In front of the tabs until the profile is confirmed, in every window.
             ProfileGateScreen(session: session, user: user)
           } else {
@@ -27,6 +32,9 @@ public struct WindowRoot: View {
         }
         // Another session model is another session: its windows start again.
         .id(ObjectIdentifier(session))
+      } else if let (block, address) = signInBlock {
+        // During sign-in, a version block shows over the signed-out screen, with Back.
+        VersionBlockScreen(block: block, address: address, way: .signingIn)
       } else {
         SignedOutScreen()
       }
@@ -38,6 +46,18 @@ public struct WindowRoot: View {
       // at Home. A window that opens on a signed-out device forgets nothing: the device also has no session while
       // the session keychain can't be read, and what another session saved is not restored anyway.
       if device.session == nil { saved = nil }
+    }
+  }
+
+  /// The version block that a sign-in met, and the instance that it was for. Nil when the sign-in met none.
+  private var signInBlock: (VersionBlock, InstanceAddress)? {
+    switch device.signInState {
+    case .instanceTooOld(let address, let version, let minimum):
+      (.instanceTooOld(version: version, minimum: minimum), address)
+    case .appTooOld(let address):
+      (.appTooOld, address)
+    default:
+      nil
     }
   }
 

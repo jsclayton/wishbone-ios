@@ -32,6 +32,7 @@ Every target takes its build settings from `Config/Shared.xcconfig`, which is in
 | `WISHBONE_SOURCE_URL` | This repo | The "Source code" row in Settings |
 | `WISHBONE_PRIVACY_URL` | This repo's `PRIVACY.md` on GitHub | The privacy policy link on the Share diagnostics screen |
 | `WISHBONE_SUPPORT_URL` | The maintainer's Buy Me a Coffee page | The support row in Settings. Empty means no row |
+| `WISHBONE_APP_STORE_URL` | Empty | The app's App Store page, which Update Wishbone opens. Empty means a search of the App Store for the app |
 | `CURRENT_PROJECT_VERSION` | `1` | Local builds are build 1, so diagnostics can tell them from release builds |
 
 The identifiers that come from `WISHBONE_BUNDLE_PREFIX`:

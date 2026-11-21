@@ -121,12 +121,9 @@ public struct SignedOutScreen: View {
         bundle: #bundle)
     case .noWishbone(let address):
       String(localized: "No Wishbone found at \(address.text)", bundle: #bundle)
-    case .instanceTooOld(let address, let version, let minimum):
-      String(
-        localized:
-          "\(address.text) runs Wishbone \(version). The app needs \(minimum) or later. Ask whoever runs it to update.",
-        bundle: #bundle
-      )
+    case .instanceTooOld, .appTooOld:
+      // The version block shows over this screen, with the words.
+      nil
     case .refused(let refusal):
       ErrorWords.words(for: refusal)
     case .failed:

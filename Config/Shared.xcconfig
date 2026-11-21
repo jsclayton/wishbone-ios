@@ -24,6 +24,10 @@ WISHBONE_PRIVACY_URL = https:/$()/github.com/jsclayton/wishbone-ios/blob/main/PR
 // The support row in Settings. Empty means no row.
 WISHBONE_SUPPORT_URL = https:/$()/buymeacoffee.com/jsclayton
 
+// The app's page in the App Store, which the block for an app that is too old opens. Empty means a search of the
+// App Store for the app, until the app has its page.
+WISHBONE_APP_STORE_URL =
+
 // Local builds are build 1, so diagnostics can tell them from release builds.
 CURRENT_PROJECT_VERSION = 1
 
