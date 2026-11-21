@@ -4,7 +4,8 @@ name: CI
 # runs and keeps a hung job from running for hours):
 # - Draft PRs don't run CI. Mark the PR ready for review to run it.
 # - Title and body edits don't run CI. See pr-title.yml.
-# - Docs-only changes skip the Gate job, the only one on a macOS runner.
+# - Docs-only changes skip the Gate job, the only one on a macOS runner. The
+#   Changes job runs the docs check on every change, so docs-only changes get it.
 # - On a PR, a new push cancels the older run.
 # - Every job has timeout-minutes, so a hung step ends the job. The gate also
 #   stops each of its own steps at a limit.
@@ -53,6 +54,10 @@ jobs:
             echo "::error::Private files must not be committed."
             exit 1
           fi
+      # The gate runs this check too, but a docs-only change skips the gate. The
+      # check needs only Node, which the runner has.
+      - name: Check the docs
+        run: node scripts/check-docs.mjs
       - name: Detect changed areas
         id: detect
         env:

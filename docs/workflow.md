@@ -115,7 +115,7 @@ These GitHub settings enforce the merge rules:
 The workflows:
 
 - **CI**, with three jobs:
-  - **Changes** finds what changed. It also fails when a private file is tracked: `.agent/`, `.claude/`, `.beads/`, or `*.local.md`.
+  - **Changes** finds what changed. It also fails when a private file is tracked: `.agent/`, `.claude/`, `.beads/`, or `*.local.md`. It runs the docs check (`just lint-docs`) on every change, so a change to docs only can't merge a broken link.
   - **Gate** runs `just gate` on a macOS runner, unsigned, with no secrets.
   - **CI OK** is the required check. It fails if Gate failed or was cancelled. A skipped job counts as passed.
 - **PR Title** checks that the pull request's title is a Conventional Commit.
@@ -126,7 +126,7 @@ The workflows:
 macOS runners cost more than Linux runners, so CI avoids needless runs:
 
 - CI doesn't run on draft pull requests.
-- A change to docs only skips Gate. Docs are `docs/`, `LICENSE`, any `*.md` file, `.github/ISSUE_TEMPLATE/`, and `.github/pull_request_template.md`.
+- A change to docs only skips Gate, and gets the docs check in Changes, on a Linux runner. Docs are `docs/`, `LICENSE`, any `*.md` file, `.github/ISSUE_TEMPLATE/`, and `.github/pull_request_template.md`.
 - A new push to a pull request cancels its older run.
 - Every job has a time limit.
 - Don't use a self-hosted runner: in a public repo, it runs code from anyone's fork.
