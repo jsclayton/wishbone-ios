@@ -90,6 +90,10 @@ enum Audit {
       if issue.auditType == .contrast, let scan = issue.element, scan.label == words("Scan QR code"), !scan.isEnabled {
         return true
       }
+      // The system search field draws its prompt on one line, at the system's own size. The audit reports the
+      // prompt as clipped also when all of it shows, and when the field holds text. The field's label is the whole
+      // prompt, so VoiceOver reads it.
+      if issue.auditType == .textClipped, issue.element?.elementType == .searchField { return true }
       let element = issue.element?.label ?? "no element"
       XCTFail("\(screen), in \(setting): \(issue.compactDescription) (\(element))")
       return true

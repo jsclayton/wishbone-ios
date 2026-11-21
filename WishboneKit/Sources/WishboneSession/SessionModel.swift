@@ -21,6 +21,16 @@ public final class SessionModel {
   /// The items on the primary list, in the list's order.
   public private(set) var primaryListItems: [ItemRow] = []
 
+  /// The lists in the copy that the session's user is a recipient of, the primary list first. The copy holds only
+  /// the primary list until the pull brings the user's other lists.
+  public var yourLists: [ListRow] {
+    primaryList.map { [$0] } ?? []
+  }
+
+  /// Every list and every user in the copy, by ID.
+  private var lists: [String: ListRow] = [:]
+  private var users: [String: UserRow] = [:]
+
   /// Whether the last sync found that the instance can't be reached. The session stays, and screens show what is
   /// saved under the line "Can't reach {address}".
   public private(set) var isInstanceUnreachable = false
@@ -55,8 +65,21 @@ public final class SessionModel {
         self?.user = snapshot.user
         self?.primaryList = snapshot.primaryList
         self?.primaryListItems = snapshot.primaryListItems
+        self?.lists = snapshot.lists
+        self?.users = snapshot.users
       }
     )
+  }
+
+  /// The list in the copy with the ID. Nil for a list that is not in the copy: a missing list and a hidden list
+  /// are the same here, as they are on the server.
+  public func list(id: String) -> ListRow? {
+    lists[id]
+  }
+
+  /// The user in the copy with the ID. Nil for a user who is not in the copy.
+  public func user(id: String) -> UserRow? {
+    users[id]
   }
 
   /// Brings the instance and the copy in step: a sync sends the unsent changes, then pulls. See "When the app
