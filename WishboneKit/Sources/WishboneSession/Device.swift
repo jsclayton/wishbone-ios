@@ -24,7 +24,7 @@ public enum SignInState: Sendable, Equatable {
   /// The link is used or expired. The server gives one answer for an unknown, a used, and an expired link.
   case linkInvalid
 
-  /// A paste of something that is not a login link.
+  /// A paste of something that is not a login link. A link that the device keeps stays kept, for Try again.
   case notALoginLink
 
   /// The instance can't be reached. The device keeps the link, for Try again.
@@ -88,6 +88,11 @@ public final class Device {
   /// The link that the device keeps while the instance can't be reached, for Try again.
   private var keptLink: LoginLink?
 
+  /// Whether the device keeps a link, so the signed-out screen shows Try again and Cancel.
+  public var keepsLink: Bool {
+    keptLink != nil
+  }
+
   /// Builds the device, with the session that the session keychain holds. Its screens show what is saved at once.
   public init(_ setup: Setup) {
     self.setup = setup
@@ -101,17 +106,26 @@ public final class Device {
 
   // MARK: - Signing in
 
-  /// Signs in with the text that a person pasted. A text that is not a login link changes nothing but the message.
+  /// Signs in with the text that a person pasted. A text that is not a login link changes nothing but the message,
+  /// and a link that the device keeps stays kept.
   ///
   /// It returns when the sign-in has ended. After a sign-in that worked, the first sync and the report of the time
   /// zone have ended too. Nothing on screen waits for the report.
   public func signIn(pasting text: String) async {
     guard canStartSignIn else { return }
     guard let link = LoginLink(text) else {
-      keptLink = nil
       signInState = .notALoginLink
       return
     }
+    await signIn(with: link)
+  }
+
+  /// Signs in with a login link that the scanner read. The scanner ignores any other QR code, so it has no
+  /// message for one.
+  ///
+  /// It returns when the sign-in has ended, as a paste does.
+  public func signIn(scanned link: LoginLink) async {
+    guard canStartSignIn else { return }
     await signIn(with: link)
   }
 

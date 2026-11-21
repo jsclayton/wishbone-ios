@@ -53,6 +53,39 @@ struct SignInTests {
     #expect(instance.conditioner.requests.isEmpty)
   }
 
+  @Test("A paste of anything else while a link is kept keeps that link, for Try again")
+  func notALoginLinkKeepsTheKeptLink() async throws {
+    let robin = try await instance.person()
+    let device = instance.device()
+    instance.conditioner.dropEverything()
+    await device.signIn(pasting: try await instance.loginLink(for: robin))
+    #expect(device.signInState == .unreachable(try instance.address))
+    #expect(device.keepsLink)
+
+    await device.signIn(pasting: "https://example.com/wishlist")
+    #expect(device.signInState == .notALoginLink)
+    #expect(device.keepsLink)
+
+    instance.conditioner.passEverything()
+    await device.tryAgain()
+    #expect(device.signInState == .signedIn(name: robin.name))
+    #expect(!device.keepsLink)
+  }
+
+  @Test("A scanned login link signs in as a paste does")
+  func scannedLinkSignsIn() async throws {
+    let robin = try await instance.person(items: ["Kite"])
+    let link = try #require(LoginLink(try await instance.loginLink(for: robin)))
+    let device = instance.device()
+
+    await device.signIn(scanned: link)
+
+    #expect(device.signInState == .signedIn(name: robin.name))
+    let session = try #require(device.session)
+    await until { session.primaryListItems.map(\.title) == ["Kite"] }
+    #expect(instance.keychain.read()?.userID == robin.id)
+  }
+
   @Test("A used link gives the used-or-expired state, and no session")
   func usedLink() async throws {
     let robin = try await instance.person()
