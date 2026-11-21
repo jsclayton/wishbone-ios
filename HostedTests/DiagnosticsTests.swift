@@ -121,8 +121,12 @@ struct DiagnosticsTests {
     let storage = URL.cachesDirectory.appending(
       path: "DiagnosticsTest-\(UUID().uuidString)", directoryHint: .isDirectory)
     defer { try? FileManager.default.removeItem(at: storage) }
+    // The sessions are this install's: the marker is placed.
+    let marker = FileInstallMarker(container: storage)
+    try marker.place()
     let setup = Device.Setup(
-      userAgent: UserAgent(version: "1.0", isPad: false), keychain: keychain, storage: .folder(storage))
+      userAgent: UserAgent(version: "1.0", isPad: false), keychain: keychain, marker: marker,
+      storage: .folder(storage))
     // The bundle has no test server, so the instance can't be reached. The device is cleared all the same.
     let instance = try #require(InstanceAddress("http://127.0.0.1:9"))
 
@@ -154,8 +158,8 @@ struct DiagnosticsTests {
     }
 
     // The choice is not in the shared container, where an extension could read it.
-    let bundleID = try #require(Bundle.main.bundleIdentifier)
-    let shared = try #require(UserDefaults(suiteName: "group.\(bundleID)"))
+    let appGroup = try #require(Bundle.main.object(forInfoDictionaryKey: "WishboneAppGroup") as? String)
+    let shared = try #require(UserDefaults(suiteName: appGroup))
     #expect(!shared.dictionaryRepresentation().keys.contains { $0.hasPrefix("WishboneDiagnostics") })
   }
 
