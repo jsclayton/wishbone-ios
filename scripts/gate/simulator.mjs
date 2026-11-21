@@ -264,6 +264,14 @@ function holdStatusBar(simulator) {
  * simulator's ID, and the `settingsApplier` that knows its settings.
  */
 export function prepareSimulator({ say = console.log } = {}) {
+  // DIAGNOSTIC, to be removed: the simulators that the runner's image has, and the size of each one's data.
+  if (process.env.CI) {
+    try {
+      say(execFileSync('sh', ['-c', 'xcrun simctl list devices; cd ~/Library/Developer/CoreSimulator/Devices && du -sm */data 2>/dev/null | sort -rn | head -n 15'], { encoding: 'utf8' }));
+    } catch (error) {
+      say(`diagnostic failed: ${error.message}`);
+    }
+  }
   const timed = (what, work) => {
     const started = Date.now();
     const result = work();
