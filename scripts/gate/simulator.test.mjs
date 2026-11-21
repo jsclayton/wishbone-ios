@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { test } from 'node:test';
 
-import { buildArguments, gateSimulators, journeyRuns, pickDevice, resultBundles, settingCommands, settings, startSettingsHelper } from './simulator.mjs';
+import { buildArguments, compiledFiles, gateSimulators, journeyRuns, pickDevice, resultBundles, settingCommands, settings, startSettingsHelper } from './simulator.mjs';
 
 const iPhone = (name) => ({ name, identifier: `type.${name.replaceAll(' ', '-')}`, productFamily: 'iPhone' });
 const iPad = (name) => ({ name, identifier: `type.${name.replaceAll(' ', '-')}`, productFamily: 'iPad' });
@@ -124,4 +126,14 @@ test('the settings helper answers 500, with the reason, when a setting fails to 
   const response = await fetch(`${helper.address}/settings/increase-contrast`, { method: 'POST' });
   assert.equal(response.status, 500);
   assert.equal(await response.text(), 'simctl ended with 1');
+});
+
+test("the build's line counts the Swift files that it compiled, and a build with nothing to do compiled none", (t) => {
+  const folder = mkdtempSync(path.join(tmpdir(), 'wishbone-gate-test-'));
+  t.after(() => rmSync(folder, { recursive: true, force: true }));
+  const log = path.join(folder, 'build.log');
+  writeFileSync(log, 'SwiftCompile normal arm64 /a.swift\n    cd /\nSwiftCompile normal arm64 /b.swift\nCompileSwift normal arm64 /c.swift\nCodeSign /x.app\n');
+  assert.equal(compiledFiles(log), 3);
+  writeFileSync(log, 'Copy /a /b\nCodeSign /x.app\nProcessInfoPlistFile /x/Info.plist\n');
+  assert.equal(compiledFiles(log), 0);
 });

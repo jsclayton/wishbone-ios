@@ -1,8 +1,8 @@
 // The simulator tier: the hosted test bundle, then the journeys, on the gate's own simulator. `just simulator`
 // runs it, and it is step 5 of the gate. See "The simulator tier" in docs/development.md.
 //
-// It builds as `just build` (step 4) does, with the same arguments, so after step 4 its build has nothing to do.
-// Then it runs the tests from that build's `.xctestrun` file.
+// It builds as `just build` (step 4) does, with the same arguments, so after step 4 its build has nothing to do,
+// and it says how many Swift files it compiled. Then it runs the tests from that build's `.xctestrun` file.
 //
 // The journeys run twice. In the first run, each journey audits each screen in the four settings of the audit:
 // the journey asks this script's settings helper, a small HTTP server on the Mac, to put the simulator in each
@@ -12,7 +12,7 @@
 // each run.
 
 import { execFileSync, spawn } from 'node:child_process';
-import { createWriteStream, mkdirSync, readdirSync, rmSync } from 'node:fs';
+import { createWriteStream, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { createServer } from 'node:http';
 import path from 'node:path';
 import process from 'node:process';
@@ -77,6 +77,13 @@ export function resultBundles(directory) {
     hosted: [{ path: path.join(directory, 'hosted.xcresult'), label: 'the hosted tests' }],
     ui: journeyRuns.map((run) => ({ path: path.join(directory, `journeys-${run.name}.xcresult`), label: `the journeys in ${run.label}` })),
   };
+}
+
+/** The number of Swift files that the build in the log compiled. */
+export function compiledFiles(log) {
+  return readFileSync(log, 'utf8')
+    .split('\n')
+    .filter((line) => /^(SwiftCompile|CompileSwift) /.test(line)).length;
 }
 
 /** The `.xctestrun` file that the build wrote to the products folder. The build writes one. */
@@ -244,18 +251,15 @@ export async function runSimulatorTier({ root, directory, say = console.log }) {
     return ok;
   };
 
-  // The simulator boots while the build runs. The build is for the simulator's kind of Mac, not for one device.
-  const booted = new Promise((resolve, reject) => {
-    const boot = spawn('xcrun', ['simctl', 'bootstatus', simulator, '-b'], { stdio: 'ignore' });
-    boot.on('error', reject);
-    boot.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`simctl bootstatus ended with ${code}`))));
-  });
-  booted.catch(() => {});
   let helper = null;
   try {
+    const bootStarted = Date.now();
+    simctl(['bootstatus', simulator, '-b'], { stdio: 'ignore' });
+    say(`✓ Booted the gate's simulator (${duration(Date.now() - bootStarted)})`);
     if (!(await run('Built the app and the test bundles for the simulator', buildArguments, { log: 'build.log' }))) return false;
+    // After step 4, the build has nothing to compile. The line says so, so a log shows whether it reused step 4's.
+    say(`  It compiled ${compiledFiles(path.join(directory, 'build.log'))} Swift files.`);
     const testRun = findTestRun(path.join(root, 'build', 'DerivedData', 'Build', 'Products'));
-    await booted;
     holdStatusBar(simulator);
     apply(settings[0], simulator);
 
