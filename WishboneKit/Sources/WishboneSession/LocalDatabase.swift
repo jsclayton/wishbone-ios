@@ -96,13 +96,8 @@ struct LocalDatabase: Sendable {
   /// instance address and the user's ID, so each instance and user has a folder of its own, and the name gives
   /// neither away.
   static func folder(of session: Session, under base: URL) -> URL {
-    let key = SHA256.hash(data: Data("\(session.instance.text)\n\(session.userID)".utf8))
-    let name = key.prefix(16).map { byte in
-      let hex = String(byte, radix: 16)
-      return hex.count == 1 ? "0\(hex)" : hex
-    }.joined()
-    return base.appending(path: "Sessions", directoryHint: .isDirectory).appending(
-      path: name, directoryHint: .isDirectory)
+    base.appending(path: "Sessions", directoryHint: .isDirectory).appending(
+      path: session.opaqueName, directoryHint: .isDirectory)
   }
 
   /// The database of the session, as the storage says.
@@ -251,11 +246,14 @@ struct LocalDatabase: Sendable {
 
   // MARK: - What the session model publishes
 
-  /// The session's user, the user's primary list, and its items in the list's order.
+  /// The session's user, the user's primary list, and its items in the list's order. Then every list and every
+  /// user in the copy, by ID.
   struct Snapshot: Sendable, Equatable {
     var user: UserRow?
     var primaryList: ListRow?
     var primaryListItems: [ItemRow] = []
+    var lists: [String: ListRow] = [:]
+    var users: [String: UserRow] = [:]
   }
 
   /// An observation of the snapshot for the user. It gives a new snapshot after each change to the copy.
@@ -264,6 +262,8 @@ struct LocalDatabase: Sendable {
   > {
     ValueObservation.tracking { database in
       var snapshot = Snapshot()
+      for list in try ListRow.fetchAll(database) { snapshot.lists[list.id] = list }
+      for user in try UserRow.fetchAll(database) { snapshot.users[user.id] = user }
       snapshot.user = try UserRow.fetchOne(database, key: id)
       guard let listID = snapshot.user?.primaryListID else { return snapshot }
       snapshot.primaryList = try ListRow.fetchOne(database, key: listID)
@@ -271,5 +271,17 @@ struct LocalDatabase: Sendable {
         .order(Column("position"), Column("id")).fetchAll(database)
       return snapshot
     }.removeDuplicates()
+  }
+}
+
+extension Session {
+  /// A name for the session's instance and user that gives neither away. The folder of the session's files has
+  /// this name, and a window's saved place names its session by it.
+  public var opaqueName: String {
+    let key = SHA256.hash(data: Data("\(instance.text)\n\(userID)".utf8))
+    return key.prefix(16).map { byte in
+      let hex = String(byte, radix: 16)
+      return hex.count == 1 ? "0\(hex)" : hex
+    }.joined()
   }
 }

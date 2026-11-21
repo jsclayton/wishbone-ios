@@ -67,6 +67,28 @@ struct LocalCopyTests {
     #expect(!session.isInstanceUnreachable)
   }
 
+  @Test("Your lists, and a list or a user by ID, come from the copy. What is not in the copy is nil")
+  func lookups() async throws {
+    let robin = try await instance.person(items: ["Kite"])
+    let other = try await instance.person("Sam")
+    let device = instance.device()
+    await device.signIn(pasting: try await instance.loginLink(for: robin))
+    let session = try #require(device.session)
+    await until { session.primaryList != nil }
+
+    let primary = try #require(session.primaryList)
+    #expect(session.yourLists == [primary])
+    #expect(session.list(id: primary.id) == primary)
+    #expect(session.user(id: robin.id) == session.user)
+    #expect(session.user(id: robin.id)?.name == robin.name)
+
+    // A list and a user of the instance that the copy doesn't hold, and an ID that names nothing.
+    let hidden = try await instance.builder.primaryList(of: other)
+    #expect(session.list(id: hidden.id) == nil)
+    #expect(session.user(id: other.id) == nil)
+    #expect(session.list(id: "no-such-list") == nil)
+  }
+
   @Test("A list longer than one page comes whole, in the list's order")
   func longList() async throws {
     let titles = (1...101).map { "Item \($0)" }
