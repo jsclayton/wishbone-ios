@@ -47,11 +47,13 @@ enum LocalCopyRules {
     writes(in: files).filter { !writers.contains($0.writer) }.map(\.finding)
   }
 
-  // MARK: - The one change that keeps the ETag
+  // MARK: - The changes that keep the ETag
 
-  /// The one function that may keep the `ETag` through a change: the blocked stores, which `GET /versions` doesn't
-  /// cover. Any other change to the copy must drop it.
-  static let outsideTheVersions = [Writer(path: "\(module)/LocalDatabase.swift", function: "replaceBlockedStores")]
+  /// The functions that may keep the `ETag` through a change: the ones of the blocked stores, which
+  /// `GET /versions` doesn't cover. Any other change to the copy must drop it.
+  static let outsideTheVersions = ["replaceBlockedStores", "saveBlockedStore", "removeBlockedStore"].map {
+    Writer(path: "\(module)/LocalDatabase.swift", function: $0)
+  }
 
   /// An argument that may keep the `ETag`: `isOutsideTheVersions:` with any value but `false`. The parameter's own
   /// declaration, `isOutsideTheVersions: Bool`, is not one.
@@ -59,7 +61,7 @@ enum LocalCopyRules {
 
   /// Each place that may keep the `ETag` through a change, with the function that it is in.
   static func changesOutsideTheVersions(in files: [SourceFile]) -> [(writer: Writer, finding: Finding)] {
-    places(of: keepsTheETag, in: files, "keeps the ETag outside replaceBlockedStores()")
+    places(of: keepsTheETag, in: files, "keeps the ETag outside the blocked stores' functions")
   }
 
   static func etagFindings(in files: [SourceFile]) -> [Finding] {
@@ -145,14 +147,14 @@ struct LocalCopyRulesTests {
     #expect(LocalCopyRules.writes(in: files).map(\.writer) == LocalCopyRules.writers)
     let findings = LocalCopyRules.findings(in: files)
     #expect(findings.isEmpty, "\(findings.report)")
-    // The same for the one change that keeps the ETag.
+    // The same for the changes that keep the ETag.
     #expect(LocalCopyRules.changesOutsideTheVersions(in: files).map(\.writer) == LocalCopyRules.outsideTheVersions)
     let keeps = LocalCopyRules.etagFindings(in: files)
     #expect(keeps.isEmpty, "\(keeps.report)")
   }
 
   @Test(
-    "The scan catches a change that keeps the ETag outside replaceBlockedStores()",
+    "The scan catches a change that keeps the ETag outside the blocked stores' functions",
     arguments: [
       "func save() async throws {\n  try await change(isOutsideTheVersions: true) { _ in }\n}",
       "func save(keep: Bool) async throws {\n  try await change(isOutsideTheVersions: keep) { _ in }\n}",

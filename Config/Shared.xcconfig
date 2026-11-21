@@ -21,6 +21,10 @@ WISHBONE_SOURCE_URL = https:/$()/github.com/jsclayton/wishbone-ios
 // The privacy policy link on the Share diagnostics screen.
 WISHBONE_PRIVACY_URL = https:/$()/github.com/jsclayton/wishbone-ios/blob/main/PRIVACY.md
 
+// The "Running Wishbone" link in the For the admin footer of Settings: the server's docs on running an instance.
+// Empty means no link.
+WISHBONE_OPERATOR_DOCS_URL = https:/$()/github.com/jsclayton/wishbone/blob/main/docs/operations.md
+
 // The support row in Settings. Empty means no row.
 WISHBONE_SUPPORT_URL = https:/$()/buymeacoffee.com/jsclayton
 

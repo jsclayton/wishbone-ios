@@ -522,6 +522,24 @@ struct LocalDatabase: Sendable {
     }
   }
 
+  /// Saves a blocked store that the server has just blocked, in the place of a row with its ID or its store. The
+  /// kept `ETag` stays: `GET /versions` doesn't cover blocked stores.
+  func saveBlockedStore(_ store: Versioned<BlockedStore>) async throws {
+    let row = BlockedStoreRow(store)
+    try await change(isOutsideTheVersions: true) { database in
+      try BlockedStoreRow.filter(Column("store") == row.store && Column("id") != row.id).deleteAll(database)
+      try row.save(database)
+    }
+  }
+
+  /// Removes a blocked store that the server no longer blocks. The kept `ETag` stays: `GET /versions` doesn't cover
+  /// blocked stores.
+  func removeBlockedStore(_ id: String) async throws {
+    try await change(isOutsideTheVersions: true) { database in
+      _ = try BlockedStoreRow.deleteOne(database, key: id)
+    }
+  }
+
   /// Whether the copy holds any blocked store.
   func holdsBlockedStores() async throws -> Bool {
     try await writer.read { database in try BlockedStoreRow.fetchCount(database) > 0 }

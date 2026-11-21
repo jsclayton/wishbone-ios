@@ -27,6 +27,8 @@ public enum Route: String, Sendable, CaseIterable {
   case gifts
   case gift
   case blockedStores
+  case blockStore
+  case unblockStore
   case revokeCurrentSession
   case confirmProfile
   case uploadImage
@@ -37,9 +39,9 @@ public enum Route: String, Sendable, CaseIterable {
       .occasion, .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation,
       .gifts, .gift, .blockedStores:
       "GET"
-    case .redeemLoginLink, .confirmProfile, .uploadImage: "POST"
+    case .redeemLoginLink, .confirmProfile, .uploadImage, .blockStore: "POST"
     case .updateMe: "PATCH"
-    case .revokeCurrentSession: "DELETE"
+    case .revokeCurrentSession, .unblockStore: "DELETE"
     }
   }
 
@@ -73,7 +75,8 @@ public enum Route: String, Sendable, CaseIterable {
     case .invitation: "/invitations/{id}"
     case .gifts: "/gifts"
     case .gift: "/gifts/{id}"
-    case .blockedStores: "/blocked-stores"
+    case .blockedStores, .blockStore: "/blocked-stores"
+    case .unblockStore: "/blocked-stores/{id}"
     case .revokeCurrentSession: "/users/me/sessions/current"
     case .confirmProfile: "/users/me/confirm-profile"
     case .uploadImage: "/images"
@@ -87,7 +90,7 @@ public enum Route: String, Sendable, CaseIterable {
     case .health, .redeemLoginLink: true
     case .versions, .updateMe, .users, .user, .groups, .group, .groupUsers, .groupGroups, .occasions, .occasion,
       .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation, .gifts, .gift,
-      .blockedStores, .revokeCurrentSession, .confirmProfile, .uploadImage, .me:
+      .blockedStores, .blockStore, .unblockStore, .revokeCurrentSession, .confirmProfile, .uploadImage, .me:
       false
     }
   }
@@ -104,7 +107,7 @@ public enum Route: String, Sendable, CaseIterable {
       .invitations, .gifts, .blockedStores:
       Self.paging
     case .health, .redeemLoginLink, .versions, .updateMe, .user, .group, .occasion, .list, .item, .invitation, .gift,
-      .revokeCurrentSession, .confirmProfile, .uploadImage, .me:
+      .blockStore, .unblockStore, .revokeCurrentSession, .confirmProfile, .uploadImage, .me:
       []
     }
   }
@@ -119,9 +122,12 @@ public enum Route: String, Sendable, CaseIterable {
     case .versions: ["If-None-Match"]
     // A key makes the time zone report safe to send once more after a lost connection.
     case .updateMe: ["Idempotency-Key"]
+    // A key makes a block safe to send once more after a lost connection. An unblock is a `DELETE`, which is safe
+    // already.
+    case .blockStore: ["Idempotency-Key"]
     case .health, .redeemLoginLink, .users, .user, .groups, .group, .groupUsers, .groupGroups, .occasions, .occasion,
       .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation, .gifts, .gift,
-      .blockedStores, .revokeCurrentSession, .confirmProfile, .uploadImage, .me:
+      .blockedStores, .unblockStore, .revokeCurrentSession, .confirmProfile, .uploadImage, .me:
       []
     }
   }
@@ -131,9 +137,10 @@ public enum Route: String, Sendable, CaseIterable {
     switch self {
     case .redeemLoginLink: fields(of: RedeemBody.CodingKeys.self)
     case .updateMe: fields(of: UserChanges.CodingKeys.self, nested: ["birthday": PartialDate.fields])
+    case .blockStore: fields(of: BlockStoreBody.CodingKeys.self)
     case .health, .versions, .users, .user, .groups, .group, .groupUsers, .groupGroups, .occasions, .occasion,
       .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation, .gifts, .gift,
-      .blockedStores, .revokeCurrentSession, .confirmProfile, .uploadImage, .me:
+      .blockedStores, .unblockStore, .revokeCurrentSession, .confirmProfile, .uploadImage, .me:
       []
     }
   }
@@ -164,7 +171,8 @@ public enum Route: String, Sendable, CaseIterable {
     case .gifts: Page<VersionedRow<Gift>>.fields
     case .gift: Gift.fields
     case .blockedStores: Page<VersionedRow<BlockedStore>>.fields
-    case .revokeCurrentSession: NoContent.fields
+    case .blockStore: BlockedStore.fields
+    case .revokeCurrentSession, .unblockStore: NoContent.fields
     }
   }
 }
@@ -368,6 +376,29 @@ extension Endpoint where Response == NoContent {
   /// Signs out: the server revokes the session that the token is of.
   static var revokeCurrentSession: Endpoint {
     Endpoint(route: .revokeCurrentSession)
+  }
+
+  /// Takes a store off the blocked list. Only the admin can. It sends no `If-Match` (see "No If-Match" in
+  /// `docs/spec.md`).
+  static func unblockStore(_ id: String) -> Endpoint {
+    Endpoint(route: .unblockStore, parameters: ["id": id])
+  }
+}
+
+/// The body of `POST /blocked-stores`: a host name, or a web address of the store. The server names the store by
+/// its host.
+struct BlockStoreBody: Encodable, Sendable {
+  let store: String
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case store
+  }
+}
+
+extension Endpoint where Response == BlockedStore {
+  /// Blocks a store, with a key of its own, so that a resend after a lost connection blocks it once.
+  static func blockStore(_ store: String) -> Endpoint {
+    Endpoint(route: .blockStore, body: BlockStoreBody(store: store), idempotencyKey: UUID().uuidString)
   }
 }
 
