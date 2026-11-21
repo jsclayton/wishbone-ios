@@ -124,8 +124,13 @@ struct ListsTests {
   /// What the instance names for the person now, for every kind that the copy holds. The person's own session
   /// asks, not the device.
   private func entries(namedFor person: Fixture.Person) async throws -> Set<String> {
-    let data = try await person.signedIn().get("/versions")["data"].array ?? []
-    return Set(
+    entries(in: try await person.signedIn().get("/versions")["data"].array ?? [])
+  }
+
+  /// The entries of an answer of `GET /versions`, for every kind that the copy holds, named as `entries(of:)`
+  /// names the copy's.
+  private func entries(in data: [JSON]) -> Set<String> {
+    Set(
       data.compactMap { entry in
         guard let kind = entry["kind"].string, Self.kinds.union(Self.homeKinds).contains(kind) else { return nil }
         let id = entry["id"].string ?? ""
@@ -833,12 +838,15 @@ struct ListsTests {
     // The instance's own answer, with the shared list and the gift to the deactivated child gone, and another
     // version for the deactivated child's summary: no body of the copy holds the summary now.
     let shared = family.sharedList.id
-    var entries = try #require(try await family.relative.signedIn().get("/versions")["data"].array)
-    entries.removeAll {
+    var answer = try #require(try await family.relative.signedIn().get("/versions")["data"].array)
+    let itemsOfShared = Set(
+      answer.filter { $0["kind"] == "item" && $0["list_id"].string == shared }.compactMap { $0["id"].string })
+    answer.removeAll {
       $0["id"].string == shared || $0["list_id"].string == shared
+        || $0["item_id"].string.map(itemsOfShared.contains) == true
         || ($0["kind"] == "gift" && $0["id"].string == family.givenGift.id)
     }
-    entries = entries.map { entry in
+    answer = answer.map { entry in
       guard entry["kind"] == "user_summary", entry["id"].string == family.deactivatedChild.id else { return entry }
       return ["kind": "user_summary", "id": entry["id"], "version": "\"renamed\"", "list_id": nil, "item_id": nil]
     }
@@ -846,12 +854,21 @@ struct ListsTests {
       Route("GET", "/versions"),
       with: .init(
         status: 200, headers: ["Content-Type": "application/json", "ETag": "\"canned\""],
-        body: try JSON.object(["data": .array(entries)]).data))
+        body: try JSON.object(["data": .array(answer)]).data))
 
+    // The copy ends with what the answer names, but for the summary. The pull removes the list in one change, and
+    // the summary in a later one, and the session publishes each change. So the wait is for the whole copy, never
+    // for the list alone. The wait runs during the sync, so that it sees the change between the two.
+    let renamed = "user_summary \(family.deactivatedChild.id) \"renamed\""
+    let named = entries(in: answer)
+    #expect(named.contains(renamed))
     let mark = relative.mark
-    await session.syncNow()
-    await until { session.list(id: shared) == nil }
+    let sync = Task { await session.syncNow() }
+    await until { entries(of: session) == named.subtracting([renamed]) }
+    #expect(entries(of: session) == named.subtracting([renamed]))
+    #expect(session.list(id: shared) == nil)
     #expect(session.user(id: family.deactivatedChild.id) == nil)
+    #expect(await sync.value == .succeeded)
     #expect(relative.asked(since: mark) == ["GET /versions"])
     #expect(!session.isInstanceUnreachable)
   }
