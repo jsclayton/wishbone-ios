@@ -176,8 +176,8 @@ public struct APIClient: Sendable {
         Log.request(route, "has a certificate that the device doesn't trust")
         throw .unreachable(.untrustedCertificate)
       }
-      // No network, a timeout, a DNS failure, a TLS failure, a connection that closed: all are unreachable. The
-      // rule depends on no one code of `URLError`.
+      // Apart from the certificate codes above: no network, a timeout, a DNS failure, another TLS failure, a
+      // connection that closed. All are unreachable, and the rule depends on no one code of `URLError`.
       Log.request(route, error is TimedOut ? "timed out" : "got no answer")
       throw .unreachable(.noAnswer)
     }

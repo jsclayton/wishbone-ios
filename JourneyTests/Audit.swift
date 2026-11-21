@@ -65,15 +65,14 @@ enum Audit {
   ///
   /// `rowsThatLeaveTheScreen` names the rows of a system list, by the start of their words, that a larger text
   /// pushes off the screen. The list then lets go of them, so the Dynamic Type check can't measure them, and
-  /// reports them as "partially unsupported". Only that issue is allowed for them. The audit at the largest text
-  /// size still checks each row that shows there.
+  /// reports them as "partially unsupported". Only that issue is allowed for them, and never at the largest text
+  /// size: there the rows that show are on the screen from the start, so the check measures each of them in full.
   static func run(
     on app: XCUIApplication, showing screen: String, in test: XCTestCase, rowsThatLeaveTheScreen: [String] = []
   ) async throws {
-    // In the double-length pseudo-language, the words start with the words of English too.
-    let rows = rowsThatLeaveTheScreen
     guard let helper else {
-      try audit(app, screen, in: ownSetting, screenshot: app.screenshot(), rows: rows, test: test)
+      // A run with no helper is at the simulator's own text size, as the double-length run is.
+      try audit(app, screen, in: ownSetting, screenshot: app.screenshot(), rows: rowsThatLeaveTheScreen, test: test)
       return
     }
     guard try await isNew(screen, helper: helper) else { return }
@@ -82,11 +81,14 @@ enum Audit {
     // is still on its way from one setting to the next, and each change is of one setting only.
     try await apply(settings[0], helper: helper)
     var current = try await settledScreen(of: app, in: settings[0], where: { _ in true })
-    try audit(app, screen, in: settings[0].label, screenshot: current.screenshot, rows: rows, test: test)
+    try audit(
+      app, screen, in: settings[0].label, screenshot: current.screenshot, rows: rowsThatLeaveTheScreen, test: test)
     for setting in settings.dropFirst() {
       try await apply(setting, helper: helper)
       let before = current.pixels
       let shown = try await settledScreen(of: app, in: setting, where: { $0 != before })
+      // The largest text size gets no rows, so it checks Dynamic Type on every row that shows. See above.
+      let rows = setting.name == "largest-text" ? [] : rowsThatLeaveTheScreen
       try audit(app, screen, in: setting.label, screenshot: shown.screenshot, rows: rows, test: test)
       try await apply(settings[0], helper: helper)
       current = try await settledScreen(of: app, in: settings[0], where: { $0 != shown.pixels })
@@ -111,7 +113,8 @@ enum Audit {
       // prompt as clipped also when all of it shows, and when the field holds text. The field's label is the whole
       // prompt, so VoiceOver reads it.
       if issue.auditType == .textClipped, issue.element?.elementType == .searchField { return true }
-      // A row that a larger text pushes off the screen can't be measured. See `run`.
+      // A row that a larger text pushes off the screen can't be measured. See `run`. In the double-length
+      // pseudo-language, a row's words start with the words of English too, so the prefix still matches.
       if issue.auditType == .dynamicType, let row = issue.element?.label, rows.contains(where: row.hasPrefix) {
         return true
       }
