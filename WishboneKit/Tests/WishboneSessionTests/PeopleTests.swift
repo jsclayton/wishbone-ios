@@ -356,6 +356,38 @@ struct PeopleTests {
     #expect(relative.instance.conditioner.requests.last?.headers["if-none-match"] != nil)
   }
 
+  @Test(
+    """
+    A summary that only a list holds is not in the copy yet: the copy holds no list's recipients. The sync still \
+    ends in step, and the next one is one request
+    """
+  )
+  func summaryThatOnlyAListHolds() async throws {
+    let family = try await builder.standardFamily()
+    // The relative sees the child, and so the list that the child shares with the deactivated child. With the
+    // parent out of the relative's groups, no user that the relative sees names the deactivated child.
+    try await family.admin.signedIn().send(
+      "DELETE", "/groups/\(family.household.id)/users/\(family.parent.id)"
+    ).expecting(204)
+    let recipients = try await family.relative.signedIn().all("/lists/\(family.sharedList.id)/recipients")
+    #expect(recipients.contains { $0["user"]["id"].string == family.deactivatedChild.id })
+
+    let relative = try await signedIn(as: family.relative)
+    let named = try await entries(namedFor: family.relative)
+    let onlyOnAList = try #require(named.first { $0.hasPrefix("user_summary \(family.deactivatedChild.id) ") })
+    await until { entries(of: relative.session) == named.subtracting([onlyOnAList]) }
+    // The parent's summary is in the child's body, so the copy has it.
+    #expect(try user(family.parent, in: relative.session).isSummary)
+    #expect(!relative.session.users.contains { $0.id == family.deactivatedChild.id })
+    #expect(!relative.asked().contains { $0.hasPrefix("GET /users/") })
+
+    // The copy agrees with the answer in everything that it holds, so the answer's ETag is kept.
+    let mark = relative.mark
+    await relative.session.sync()
+    #expect(relative.asked(since: mark) == ["GET /versions"])
+    #expect(relative.instance.conditioner.requests.last?.headers["if-none-match"] != nil)
+  }
+
   // MARK: - 4. Groups
 
   @Test(

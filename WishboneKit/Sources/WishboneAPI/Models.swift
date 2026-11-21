@@ -467,7 +467,7 @@ struct Page<Row: Model>: Model {
 }
 
 /// A whole collection, as the client read it: every row of every page.
-public struct Collection<Row: Sendable>: Sendable {
+public struct FetchedCollection<Row: Sendable>: Sendable {
   public let rows: [Row]
 
   /// Whether the collection came in one page, which is one answer of the instance. Only then is a thing that is

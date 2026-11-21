@@ -117,7 +117,7 @@ struct Pull: Sendable {
     not rows: [String: String],
     id: (Resource) -> String,
     isHere: (Resource) -> Bool = { _ in true },
-    all: () async throws(APIError) -> Collection<Versioned<Resource>>,
+    all: () async throws(APIError) -> FetchedCollection<Versioned<Resource>>,
     one: (String) async throws(APIError) -> Versioned<Resource>,
     agrees: inout Bool,
     save: (_ rows: [Versioned<Resource>], _ gone: [String]) async throws -> Void

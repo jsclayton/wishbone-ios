@@ -72,7 +72,7 @@ public struct APIClient: Sendable {
   // MARK: - Users, groups and occasions
 
   /// `GET /users`: every user that the session's user can see, each with its version.
-  public func users() async throws(APIError) -> Collection<Versioned<User>> {
+  public func users() async throws(APIError) -> FetchedCollection<Versioned<User>> {
     try await rows { cursor in .page(of: .users, cursor: cursor) }
   }
 
@@ -83,7 +83,7 @@ public struct APIClient: Sendable {
 
   /// `GET /groups`: the groups that the session's user is in, directly or through nesting. The admin gets every
   /// group.
-  public func groups() async throws(APIError) -> Collection<Versioned<Group>> {
+  public func groups() async throws(APIError) -> FetchedCollection<Versioned<Group>> {
     try await rows { cursor in .page(of: .groups, cursor: cursor) }
   }
 
@@ -93,7 +93,7 @@ public struct APIClient: Sendable {
   }
 
   /// `GET /occasions`: every occasion that the session's user can see.
-  public func occasions() async throws(APIError) -> Collection<Versioned<Occasion>> {
+  public func occasions() async throws(APIError) -> FetchedCollection<Versioned<Occasion>> {
     try await rows { cursor in .page(of: .occasions, cursor: cursor) }
   }
 
@@ -142,7 +142,7 @@ public struct APIClient: Sendable {
   }
 
   /// `GET /lists/{id}/items`: every item on the list, in the list's order, each with its version.
-  public func items(ofList id: String) async throws(APIError) -> Collection<Versioned<Item>> {
+  public func items(ofList id: String) async throws(APIError) -> FetchedCollection<Versioned<Item>> {
     try await rows { cursor in .page(of: .listItems, id: id, cursor: cursor) }
   }
 
@@ -159,7 +159,7 @@ public struct APIClient: Sendable {
   /// Every page of a collection. It follows `next_cursor` to the last page.
   private func collection<Row>(
     _ page: (_ cursor: String?) -> Endpoint<Page<Row>>
-  ) async throws(APIError) -> Collection<Row> {
+  ) async throws(APIError) -> FetchedCollection<Row> {
     var rows: [Row] = []
     var pages = 0
     var cursor: String?
@@ -169,15 +169,15 @@ public struct APIClient: Sendable {
       pages += 1
       cursor = answer.nextCursor
     } while cursor != nil
-    return Collection(rows: rows, isOnePage: pages == 1)
+    return FetchedCollection(rows: rows, isOnePage: pages == 1)
   }
 
   /// A collection of resources, each with its version.
   private func rows<Resource>(
     _ page: (_ cursor: String?) -> Endpoint<Page<VersionedRow<Resource>>>
-  ) async throws(APIError) -> Collection<Versioned<Resource>> {
+  ) async throws(APIError) -> FetchedCollection<Versioned<Resource>> {
     let collection = try await collection(page)
-    return Collection(rows: collection.rows.map(\.row), isOnePage: collection.isOnePage)
+    return FetchedCollection(rows: collection.rows.map(\.row), isOnePage: collection.isOnePage)
   }
 
   /// The IDs of a membership, in the collection's order. An ID that came on two pages is there once, at its first
