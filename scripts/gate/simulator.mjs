@@ -244,31 +244,31 @@ export function settingsApplier(simulator, { run = simctlWithLimit, limitMs = se
   let ms = 0;
   let queue = Promise.resolve();
   const applyNow = async (setting, callLimitMs) => {
-      for (const command of settingCommands(setting, simulator)) {
-        const [, , name, value] = command;
-        if (set.get(name) === value) continue;
-        const started = Date.now();
-        // A call that fails leaves the setting unknown, so the next `apply` runs it again.
-        set.delete(name);
-        try {
-          for (let attempt = 1; ; attempt += 1) {
-            calls += 1;
-            try {
-              await run(command, callLimitMs);
-              break;
-            } catch (error) {
-              if (!error.timedOut || attempt === 2) throw error;
-              retries += 1;
-            }
+    for (const command of settingCommands(setting, simulator)) {
+      const [, , name, value] = command;
+      if (set.get(name) === value) continue;
+      const started = Date.now();
+      // A call that fails leaves the setting unknown, so the next `apply` runs it again.
+      set.delete(name);
+      try {
+        for (let attempt = 1; ; attempt += 1) {
+          calls += 1;
+          try {
+            await run(command, callLimitMs);
+            break;
+          } catch (error) {
+            if (!error.timedOut || attempt === 2) throw error;
+            retries += 1;
           }
-        } catch (error) {
-          const twice = error.timedOut ? ', twice' : '';
-          throw new Error(`simctl ${command.join(' ')} ${error.message}${twice}, so the simulator isn't in ${setting.label}`);
-        } finally {
-          ms += Date.now() - started;
         }
-        set.set(name, value);
+      } catch (error) {
+        const twice = error.timedOut ? ', twice' : '';
+        throw new Error(`simctl ${command.join(' ')} ${error.message}${twice}, so the simulator isn't in ${setting.label}`);
+      } finally {
+        ms += Date.now() - started;
       }
+      set.set(name, value);
+    }
   };
   return {
     apply(setting, { limitMs: callLimitMs = limitMs } = {}) {
@@ -290,7 +290,8 @@ export function settingsApplier(simulator, { run = simctlWithLimit, limitMs = se
  *
  * It also knows which screens the run has audited. `POST /screens`, with a screen's name as the body, answers
  * 201 when the name is new in the run, so the journey audits the screen, and 200 when a journey audited it
- * already, so the journey doesn't audit it again. Each run of the journeys starts its own helper.
+ * already, so the journey doesn't audit it again. Only the run in the four settings has a helper, and it starts
+ * its own, so the screens that it remembers are that run's.
  *
  * Resolves with `{ address, close, screens }`, where `screens()` gives the names, in the order they came.
  */
@@ -441,7 +442,7 @@ export async function runSimulatorTier({ root, directory, build = true, say = co
     const helperMs = applier.ms();
     for (const [index, journeys] of journeyRuns.entries()) {
       await applier.apply(settings[0]);
-      // Each run of the journeys has its own helper, so the run audits each screen that it reaches.
+      // Only the run in the four settings has a helper, so the screens that it remembers are that run's.
       await helper?.close();
       helper = journeys.helper ? await startSettingsHelper((setting) => applier.apply(setting)) : null;
       // xcodebuild gives the test runner each variable that starts with TEST_RUNNER_, without that start.
@@ -458,8 +459,9 @@ export async function runSimulatorTier({ root, directory, build = true, say = co
       }
       if (!passed) return false;
       if (journeys.helper) {
-        // The result bundle must have each screen that the journeys reached in the four settings, once.
-        const { screens, problem } = checkAuditScreenshots(readAttachmentNames(bundle), settings.map((setting) => setting.label));
+        // The result bundle must have each screen that the helper audited, in the four settings, once, and no other.
+        const labels = settings.map((setting) => setting.label);
+        const { screens, problem } = checkAuditScreenshots(readAttachmentNames(bundle), labels, helper.screens());
         if (problem !== null) {
           say(`✗ The audit's screenshots in ${relative(bundle)}: ${problem}`);
           return false;
