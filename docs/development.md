@@ -255,6 +255,7 @@ Time and load:
 - Each step is stopped, with all its child processes, when it passes its time limit. A step past its limit is a hang, not a flake.
 - A process that a step leaves behind when it ends is stopped too.
 - The gate shuts its own simulator down when the simulator step ends, however it ends. The simulator belongs to the system, so stopping the step's processes leaves it running.
+- The simulator step's limit is 30 minutes, for the six journeys. On a new CI runner, the simulator's first boot starts hundreds of its own processes, and takes up to about 6 minutes before the first test. That work uses the whole runner, so it can't run beside the other steps. Then each journey takes about 1m30s on CI, over both of its runs. The step prints a line for each part of the simulator's start, and the time that each run's tests took, so a slower part shows. The Gate job's `timeout-minutes` in `ci.yml` stays above the sum of the steps' limits, and a gate test holds it there.
 - A gate that is killed, even with `kill -9`, stops its running step. The slot is free only when that step's processes have stopped.
 - Each run logs its step times to a file that git ignores, `build/gate/times.jsonl`, so a slowdown shows as a trend. The last run's logs are beside it, in `build/gate/run/`.
 - **The budget is 5 minutes**, warm, on the maintainer's laptop. A gate over budget passes with a warning. If it stays over, open an issue to fix it. CI starts cold, so the gate gives no warning there.

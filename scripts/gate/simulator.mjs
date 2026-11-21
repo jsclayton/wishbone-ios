@@ -390,8 +390,6 @@ export async function runSimulatorTier({ root, directory, build = true, say = co
     const helperCalls = applier.calls();
     const helperRetries = applier.retries();
     const helperMs = applier.ms();
-    // DIAGNOSTIC, to be removed: the journeys three times over, to see their cost once the simulator has settled.
-    for (let pass = 0; pass < 3; pass += 1)
     for (const [index, journeys] of journeyRuns.entries()) {
       await applier.apply(settings[0]);
       // xcodebuild gives the test runner each variable that starts with TEST_RUNNER_, without that start.
@@ -399,8 +397,8 @@ export async function runSimulatorTier({ root, directory, build = true, say = co
         TEST_RUNNER_WISHBONE_SETTINGS_HELPER: journeys.helper ? helper.address : '',
         TEST_RUNNER_WISHBONE_DOUBLE_LENGTH: journeys.doubleLength ? 'YES' : 'NO',
       };
-      const bundle = pass === 0 ? bundles.ui[index].path : path.join(directory, `pass-${pass}-journeys-${journeys.name}.xcresult`);
-      const passed = await run(`Pass ${pass + 1}: the journeys in ${journeys.label}`, test('JourneyTests', bundle), { log: `pass-${pass}-journeys-${journeys.name}.log`, bundle, env });
+      const bundle = bundles.ui[index].path;
+      const passed = await run(`The journeys in ${journeys.label}`, test('JourneyTests', bundle), { log: `journeys-${journeys.name}.log`, bundle, env });
       if (index === 0) {
         const retried = applier.retries() - helperRetries;
         const again = retried === 0 ? '' : `, and ran ${retried} that hung once more`;
