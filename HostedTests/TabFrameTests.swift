@@ -21,7 +21,8 @@ struct TabFrameTests {
     let kept = Session(instance: instance, token: "a-token-for-the-test", userID: "7")
     device = Device(
       Device.Setup(
-        userAgent: UserAgent(version: "1.0", isPad: false), keychain: KeptSession(session: kept), storage: .memory))
+        userAgent: UserAgent(version: "1.0", isPad: false), keychain: KeptSession(session: kept),
+        marker: WrittenMarker(), storage: .memory))
     session = try #require(device.session)
   }
 
@@ -69,6 +70,12 @@ private struct KeptSession: SessionKeychain {
   func read() throws(SessionKeychainError) -> Session? { session }
   func save(_ session: Session) throws(SessionKeychainError) {}
   func delete() throws(SessionKeychainError) {}
+}
+
+/// An install marker that this install has placed, so the kept session is not left over.
+private struct WrittenMarker: InstallMarker {
+  var isPresent: Bool { true }
+  func place() {}
 }
 
 /// A narrow window of the app that shows the tab frame at a place that the test owns, as a window's root does.

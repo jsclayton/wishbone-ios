@@ -19,6 +19,10 @@ struct Instance {
   /// The device's session keychain. A second device with the same one stands for a relaunch.
   let keychain = InMemorySessionKeychain()
 
+  /// The device's install marker, which stands for the app group's shared container. A device with a new one
+  /// stands for a reinstall.
+  let marker = InMemoryInstallMarker()
+
   /// `tls` is how the conditioner, and so the instance address, takes a connection.
   init(server: TestServer? = nil, tls: NetworkConditioner.TLS = .none) async throws {
     if let server { self.server = server } else { self.server = try await TestServer.shared() }
@@ -38,12 +42,15 @@ struct Instance {
   /// so a test never depends on the zone of the Mac that runs it.
   func device(
     storage: SessionStorage = .memory,
+    marker: (any InstallMarker)? = nil,
     clock: any Clock<Duration> = ContinuousClock(),
     timeZone: TimeZoneSource = .fixed("UTC")
   ) -> Device {
     Device(
       Device.Setup(
-        userAgent: UserAgent(version: "1.0", isPad: false), keychain: keychain, storage: storage, clock: clock,
+        userAgent: UserAgent(version: "1.0", isPad: false), keychain: keychain, marker: marker ?? self.marker,
+        storage: storage,
+        clock: clock,
         timeZone: timeZone))
   }
 

@@ -65,6 +65,9 @@ public final class Device {
   public struct Setup: Sendable {
     public var userAgent: UserAgent
     public var keychain: any SessionKeychain
+
+    /// The install marker in the app group's shared container.
+    public var marker: any InstallMarker
     public var storage: SessionStorage
 
     /// The clock of every timeout.
@@ -76,12 +79,14 @@ public final class Device {
     public init(
       userAgent: UserAgent,
       keychain: any SessionKeychain,
+      marker: any InstallMarker,
       storage: SessionStorage,
       clock: any Clock<Duration> = ContinuousClock(),
       timeZone: TimeZoneSource = .system
     ) {
       self.userAgent = userAgent
       self.keychain = keychain
+      self.marker = marker
       self.storage = storage
       self.clock = clock
       self.timeZone = timeZone
@@ -107,14 +112,59 @@ public final class Device {
     keptLink != nil
   }
 
+  /// The revoke of a session that an earlier install left, while it runs.
+  private var revokingLeftOver: Task<Void, Never>?
+
   /// Builds the device, with the session that the session keychain holds. Its screens show what is saved at once.
+  ///
+  /// A session with no install marker is left over from an earlier install of the app: the device forgets it at
+  /// once, and asks its instance to revoke it. With no session, the device clears the local databases, which a
+  /// backup restored onto a new device can bring with no Keychain item. See "A fresh install starts signed out" in
+  /// `docs/spec.md`.
   public init(_ setup: Setup) {
     self.setup = setup
+    let kept: Session?
     do {
-      if let kept = try setup.keychain.read() { session = model(for: kept) }
+      kept = try setup.keychain.read()
     } catch {
       // The item can't be read, for example before the first unlock. Nothing is forgotten.
       Log.fault(.session, "The session keychain can't be read.", detail: "\(error.status)")
+      return
+    }
+    guard let kept else {
+      LocalDatabase.removeAll(in: setup.storage)
+      return
+    }
+    guard setup.marker.isPresent else {
+      forgetLeftOver(kept)
+      return
+    }
+    session = model(for: kept)
+  }
+
+  /// Waits until the device has done what it started at launch: the revoke of a session that an earlier install
+  /// left. It returns at once when there is none.
+  public func launchEnded() async {
+    await revokingLeftOver?.value
+  }
+
+  /// Forgets a session that an earlier install left, and asks its instance once to revoke it. The device is
+  /// signed out at once, whatever the instance answers, and shows no message.
+  ///
+  /// Diagnostics: never. A failed revoke is not captured, and not a breadcrumb: the client has logged the
+  /// request's outcome.
+  private func forgetLeftOver(_ leftOver: Session) {
+    do {
+      try setup.keychain.delete()
+    } catch {
+      Log.fault(.session, "The session keychain can't forget the session.", detail: "\(error.status)")
+    }
+    LocalDatabase.removeAll(in: setup.storage)
+    let client = APIClient(session: leftOver, userAgent: setup.userAgent, clock: setup.clock)
+    revokingLeftOver = Task {
+      // A refusal and an unreachable instance end the same: the session stays in the user's Devices list until
+      // someone revokes it, or it goes 365 days unused.
+      try? await client.revokeCurrentSession()
     }
   }
 
@@ -208,7 +258,14 @@ public final class Device {
       return
     }
 
-    // The link is used now, so the session is saved at once.
+    // The link is used now, so the session is saved at once. The marker comes first, so a saved session always
+    // has one.
+    do {
+      try setup.marker.place()
+    } catch {
+      // The session works until the app ends. The next launch finds no marker, and revokes it.
+      Log.fault(.session, "The install marker can't be placed.", detail: "\(error)")
+    }
     do {
       try setup.keychain.save(redeemed.session)
     } catch {
