@@ -300,3 +300,14 @@ test("a step's `after` doesn't run for a step that is skipped", async (t) => {
   assert.equal(result.ok, true);
   assert.equal(ran, 0);
 });
+
+test("the Gate job's limit in CI is above the sum of the gate's step limits, with room for the job's setup", () => {
+  const main = readFileSync(new URL('./main.mjs', import.meta.url), 'utf8');
+  const ci = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  const stepMinutes = [...main.matchAll(/^\s+limitMs: (\d+) \* minute,$/gm)].map((match) => Number(match[1]));
+  assert.equal(stepMinutes.length, 5, 'each of the five steps has a limit in whole minutes');
+  const gateJob = ci.slice(ci.indexOf('\n  gate:\n'), ci.indexOf('\n  ci-ok:\n'));
+  const jobMinutes = Number(/^\s+timeout-minutes: (\d+)$/m.exec(gateJob)[1]);
+  const sum = stepMinutes.reduce((total, minutes) => total + minutes, 0);
+  assert.ok(jobMinutes >= sum + 10, `the job's ${jobMinutes} minutes are not 10 above the steps' ${sum}`);
+});

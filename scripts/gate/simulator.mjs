@@ -11,7 +11,7 @@
 // Every `xcodebuild` writes its log, and its result bundle, to the results folder. The script prints one line for
 // each run.
 
-import { execFileSync, spawn } from 'node:child_process';
+import { execFile, execFileSync, spawn } from 'node:child_process';
 import { createWriteStream, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { createServer } from 'node:http';
 import path from 'node:path';
@@ -70,6 +70,20 @@ export const journeyRuns = [
   { name: 'settings', label: 'the four settings of the audit', helper: true },
   { name: 'double-length', label: 'the double-length pseudo-language', doubleLength: true },
 ];
+
+/**
+ * Reads the script's arguments: the results folder, then the flags, in any order. `--no-build` runs the tests that
+ * `just build` built. A word that starts with `--` is a flag, never the folder.
+ */
+export function parseArguments(args) {
+  const known = ['--no-build'];
+  const flags = args.filter((arg) => arg.startsWith('--'));
+  const words = args.filter((arg) => !arg.startsWith('--'));
+  const unknown = flags.filter((flag) => !known.includes(flag));
+  if (unknown.length > 0) throw new Error(`unknown flag ${unknown.join(', ')}. The flag is ${known.join(', ')}`);
+  if (words.length > 1) throw new Error(`one results folder, not ${words.length}: ${words.join(', ')}`);
+  return { results: words[0] ?? path.join('build', 'simulator'), build: !flags.includes('--no-build') };
+}
 
 /** The result bundles of a run, for `checkResultBundles`: the hosted tests, and each run of the journeys. */
 export function resultBundles(directory) {
@@ -171,9 +185,84 @@ export function settingCommands(setting, simulator) {
   ];
 }
 
-/** Puts the simulator in the setting, and every other setting back to its default. */
-function apply(setting, simulator) {
-  for (const command of settingCommands(setting, simulator)) simctl(command);
+/** How long one `simctl` call that changes a setting for a journey may take, before it counts as hung. */
+export const settingCallLimitMs = 30_000;
+
+/**
+ * How long a `simctl` call may take at the step's start. Just after a new simulator's first boot, its calls wait
+ * minutes for the simulator to be ready, so they are not hung until much later than a journey's.
+ */
+export const readinessCallLimitMs = 5 * 60_000;
+
+/**
+ * Runs `xcrun simctl <args>`, and stops it when it passes `limitMs`. Resolves when it ends well. Rejects when it
+ * fails, and with an error whose `timedOut` is true when it passed its limit.
+ */
+export function simctlWithLimit(args, limitMs = settingCallLimitMs, { file = 'xcrun', prefix = ['simctl'] } = {}) {
+  return new Promise((resolve, reject) => {
+    execFile(file, [...prefix, ...args], { timeout: limitMs, killSignal: 'SIGKILL', encoding: 'utf8' }, (error, stdout, stderr) => {
+      if (error === null) {
+        resolve(stdout);
+        return;
+      }
+      const failure = new Error(error.killed ? `didn't return within ${duration(limitMs)}` : (stderr.trim() || error.message));
+      failure.timedOut = error.killed === true;
+      reject(failure);
+    });
+  });
+}
+
+/**
+ * Puts the simulator in a setting, and every other setting back to its default, with `run(command, limitMs)` (a
+ * `simctl` call with a time limit, `simctlWithLimit`). It remembers what it set, and runs only the calls that
+ * change something: a change from the default to one setting, and back, is one call each way, not three. Its first
+ * `apply` runs every call, because the simulator can be in any setting from an earlier run.
+ *
+ * A call that passes its limit is hung. It is run once more, and a second hang fails the setting, with an error
+ * that names the setting and the call. So a hang in CI shows as itself, not as a journey's request that timed out.
+ *
+ * `apply` takes `{ limitMs }`, the limit of each call, which is `limitMs` unless it says otherwise.
+ *
+ * Returns `{ apply(setting, { limitMs }), calls(), retries(), ms() }`: the number of calls that it ran, how many of them hung
+ * and were run again, and the time that they took.
+ */
+export function settingsApplier(simulator, { run = simctlWithLimit, limitMs = settingCallLimitMs } = {}) {
+  const set = new Map();
+  let calls = 0;
+  let retries = 0;
+  let ms = 0;
+  return {
+    async apply(setting, { limitMs: callLimitMs = limitMs } = {}) {
+      for (const command of settingCommands(setting, simulator)) {
+        const [, , name, value] = command;
+        if (set.get(name) === value) continue;
+        const started = Date.now();
+        // A call that fails leaves the setting unknown, so the next `apply` runs it again.
+        set.delete(name);
+        try {
+          for (let attempt = 1; ; attempt += 1) {
+            calls += 1;
+            try {
+              await run(command, callLimitMs);
+              break;
+            } catch (error) {
+              if (!error.timedOut || attempt === 2) throw error;
+              retries += 1;
+            }
+          }
+        } catch (error) {
+          const twice = error.timedOut ? ', twice' : '';
+          throw new Error(`simctl ${command.join(' ')} ${error.message}${twice}, so the simulator isn't in ${setting.label}`);
+        } finally {
+          ms += Date.now() - started;
+        }
+        set.set(name, value);
+      }
+    },
+    calls: () => calls,
+    retries: () => retries,
+    ms: () => ms,
+  };
 }
 
 /**
@@ -218,6 +307,26 @@ function holdStatusBar(simulator) {
   simctl(['status_bar', simulator, 'override', '--time', '9:41', '--dataNetwork', 'wifi', '--wifiBars', '3', '--batteryState', 'charged', '--batteryLevel', '100']);
 }
 
+/**
+ * Boots the gate's simulator, holds its status bar still, and puts it in the default settings, with a line for
+ * each part and its time. Returns `{ simulator, applier }`: the
+ * simulator's ID, and the `settingsApplier` that knows its settings.
+ */
+export async function prepareSimulator({ say = console.log } = {}) {
+  const timed = async (what, work) => {
+    const started = Date.now();
+    const result = await work();
+    say(`✓ ${what} (${duration(Date.now() - started)})`);
+    return result;
+  };
+  const simulator = await timed("Found the gate's simulator", findOrMakeSimulator);
+  await timed("Booted the gate's simulator", () => simctl(['bootstatus', simulator, '-b'], { stdio: 'ignore' }));
+  await timed("Held the simulator's status bar still", () => holdStatusBar(simulator));
+  const applier = settingsApplier(simulator);
+  await timed('Put the simulator in the default settings', () => applier.apply(settings[0], { limitMs: readinessCallLimitMs }));
+  return { simulator, applier };
+}
+
 /** Runs `xcodebuild` with its output in a log file. Resolves with its exit code. */
 function xcodebuild(args, { root, log, env = {} }) {
   return new Promise((resolve, reject) => {
@@ -241,25 +350,27 @@ function xcodebuild(args, { root, log, env = {} }) {
 export async function runSimulatorTier({ root, directory, build = true, say = console.log }) {
   rmSync(directory, { recursive: true, force: true });
   mkdirSync(directory, { recursive: true });
-  const simulator = findOrMakeSimulator();
   const relative = (file) => path.relative(root, file);
 
   /** One `xcodebuild` run, with its line. `bundle` is the result bundle that the run writes, if it runs tests. */
   const run = async (what, args, { log, bundle, env }) => {
     const started = Date.now();
     const exit = await xcodebuild(args, { root, log: path.join(directory, log), env });
-    const problem = bundle === undefined ? null : judge(readResultBundle(bundle));
+    const reading = bundle === undefined ? null : readResultBundle(bundle);
+    const problem = reading === null ? null : judge(reading);
     const ok = exit === 0 && problem === null;
     const why = problem ?? `xcodebuild ended with ${exit}`;
-    say(ok ? `✓ ${what} (${duration(Date.now() - started)})` : `✗ ${what}: ${why} (log: ${relative(path.join(directory, log))})`);
+    // The rest of a run's time is Xcode's own: installing the app, and launching the test runner.
+    const tests = reading?.testsMs == null ? '' : `, the tests ${duration(reading.testsMs)}`;
+    say(ok ? `✓ ${what} (${duration(Date.now() - started)}${tests})` : `✗ ${what}: ${why} (log: ${relative(path.join(directory, log))})`);
     return ok;
   };
 
   let helper = null;
+  let simulator = null;
+  let applier = null;
   try {
-    const bootStarted = Date.now();
-    simctl(['bootstatus', simulator, '-b'], { stdio: 'ignore' });
-    say(`✓ Booted the gate's simulator (${duration(Date.now() - bootStarted)})`);
+    ({ simulator, applier } = await prepareSimulator({ say }));
     if (build) {
       if (!(await run('Built the app and the test bundles for the simulator', buildArguments, { log: 'build.log' }))) return false;
       // After `just build`, the build has nothing to compile. The line says so.
@@ -267,8 +378,6 @@ export async function runSimulatorTier({ root, directory, build = true, say = co
     }
     const testRun = findTestRun(path.join(root, 'build', 'DerivedData', 'Build', 'Products'));
     if (!build) say(`✓ Took the app and the test bundles from the gate's build step (${relative(testRun)})`);
-    holdStatusBar(simulator);
-    apply(settings[0], simulator);
 
     const bundles = resultBundles(directory);
     const test = (only, bundle) => [
@@ -285,23 +394,34 @@ export async function runSimulatorTier({ root, directory, build = true, say = co
     ];
     if (!(await run('The hosted tests', test('HostedTests', bundles.hosted[0].path), { log: 'hosted.log', bundle: bundles.hosted[0].path }))) return false;
 
-    helper = await startSettingsHelper((setting) => apply(setting, simulator));
+    helper = await startSettingsHelper((setting) => applier.apply(setting));
+    const helperCalls = applier.calls();
+    const helperRetries = applier.retries();
+    const helperMs = applier.ms();
     for (const [index, journeys] of journeyRuns.entries()) {
-      apply(settings[0], simulator);
+      await applier.apply(settings[0]);
       // xcodebuild gives the test runner each variable that starts with TEST_RUNNER_, without that start.
       const env = {
         TEST_RUNNER_WISHBONE_SETTINGS_HELPER: journeys.helper ? helper.address : '',
         TEST_RUNNER_WISHBONE_DOUBLE_LENGTH: journeys.doubleLength ? 'YES' : 'NO',
       };
       const bundle = bundles.ui[index].path;
-      if (!(await run(`The journeys in ${journeys.label}`, test('JourneyTests', bundle), { log: `journeys-${journeys.name}.log`, bundle, env }))) return false;
+      const passed = await run(`The journeys in ${journeys.label}`, test('JourneyTests', bundle), { log: `journeys-${journeys.name}.log`, bundle, env });
+      if (index === 0) {
+        const retried = applier.retries() - helperRetries;
+        const again = retried === 0 ? '' : `, and ran ${retried} that hung once more`;
+        say(`  The settings helper made ${applier.calls() - helperCalls} simctl calls, in ${duration(applier.ms() - helperMs)}${again}.`);
+      }
+      if (!passed) return false;
     }
     return true;
   } finally {
     await helper?.close();
     try {
-      apply(settings[0], simulator);
-      simctl(['status_bar', simulator, 'clear']);
+      if (simulator !== null) {
+        await applier.apply(settings[0]);
+        simctl(['status_bar', simulator, 'clear']);
+      }
     } catch {
       // The simulator is gone. The next run starts it, and sets it again.
     }
@@ -311,10 +431,9 @@ export async function runSimulatorTier({ root, directory, build = true, say = co
 
 if (import.meta.main) {
   const root = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8', cwd: path.dirname(fileURLToPath(import.meta.url)) }).trim();
-  const [results, ...flags] = process.argv.slice(2);
-  const directory = path.resolve(root, results ?? path.join('build', 'simulator'));
-  const build = !flags.includes('--no-build');
   try {
+    const { results, build } = parseArguments(process.argv.slice(2));
+    const directory = path.resolve(root, results);
     // Under the gate, the gate holds the slot. By itself, the run takes it, so it never breaks another
     // checkout's gate on the one simulator.
     const passed = await inSlot(() => runSimulatorTier({ root, directory, build }), {

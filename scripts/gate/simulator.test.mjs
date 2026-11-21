@@ -4,7 +4,20 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 
-import { buildArguments, compiledFiles, gateSimulators, journeyRuns, pickDevice, resultBundles, settingCommands, settings, startSettingsHelper } from './simulator.mjs';
+import {
+  buildArguments,
+  compiledFiles,
+  gateSimulators,
+  journeyRuns,
+  parseArguments,
+  pickDevice,
+  resultBundles,
+  settingCommands,
+  settings,
+  settingsApplier,
+  simctlWithLimit,
+  startSettingsHelper,
+} from './simulator.mjs';
 
 const iPhone = (name) => ({ name, identifier: `type.${name.replaceAll(' ', '-')}`, productFamily: 'iPhone' });
 const iPad = (name) => ({ name, identifier: `type.${name.replaceAll(' ', '-')}`, productFamily: 'iPad' });
@@ -136,4 +149,112 @@ test("the build's line counts the Swift files that it compiled, and a build with
   assert.equal(compiledFiles(log), 3);
   writeFileSync(log, 'Copy /a /b\nCodeSign /x.app\nProcessInfoPlistFile /x/Info.plist\n');
   assert.equal(compiledFiles(log), 0);
+});
+
+test('the results folder and the flags come in any order, and a flag is never the folder', () => {
+  const folder = path.join('build', 'simulator');
+  assert.deepEqual(parseArguments([]), { results: folder, build: true });
+  assert.deepEqual(parseArguments(['--no-build']), { results: folder, build: false });
+  assert.deepEqual(parseArguments(['out', '--no-build']), { results: 'out', build: false });
+  assert.deepEqual(parseArguments(['--no-build', 'out']), { results: 'out', build: false });
+  assert.throws(() => parseArguments(['--nobuild']), /unknown flag --nobuild/);
+  assert.throws(() => parseArguments(['one', 'two']), /one results folder, not 2/);
+});
+
+test('the settings applier runs only the simctl calls that change something', async () => {
+  const ran = [];
+  const applier = settingsApplier('SIM', { run: async (command) => ran.push(command.slice(2).join(' ')) });
+  // The first apply sets everything: the simulator can be in any setting from an earlier run.
+  await applier.apply(settings[0]);
+  assert.deepEqual(ran.splice(0), ['appearance light', 'increase_contrast disabled', 'content_size large']);
+  for (const setting of settings.slice(1)) {
+    await applier.apply(setting);
+    await applier.apply(settings[0]);
+  }
+  assert.deepEqual(ran.splice(0), [
+    'content_size accessibility-extra-extra-extra-large',
+    'content_size large',
+    'appearance dark',
+    'appearance light',
+    'increase_contrast enabled',
+    'increase_contrast disabled',
+  ]);
+  await applier.apply(settings[0]);
+  assert.deepEqual(ran, []);
+  assert.equal(applier.calls(), 9);
+  assert.equal(applier.retries(), 0);
+});
+
+test('a simctl call that fails leaves its setting unknown, so the next apply runs it again', async () => {
+  const ran = [];
+  let failing = true;
+  const applier = settingsApplier('SIM', {
+    run: async (command) => {
+      ran.push(command[2]);
+      if (failing && command[2] === 'appearance' && command[3] === 'dark') throw new Error('Invalid device state');
+    },
+  });
+  await applier.apply(settings[0]);
+  await assert.rejects(applier.apply(settings[2]), { message: "simctl ui SIM appearance dark Invalid device state, so the simulator isn't in dark mode" });
+  failing = false;
+  ran.length = 0;
+  await applier.apply(settings[0]);
+  assert.deepEqual(ran, ['appearance']);
+});
+
+/** An error like the one that `simctlWithLimit` gives for a call that passed its limit. */
+const hung = () => Object.assign(new Error("didn't return within 30s"), { timedOut: true });
+
+test('a simctl call that hangs is run once more, and the applier counts it', async () => {
+  const ran = [];
+  const applier = settingsApplier('SIM', {
+    run: async (command, limitMs) => {
+      assert.equal(limitMs, 30_000);
+      ran.push(command[3]);
+      if (command[3] === 'dark' && ran.filter((value) => value === 'dark').length === 1) throw hung();
+    },
+  });
+  await applier.apply(settings[0]);
+  await applier.apply(settings[2]);
+  assert.deepEqual(ran.slice(3), ['dark', 'dark']);
+  assert.equal(applier.calls(), 5);
+  assert.equal(applier.retries(), 1);
+});
+
+test("an apply can give its calls a longer limit, as the step's start does while the simulator gets ready", async () => {
+  const limits = [];
+  const applier = settingsApplier('SIM', { run: async (command, limitMs) => limits.push(limitMs) });
+  await applier.apply(settings[0], { limitMs: 300_000 });
+  await applier.apply(settings[1]);
+  assert.deepEqual(limits, [300_000, 300_000, 300_000, 30_000]);
+});
+
+test('a simctl call that hangs twice fails the setting, with the setting and the call in the error', async () => {
+  const applier = settingsApplier('SIM', {
+    run: async (command) => {
+      if (command[2] === 'content_size' && command[3] !== 'large') throw hung();
+    },
+  });
+  await applier.apply(settings[0]);
+  await assert.rejects(applier.apply(settings[1]), {
+    message: "simctl ui SIM content_size accessibility-extra-extra-extra-large didn't return within 30s, twice, so the simulator isn't in the largest text size",
+  });
+  assert.equal(applier.retries(), 1);
+});
+
+test('a call that passes its limit is stopped, and its error says it timed out', async () => {
+  const started = Date.now();
+  await assert.rejects(simctlWithLimit(['30'], 200, { file: 'sleep', prefix: [] }), (error) => error.timedOut === true && /didn't return within 0s/.test(error.message));
+  assert.ok(Date.now() - started < 5000, 'the call was stopped at its limit');
+  await assert.rejects(simctlWithLimit(['-c', 'echo "No devices are booted." >&2; exit 1'], 5000, { file: 'sh', prefix: [] }), (error) => error.timedOut === false && error.message === 'No devices are booted.');
+  assert.equal(await simctlWithLimit(['-c', 'echo ok'], 5000, { file: 'sh', prefix: [] }), 'ok\n');
+});
+
+test('the settings helper answers 500, with the reason, when a hung call fails a setting', async (t) => {
+  const applier = settingsApplier('SIM', { run: async () => Promise.reject(hung()) });
+  const helper = await startSettingsHelper((setting) => applier.apply(setting));
+  t.after(() => helper.close());
+  const response = await fetch(`${helper.address}/settings/default`, { method: 'POST' });
+  assert.equal(response.status, 500);
+  assert.equal(await response.text(), "simctl ui SIM appearance light didn't return within 30s, twice, so the simulator isn't in the default settings");
 });

@@ -100,10 +100,15 @@ enum Audit {
     }
   }
 
+  /// How long the settings helper may take to answer. It gives each `simctl` call 30 seconds, and runs a call that
+  /// hangs once more, so it answers within this time, with an error that names the call when the call hangs twice.
+  private static let helperTimeout: TimeInterval = 90
+
   /// Asks the settings helper to put the simulator in the setting. It answers when `simctl` has applied it.
   private static func apply(_ setting: Setting, helper: URL) async throws {
     var request = URLRequest(url: helper.appending(path: "settings/\(setting.name)"))
     request.httpMethod = "POST"
+    request.timeoutInterval = helperTimeout
     let (body, response) = try await URLSession.shared.data(for: request)
     guard (response as? HTTPURLResponse)?.statusCode == 204 else {
       throw AuditError("The settings helper didn't apply \(setting.label): \(String(decoding: body, as: UTF8.self))")

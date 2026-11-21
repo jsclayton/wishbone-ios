@@ -9,13 +9,14 @@ import { existsSync } from 'node:fs';
 import { judge } from './reading.mjs';
 
 /** A reading of a bundle that can't be read: the run has no summary. */
-const unreadable = { tests: null, runFailed: null, failed: [], known: [], skipped: [], strayIssues: 0, summary: null, names: [] };
+const unreadable = { tests: null, runFailed: null, failed: [], known: [], skipped: [], strayIssues: 0, summary: null, names: [], testsMs: null };
 
 /**
  * Reads the tree that `xcresulttool get test-results tests` prints, as an object.
  *
  * Returns a reading in the shape that `judge` takes: `{ tests, runFailed, failed, known, skipped, strayIssues,
- * summary }`, with `names`, the name of every test. A test's name is `Bundle.Suite/function()`. A test with
+ * summary }`, with `names`, the name of every test, and `testsMs`, the time that the tests took, without what
+ * Xcode does around them, such as installing and launching the test runner. A test's name is `Bundle.Suite/function()`. A test with
  * arguments is one test. A test that passes with an expected failure (`XCTExpectFailure`, `withKnownIssue`) is
  * `known`. `tests` is null when the tree is not one of a test run.
  */
@@ -26,11 +27,13 @@ export function readTestResults(results) {
   const failed = [];
   const known = [];
   const skipped = [];
+  let testsMs = 0;
   const visit = (node, bundle) => {
     if (typeof node.nodeType === 'string' && node.nodeType.endsWith('test bundle')) bundle = node.name;
     if (node.nodeType === 'Test Case') {
       const name = `${bundle}.${node.nodeIdentifier ?? node.name}`;
       names.push(name);
+      testsMs += Math.round((node.durationInSeconds ?? 0) * 1000);
       if (node.result === 'Expected Failure') known.push(name);
       else if (node.result === 'Skipped') skipped.push(name);
       // Any other result that is not a pass is a failure, so a result that Xcode adds later can't pass by default.
@@ -51,6 +54,7 @@ export function readTestResults(results) {
     strayIssues: 0,
     summary: runFailed ? 'Xcode says that the run failed' : 'Xcode says that the run passed',
     names: names.sort(),
+    testsMs,
   };
 }
 
