@@ -49,6 +49,16 @@ let package = Package(
       swiftSettings: approachableConcurrency
     ),
     .testTarget(
+      name: "WishboneAPITests",
+      dependencies: ["WishboneAPI", "TestSupport"],
+      swiftSettings: approachableConcurrency
+    ),
+    .testTarget(
+      name: "TestSupportTests",
+      dependencies: ["TestSupport"],
+      swiftSettings: approachableConcurrency
+    ),
+    .testTarget(
       name: "FitnessTests",
       swiftSettings: approachableConcurrency
     ),

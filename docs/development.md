@@ -71,7 +71,8 @@ An xcconfig file treats `//` as the start of a comment. To write a URL in one, s
 |---|---|
 | `just gate` | Every check that a pull request must pass, in order (see [The gate](#the-gate)) |
 | `just build` | Builds the app and both extensions for the simulator, with zero warnings, and adds new strings to the String Catalog |
-| `just test` | The package tests on macOS, with `swift test` |
+| `just server` | Fetches and builds the pinned Wishbone server that the tests run against, or reuses the built one |
+| `just test` | The package tests on macOS, with `swift test`. It runs `just server` first |
 | `just lint` | `swift-format lint --strict`, actionlint and shellcheck, the docs check, and the tests of the gate's own scripts |
 | `just fmt` | Formats the Swift files with swift-format |
 
@@ -121,8 +122,22 @@ docs/               The spec, the ADRs, and the guides
 
 - The session model's tests run against a real Wishbone server, built from a pinned commit (see [ADR 0007](adr/0007-the-tests-run-against-a-real-wishbone-server-built-from-a-pinned-commit.md)).
 - One file holds the pinned commit, beside the copy of the server's OpenAPI document and the app's minimum server version. All three change together, in one commit. The file's name starts with `server-pin`: CI finds it by that name.
+  - `WishboneKit/Server/server-pin.json` is the pin: the server's release tag, and that tag's commit.
+  - `WishboneKit/Server/openapi.json` is the copy.
+  - `minimumServerVersion` in `WishboneAPI` is the minimum server version.
 - A script fetches the pinned commit over HTTPS, builds it with `-tags e2e`, and stamps its version. An unstamped build reports `dev`, which the app's version check refuses. Go's version comes from that commit's `go.mod`, through mise. The built server is reused until the pin moves.
-- A test that needs the server fails, never skips, when Go or the server is missing.
+  - `just server` runs the script. `just test` and the gate run it first.
+  - The fetch fails if the tag is no longer at the pin's commit.
+  - The script uses none of your git settings, so the fetch never needs an SSH key.
+- A test that needs the server fails, never skips, when Go or the server is missing. A test that you run with `swift test`, or in Xcode, needs `just server` first.
+- The contract test holds the three together: the copy is the document that the pinned server serves, and the pinned server reports the minimum server version.
+
+To move the pin:
+
+1. Put the new release tag and its commit in the pin file.
+2. Run `just server-openapi`. It builds the server, and takes the copy again.
+3. Set `minimumServerVersion`, and the number in [the spec](spec.md#the-minimum-server-version) and in the README.
+4. Commit all of it together.
 
 ### Servers in parallel
 
@@ -145,11 +160,13 @@ docs/               The spec, the ADRs, and the guides
   - drop everything (offline)
   - hold a matching request until the test releases it (an answer in flight that races a pull)
   - answer a matching route with a canned response (a 5xx, a 410 `api_version_removed`, or a `/health` below the minimum version)
+- The conditioner is a small HTTP server on your Mac, in front of the test server. A test gives the conditioner's address to the code under test as its instance address, so the code needs no seam of its own.
+- A hold is at the answer by default: the request reaches the server at once, and the answer waits. A hold at the request keeps the request from the server until the release. A test waits for the hold to catch a request, never for a length of time.
 
 ### Fixtures: the standard family
 
-- The fixture builder in `TestSupport` seeds only through the API, as the admin.
-- One call seeds the **standard family**: a parent with an active child and a deactivated child (with lists, a list shared with another recipient, a pending invitation, and a given gift), the admin, a user seen only through the admin's access, nested groups, a shared occasion on groups and one marked Everyone, a blocked store, and deletion requests.
+- The fixture builder in `TestSupport` seeds only through the API, as the admin. The admin makes the users and a login link for each. What only a user can do, such as making a list or claiming an item, the builder does through that user's own session.
+- One call seeds the **standard family**: a parent with an active child and a deactivated child (with lists, a list shared with another recipient, a pending invitation, and a given gift), the admin, a user seen only through the admin's access, nested groups, a shared occasion on groups and one marked Everyone, and a blocked store. Deletion requests join it when the pinned server has them.
 - Names are unique for each test, and come back as typed handles. Each person can sign in as their own bearer session.
 - Small builder calls add anything special. A test that needs less seeds less. Reveal goes through the server's test hook.
 - There is no checked-in database, and no snapshot of server state.
@@ -193,7 +210,7 @@ docs/               The spec, the ADRs, and the guides
 
 The gate reads its own results:
 
-- It counts the tests from Swift Testing's summary, from XCTest's summary for an XCTest test in the package, and from each result bundle.
+- It counts the tests from Swift Testing's summary for each test target, from XCTest's summary for an XCTest test in the package, and from each result bundle.
 - It fails on any failure or recorded issue, on a bundle with 0 tests, and on a skip that is not on a short named list.
 - A known issue is a recorded issue, so it fails too.
 - An issue recorded with the severity `.warning` (`Issue.record(_:severity:)`) is not a failure, so the gate passes it. Swift Testing leaves a warning out of the event stream that the gate reads.
@@ -237,6 +254,7 @@ None.
 - GitHub Actions runs the same `just gate`, on a macOS runner with the pinned Xcode, for every pull request and on `main`. The runner is GitHub's `xcode-27` image.
 - CI builds unsigned, with no secrets, so a fork's pull request runs the whole gate.
 - CI caches the built server, Go's caches, and SwiftPM's, keyed on the pin and `Package.resolved`. The workflow finds the pin file by its name (`server-pin`, in any folder) and caches `build/server/`. A pin file with another name, or a server built in another folder, gets no cache and no error.
+- The built server's key also holds Go's version and the build script, so a change of either builds the server again.
 - The workflows and the required checks are in [`workflow.md`](workflow.md#ci).
 
 ## Releases

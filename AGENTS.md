@@ -20,7 +20,8 @@ The native iPhone and iPad app for Wishbone, private self-hosted family wish lis
 ```bash
 pnpm install                 # git hooks (lefthook and commitlint)
 just gate                    # every check a pull request must pass. Quote its last line
-just test                    # the package tests on macOS
+just test                    # the package tests on macOS, against the pinned Wishbone server
+just server                  # fetch and build that server. `just test` and `just gate` run it first
 just lint                    # swift-format lint --strict, actionlint, shellcheck, the docs check, the gate's own tests
 just fmt                     # format the Swift files
 swift test --package-path WishboneKit --filter TestName     # one package test
