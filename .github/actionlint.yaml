@@ -1,0 +1,6 @@
+# actionlint 1.7.12 doesn't know these runner labels yet. Remove a label from
+# this file once it does.
+self-hosted-runner:
+  labels:
+    - ubuntu-26.04
+    - xcode-27

@@ -11,6 +11,15 @@ default:
     @just --list
 
 # ============================================================================
+# The gate
+# ============================================================================
+
+# Run every check that a pull request must pass. Its last line is the result
+[no-exit-message]
+gate:
+    node scripts/gate/main.mjs
+
+# ============================================================================
 # Build
 # ============================================================================
 
@@ -69,24 +78,36 @@ sync-strings:
 # Test
 # ============================================================================
 
-# Run the package tests on macOS
-test:
-    swift test --package-path WishboneKit
+# Run the package tests on macOS. It passes its arguments to `swift test`
+[positional-arguments]
+test *args:
+    swift test --package-path WishboneKit "$@"
 
 # ============================================================================
 # Lint and format
 # ============================================================================
 
-# Run every linter and the docs check. It reports, and changes nothing
-lint: lint-swift lint-docs
+# Run every linter, the docs check, and the tests of the gate's scripts. It reports, and changes nothing
+lint: lint-swift lint-ci lint-docs test-gate
 
 # Lint the Swift files with swift-format
 lint-swift:
     xcrun swift-format lint --strict --recursive --parallel {{swift_dirs}}
 
+# actionlint also runs shellcheck on each `run:` script in a workflow, so shellcheck must be installed.
+
+# Lint the GitHub workflows with actionlint, and the shell scripts with shellcheck
+lint-ci:
+    actionlint
+    git ls-files -z --cached --others --exclude-standard -- '*.sh' | xargs -0 shellcheck
+
 # Check the links in the Markdown files, and the ADR and screen indexes
 lint-docs:
     node scripts/check-docs.mjs
+
+# Run the tests of the gate's own scripts
+test-gate:
+    node --test 'scripts/gate/*.test.mjs'
 
 # Format the Swift files in place with swift-format
 fmt:
