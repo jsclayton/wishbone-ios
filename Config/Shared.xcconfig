@@ -11,6 +11,10 @@ CODE_SIGN_STYLE = Automatic
 // Where diagnostics go. Empty means that diagnostics never start.
 WISHBONE_SENTRY_DSN =
 
+// The environment tag of diagnostics, which tells TestFlight builds from App Store builds. A release build sets it
+// in Config/Local.xcconfig, with the DSN.
+WISHBONE_SENTRY_ENVIRONMENT = local
+
 // The "Source code" row in Settings.
 WISHBONE_SOURCE_URL = https:/$()/github.com/jsclayton/wishbone-ios
 
