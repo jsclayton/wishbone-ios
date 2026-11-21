@@ -286,7 +286,22 @@ export function prepareSimulator({ say = console.log } = {}) {
  * step, or the gate when the step doesn't run, shuts it down.
  */
 export function warmUpSimulator({ say = console.log } = {}) {
-  prepareSimulator({ say });
+  // DIAGNOSTIC, to be removed: the busiest processes every 10 seconds, and the runtime's dyld cache.
+  const sampler = spawn('sh', ['-c', 'while true; do echo "--- $(date -u +%H:%M:%S) load $(sysctl -n vm.loadavg)"; ps -Ao pcpu=,comm= -r | head -n 12; sleep 10; done'], { stdio: ['ignore', 'inherit', 'inherit'] });
+  try {
+    const started = Date.now();
+    try {
+      say(execFileSync('xcrun', ['simctl', 'runtime', 'dyld_shared_cache', 'update', '--all'], { encoding: 'utf8' }));
+    } catch (error) {
+      say(`dyld_shared_cache update failed: ${error.message}`);
+    }
+    say(`✓ Updated the dyld shared caches (${duration(Date.now() - started)})`);
+    prepareSimulator({ say });
+    say('--- ready; sampling for 3 more minutes');
+    execFileSync('sleep', ['180']);
+  } finally {
+    sampler.kill();
+  }
 }
 
 /** Runs `xcodebuild` with its output in a log file. Resolves with its exit code. */
