@@ -120,20 +120,26 @@ struct LocalCopyTests {
   @Test("A database file that will not open is made again, and the next sync fills the copy")
   func unreadableDatabase() async throws {
     let robin = try await instance.person(items: ["Kite"])
-    let folder = try ScratchDirectory("device")
-    try await signInAndQuit(as: robin, storage: .folder(folder.url), expecting: ["Kite"])
+    // The device signs in with its copy in memory, so the session has no database file yet.
+    let first = instance.device()
+    await first.signIn(pasting: try await instance.loginLink(for: robin))
+    let name = try #require(first.session).session.opaqueName
 
-    let own = try #require(
-      try FileManager.default.contentsOfDirectory(
-        at: folder.url.appending(path: "Sessions"), includingPropertiesForKeys: nil
-      ).first)
-    for file in try FileManager.default.contentsOfDirectory(at: own, includingPropertiesForKeys: nil) {
-      try Data("not a database".utf8).write(to: file)
-    }
+    // Something that is not a database is where the session's database file goes. No connection ever had the
+    // file open. A device that has just gone closes its database a moment later, and that close can write the
+    // file again.
+    let folder = try ScratchDirectory("device")
+    let own = folder.url.appending(path: "Sessions").appending(path: name)
+    let file = own.appending(path: "database.sqlite")
+    let unreadable = Data("not a database".utf8)
+    try FileManager.default.createDirectory(at: own, withIntermediateDirectories: true)
+    try unreadable.write(to: file)
 
     let relaunched = instance.device(storage: .folder(folder.url))
     let session = try #require(relaunched.session)
     #expect(session.primaryListItems.isEmpty)
+    // The file is a database again, in the same place.
+    #expect(try Data(contentsOf: file).starts(with: Data("SQLite format 3".utf8)))
     await session.sync()
     await until { session.primaryListItems.map(\.title) == ["Kite"] }
   }
