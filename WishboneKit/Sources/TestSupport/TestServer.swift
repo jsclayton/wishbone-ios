@@ -152,7 +152,7 @@ public final class TestServer: Sendable {
     let clock = ContinuousClock()
     let deadline = clock.now.advanced(by: .seconds(30))
     while clock.now < deadline {
-      guard process.isRunning else {
+      guard !process.hasEnded else {
         let log = log(at: logFile)
         if log.contains("address already in use") { return nil }
         throw DidNotStart(reason: "it ended before it listened", log: log)

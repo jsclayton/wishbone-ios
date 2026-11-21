@@ -61,8 +61,14 @@ public final class Subprocess: Sendable {
     stop()
   }
 
+  /// Whether the process is still going, for certain.
   public var isRunning: Bool {
     identity.isRunning
+  }
+
+  /// Whether the process is over, for certain.
+  public var hasEnded: Bool {
+    identity.hasEnded
   }
 
   /// Stops the process, and returns when it is gone.

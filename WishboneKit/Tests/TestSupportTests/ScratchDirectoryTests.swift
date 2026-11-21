@@ -111,6 +111,9 @@ struct ScratchDirectoryTests {
     let process = try Subprocess(URL(filePath: "/bin/sleep"), arguments: ["600"], directory: folder.url)
     let earlier = ProcessIdentity(pid: process.identity.pid, started: process.identity.started - 1_000_000)
     #expect(!earlier.isRunning)
+    #expect(earlier.hasEnded)
+    #expect(!process.identity.hasEnded)
+    #expect(!ProcessIdentity.current.hasEnded)
 
     earlier.stop()
     #expect(process.isRunning)

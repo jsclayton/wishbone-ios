@@ -107,7 +107,8 @@ extension ScratchDirectory {
     let files = FileManager.default
     var swept: [URL] = []
     for root in (try? files.contentsOfDirectory(at: base, includingPropertiesForKeys: nil)) ?? [] {
-      guard let owner = owner(ofRootNamed: root.lastPathComponent), !owner.isRunning else { continue }
+      // A root goes only when its owner is gone for certain.
+      guard let owner = owner(ofRootNamed: root.lastPathComponent), owner.hasEnded else { continue }
       for file in (try? files.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
       where file.pathExtension == recordExtension {
         guard let data = try? Data(contentsOf: file) else { continue }
