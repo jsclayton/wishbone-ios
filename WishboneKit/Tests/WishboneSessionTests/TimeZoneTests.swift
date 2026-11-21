@@ -69,6 +69,35 @@ struct TimeZoneTests {
     #expect(instance.conditioner.requests.filter { $0.isOn(Self.patchMe) }.count == 2)
   }
 
+  @Test("After a relaunch, a sync that fetches nothing still knows the record's zone, and a changed zone is reported")
+  func reportsAfterARelaunchWithNothingToFetch() async throws {
+    // A server of its own: on the shared one, another test's occasion for everyone changes the versions, and the
+    // sync is then no 304.
+    let instance = try await Instance(server: try await TestServer.start())
+    let robin = try await instance.person()
+    let folder = try ScratchDirectory("device")
+    do {
+      // The device goes at the end of this scope, as the app does when it ends.
+      let device = instance.device(storage: .folder(folder.url), timeZone: .fixed("Europe/Paris"))
+      await device.signIn(pasting: try await instance.loginLink(for: robin))
+      // The report changed the user's record. This sync brings the copy in step with it.
+      try await #require(device.session).cameToForeground()
+    }
+    #expect(try await recordedZone(of: robin) == "Europe/Paris")
+
+    // The person travels, and opens the app again. Nothing changed on the instance.
+    let relaunched = instance.device(storage: .folder(folder.url), timeZone: .fixed("Asia/Tokyo"))
+    let session = try #require(relaunched.session)
+    let mark = instance.conditioner.requests.count
+    await session.cameToForeground()
+
+    // The sync is one request, which the instance answers with a 304. So the record's zone comes from the copy.
+    let asked = instance.conditioner.requests.dropFirst(mark)
+    #expect(asked.map { "\($0.method) \($0.target)" } == ["GET /api/v2/versions", "PATCH /api/v2/users/me"])
+    #expect(asked.first?.headers["if-none-match"] != nil)
+    #expect(try await recordedZone(of: robin) == "Asia/Tokyo")
+  }
+
   @Test("A dropped report changes nothing and shows nothing, and the next foreground sends it")
   func droppedReportIsSentAtTheNextForeground() async throws {
     let robin = try await instance.person(items: ["Kite"])

@@ -5,13 +5,16 @@ import Foundation
 public enum Route: String, Sendable, CaseIterable {
   case health
   case redeemLoginLink
+  case versions
   case me
   case updateMe
+  case list
   case listItems
+  case item
 
   public var method: String {
     switch self {
-    case .health, .me, .listItems: "GET"
+    case .health, .versions, .me, .list, .listItems, .item: "GET"
     case .redeemLoginLink: "POST"
     case .updateMe: "PATCH"
     }
@@ -22,8 +25,11 @@ public enum Route: String, Sendable, CaseIterable {
     switch self {
     case .health: "/health"
     case .redeemLoginLink: "/login-links/redeem"
+    case .versions: "/versions"
     case .me, .updateMe: "/users/me"
+    case .list: "/lists/{id}"
     case .listItems: "/lists/{id}/items"
+    case .item: "/items/{id}"
     }
   }
 
@@ -32,7 +38,17 @@ public enum Route: String, Sendable, CaseIterable {
   public var isPublic: Bool {
     switch self {
     case .health, .redeemLoginLink: true
-    case .me, .updateMe, .listItems: false
+    case .versions, .me, .updateMe, .list, .listItems, .item: false
+    }
+  }
+
+  /// The query parameters that the client sends on the route. A request never carries another one.
+  ///
+  /// `GET /versions` has none, and never gets one: the server refuses that route with any query parameter.
+  public var queryParameters: [String] {
+    switch self {
+    case .listItems: ["cursor"]
+    case .health, .redeemLoginLink, .versions, .me, .updateMe, .list, .item: []
     }
   }
 
@@ -41,7 +57,7 @@ public enum Route: String, Sendable, CaseIterable {
     switch self {
     case .redeemLoginLink: fields(of: RedeemBody.CodingKeys.self)
     case .updateMe: fields(of: UserChanges.CodingKeys.self)
-    case .health, .me, .listItems: []
+    case .health, .versions, .me, .list, .listItems, .item: []
     }
   }
 
@@ -50,18 +66,25 @@ public enum Route: String, Sendable, CaseIterable {
     switch self {
     case .health: Health.fields
     case .redeemLoginLink: RedeemedLoginLink.fields
+    case .versions: VersionsBody.fields
     case .me, .updateMe: User.fields
-    case .listItems: Page<Item>.fields
+    case .list: ListResource.fields
+    case .listItems: Page<VersionedRow<Item>>.fields
+    case .item: Item.fields
     }
   }
 }
 
-/// One request: a route, with what fills its path template, its query, and its body.
+/// One request: a route, with what fills its path template, its query, its body, and its `If-None-Match`.
 struct Endpoint<Response: Model>: Sendable {
   let route: Route
   var parameters: [String: String] = [:]
   var query: [URLQueryItem] = []
   var body: (any Encodable & Sendable)?
+
+  /// The `ETag` of an earlier answer of the route. The server then answers 304, with no body, when its answer
+  /// would be that one again. Only `GET /versions` takes it.
+  var ifNoneMatch: String?
 
   /// The path under `/api/v2`, with each parameter in its place.
   var path: String {
@@ -118,9 +141,27 @@ extension Endpoint where Response == User {
   }
 }
 
-extension Endpoint where Response == Page<Item> {
+extension Endpoint where Response == VersionsBody {
+  static func versions(ifNoneMatch etag: String?) -> Endpoint {
+    Endpoint(route: .versions, ifNoneMatch: etag)
+  }
+}
+
+extension Endpoint where Response == ListResource {
+  static func list(_ id: String) -> Endpoint {
+    Endpoint(route: .list, parameters: ["id": id])
+  }
+}
+
+extension Endpoint where Response == Page<VersionedRow<Item>> {
   static func items(ofList id: String, cursor: String?) -> Endpoint {
     Endpoint(
       route: .listItems, parameters: ["id": id], query: cursor.map { [URLQueryItem(name: "cursor", value: $0)] } ?? [])
+  }
+}
+
+extension Endpoint where Response == Item {
+  static func item(_ id: String) -> Endpoint {
+    Endpoint(route: .item, parameters: ["id": id])
   }
 }

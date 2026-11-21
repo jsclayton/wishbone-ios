@@ -212,8 +212,9 @@ struct SignInTests {
     await until { session.primaryListItems.count == 1 }
 
     let requests = instance.conditioner.requests
-    // The version check, the redeem, the first sync (the user and the list's items), and the report of the zone.
-    #expect(requests.map(\.method) == ["GET", "POST", "GET", "GET", "PATCH"])
+    // The version check, the redeem, the first sync (the versions, the user, the item, and the list), and the
+    // report of the zone.
+    #expect(requests.map(\.method) == ["GET", "POST", "GET", "GET", "GET", "GET", "PATCH"])
     for request in requests {
       #expect(request.headers["user-agent"] == "Wishbone iOS/1.0 (iPhone)")
       let needsNoSession = request.isOn(Route("GET", "/health")) || request.isOn(Route("POST", "/login-links/redeem"))
@@ -228,7 +229,7 @@ struct SignInTests {
     // never leaves the instance address.
     let other = try await NetworkConditioner(to: instance.server.address)
     instance.conditioner.answer(
-      Route("GET", "/users/me"), with: .init(status: 307, headers: ["Location": other.url("/users/me").absoluteString]))
+      Route("GET", "/versions"), with: .init(status: 307, headers: ["Location": other.url("/versions").absoluteString]))
     await session.sync()
     #expect(other.requests.isEmpty)
     #expect(session.isInstanceUnreachable)

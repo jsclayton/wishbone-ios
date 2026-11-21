@@ -53,9 +53,20 @@ public struct APIClient: Sendable {
     return (Session(instance: instance, token: redeemed.token, userID: redeemed.userID), redeemed.name)
   }
 
-  /// `GET /users/me`: the session's user.
-  public func me() async throws(APIError) -> User {
-    try await load(.me)
+  /// `GET /versions`: the version of everything that the session's user can see, in one answer.
+  ///
+  /// With the `ETag` of an earlier answer, the server answers 304 when nothing has changed since, and the result
+  /// is `unchanged`. The request never has a query. An API's own 404 here means an instance below the minimum
+  /// server version, which has no such route.
+  public func versions(ifNoneMatch etag: String?) async throws(APIError) -> VersionsAnswer {
+    guard let answer = try await answer(to: .versions(ifNoneMatch: etag)) else { return .unchanged }
+    return .changed(Versions(entries: answer.body.data, etag: answer.etag))
+  }
+
+  /// `GET /users/me`: the session's user. It is the answer of `GET /users/{id}` for that user, with the same
+  /// `ETag`.
+  public func me() async throws(APIError) -> Versioned<User> {
+    try await versioned(.me)
   }
 
   /// `PATCH /users/me` with the time zone: sets the IANA zone on the session's own user, and gives back the user.
@@ -63,26 +74,70 @@ public struct APIClient: Sendable {
     try await load(.reportTimeZone(identifier))
   }
 
-  /// `GET /lists/{id}/items`: every item on the list, in the list's order. It follows `next_cursor` to the last
-  /// page.
-  public func items(ofList id: String) async throws(APIError) -> [Item] {
-    var items: [Item] = []
+  /// `GET /lists/{id}`: one list.
+  public func list(_ id: String) async throws(APIError) -> Versioned<ListResource> {
+    try await versioned(.list(id))
+  }
+
+  /// `GET /lists/{id}/items`: every item on the list, in the list's order, each with its version. It follows
+  /// `next_cursor` to the last page.
+  public func items(ofList id: String) async throws(APIError) -> [Versioned<Item>] {
+    var items: [Versioned<Item>] = []
     var cursor: String?
     repeat {
       let page = try await load(.items(ofList: id, cursor: cursor))
-      items += page.data
+      items += page.data.map(\.row)
       cursor = page.nextCursor
     } while cursor != nil
     return items
   }
 
+  /// How many rows a page of a collection has, when the request names no other size.
+  public static let pageSize = 100
+
+  /// `GET /items/{id}`: one item.
+  public func item(_ id: String) async throws(APIError) -> Versioned<Item> {
+    try await versioned(.item(id))
+  }
+
   // MARK: - The one load
+
+  /// The answer of a route with no `If-None-Match`.
+  private func load<Response>(_ endpoint: Endpoint<Response>) async throws(APIError) -> Response {
+    // A 304 answers only a request with `If-None-Match`, so this request has an answer.
+    guard let answer = try await answer(to: endpoint) else { throw .unreachable(.notTheAPI) }
+    return answer.body
+  }
+
+  /// A resource from its own address, with the `ETag` of the answer as its version.
+  private func versioned<Resource>(_ endpoint: Endpoint<Resource>) async throws(APIError) -> Versioned<Resource> {
+    guard let answer = try await answer(to: endpoint) else { throw .unreachable(.notTheAPI) }
+    return Versioned(resource: answer.body, version: Self.version(ofETag: answer.etag))
+  }
+
+  /// The version that an `ETag` gives. `GET /versions` names a version as the strong tag, so a tag that something
+  /// on the way made weak (`W/`) is the same version. An answer with no `ETag` has the empty version, which agrees
+  /// with nothing that `GET /versions` names, so the resource is fetched again at the next pull.
+  private static func version(ofETag etag: String?) -> String {
+    guard let etag else { return "" }
+    return etag.hasPrefix("W/") ? String(etag.dropFirst(2)) : etag
+  }
+
+  /// What a route answered: the decoded body, and the answer's `ETag`.
+  private struct Answer<Response> {
+    let body: Response
+    let etag: String?
+  }
 
   /// Every request goes through here: the user agent, the token, the time limit, the log, the strict test for the
   /// API's own answers, and the rule for an unreachable instance.
-  private func load<Response>(_ endpoint: Endpoint<Response>) async throws(APIError) -> Response {
+  ///
+  /// Nil is a 304 for a request with `If-None-Match`: the answer that the request named still holds.
+  private func answer<Response>(to endpoint: Endpoint<Response>) async throws(APIError) -> Answer<Response>? {
     let route = endpoint.route
-    guard let url = instance.url(path: endpoint.path, query: endpoint.query) else {
+    // A query parameter that the route doesn't name is never sent.
+    let query = endpoint.query.filter { route.queryParameters.contains($0.name) }
+    guard let url = instance.url(path: endpoint.path, query: query) else {
       Log.request(route, "has no URL")
       throw .unreachable(.notTheAPI)
     }
@@ -92,6 +147,7 @@ public struct APIClient: Sendable {
     request.setValue("application/json", forHTTPHeaderField: "Accept")
     // The token goes only to the instance address, on a route that needs a session.
     if let token, !route.isPublic { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+    if let etag = endpoint.ifNoneMatch { request.setValue(etag, forHTTPHeaderField: "If-None-Match") }
     if let body = endpoint.body {
       guard let data = try? await JSONCoding.encode(body) else { throw .undecodable(.init(route: route, keyPath: "")) }
       request.httpBody = data
@@ -134,12 +190,15 @@ public struct APIClient: Sendable {
       do {
         let decoded = try await JSONCoding.decode(Response.self, from: data)
         Log.request(route, "ok", status: status)
-        return decoded
+        return Answer(body: decoded, etag: answer.value(forHTTPHeaderField: "ETag"))
       } catch {
         let undecodable = APIError.Undecodable(route: route, keyPath: JSONCoding.keyPath(of: error))
         Log.request(route, "answer can't be decoded", status: status)
         throw .undecodable(undecodable)
       }
+    case 304 where endpoint.ifNoneMatch != nil:
+      Log.request(route, "not modified", status: status)
+      return nil
     case 500..<600:
       Log.request(route, "server error", status: status)
       throw .unreachable(.noAnswer)
