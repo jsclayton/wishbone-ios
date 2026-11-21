@@ -2,6 +2,12 @@ import Foundation
 
 /// The plain HTTP that the harness and the fixture builder speak to a test server. It keeps no cookies and no
 /// cache, and follows no redirect.
+///
+/// Each request goes on a new connection, which no other request has used or will use. A server can close a kept
+/// connection just as the client sends the next request on it: the test server resets a connection that has
+/// carried no request for 10 seconds, and a reverse proxy closes an idle one. `URLSession` then sends a `GET`
+/// again, but fails a `POST`, `PATCH`, `PUT` or `DELETE` with `networkConnectionLost`, and the test fails on
+/// something that it doesn't test.
 public enum TestHTTP {
   /// One answer from a server.
   public struct Answer: Sendable {
@@ -60,6 +66,8 @@ public enum TestHTTP {
 
   /// Sends the request as it is.
   public static func send(_ request: URLRequest) async throws -> Answer {
+    let session = newSession()
+    defer { session.finishTasksAndInvalidate() }
     let (body, response) = try await session.data(for: request, delegate: NoRedirects())
     guard let response = response as? HTTPURLResponse, let url = request.url else { throw URLError(.badServerResponse) }
     var headers: [String: String] = [:]
@@ -70,14 +78,16 @@ public enum TestHTTP {
       method: request.httpMethod ?? "GET", url: url, status: response.statusCode, headers: headers, body: body)
   }
 
-  private static let session: URLSession = {
+  /// A session for one request. A session's connections are its own, so the request goes on a new connection.
+  /// The session keeps no cookies and no cache.
+  static func newSession() -> URLSession {
     let configuration = URLSessionConfiguration.ephemeral
     configuration.httpCookieStorage = nil
     configuration.httpShouldSetCookies = false
     configuration.urlCache = nil
     configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
     return URLSession(configuration: configuration)
-  }()
+  }
 
   /// An answer that redirects is the answer. Nothing follows it.
   private final class NoRedirects: NSObject, URLSessionTaskDelegate {

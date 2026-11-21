@@ -156,6 +156,7 @@ To move the pin:
 - Every test server gets a free port, and a fresh data folder under the run's own temporary root. Nothing is fixed, so two checkouts and CI never collide.
 - Every test server runs with `TZ=UTC`, `WISHBONE_LISTEN_ADDRESS=127.0.0.1` so that it is not on the local network, a high `WISHBONE_RATE_LIMIT_REDEEM`, `WISHBONE_E2E_HOOKS=true`, and `WISHBONE_EXTRACT_ALLOW_PRIVATE=true`.
 - The package tests run in parallel. The simulator tests run one at a time.
+- `TestHTTP` and the conditioner send each request to a test server on a new connection, never on a kept one. The test server resets a connection that has carried no request for 10 seconds. A request that goes on that connection at that moment is lost: `URLSession` sends a `GET` again, but fails a `POST`, `PATCH`, `PUT` or `DELETE` with `networkConnectionLost`.
 
 ### Temporary folders: ScratchDirectory
 
