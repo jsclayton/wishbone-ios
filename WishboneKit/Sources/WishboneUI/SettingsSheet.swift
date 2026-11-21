@@ -4,7 +4,7 @@ import WishboneSession
 /// Settings: what is about the user and this device, as a sheet from the user's avatar. See
 /// `docs/screens/settings.md`.
 ///
-/// It holds the Signed in block. Every other row joins with its own screen.
+/// It holds the Signed in block and Share diagnostics. Every other row joins with its own screen.
 struct SettingsSheet: View {
   @Environment(Device.self) private var device
   @Environment(\.dismiss) private var dismiss
@@ -18,6 +18,13 @@ struct SettingsSheet: View {
     NavigationStack {
       List {
         signedIn
+        Section {
+          NavigationLink {
+            ShareDiagnosticsScreen(place: .pushed)
+          } label: {
+            Text("Share diagnostics", bundle: #bundle)
+          }
+        }
       }
       .navigationTitle(Text("Settings", bundle: #bundle))
       .toolbar {

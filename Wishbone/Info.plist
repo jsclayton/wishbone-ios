@@ -17,6 +17,8 @@
 	<string>$(WISHBONE_PRIVACY_URL)</string>
 	<key>WishboneSentryDSN</key>
 	<string>$(WISHBONE_SENTRY_DSN)</string>
+	<key>WishboneSentryEnvironment</key>
+	<string>$(WISHBONE_SENTRY_ENVIRONMENT)</string>
 	<key>WishboneSourceURL</key>
 	<string>$(WISHBONE_SOURCE_URL)</string>
 	<key>WishboneSupportURL</key>

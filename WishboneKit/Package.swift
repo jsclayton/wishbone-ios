@@ -35,7 +35,9 @@ let package = Package(
   ],
   dependencies: [
     // The local database. It is pinned to an exact version, and moves only in a reviewed pull request. See ADR 0005.
-    .package(url: "https://github.com/groue/GRDB.swift.git", exact: "7.12.0")
+    .package(url: "https://github.com/groue/GRDB.swift.git", exact: "7.12.0"),
+    // Diagnostics. It is pinned to an exact version, and moves only in a reviewed pull request. See ADR 0008.
+    .package(url: "https://github.com/getsentry/sentry-cocoa.git", exact: "9.34.0"),
   ],
   targets: [
     .target(
@@ -55,6 +57,7 @@ let package = Package(
     ),
     .target(
       name: "WishboneDiagnostics",
+      dependencies: [.product(name: "Sentry", package: "sentry-cocoa")],
       swiftSettings: moduleSettings
     ),
     .target(

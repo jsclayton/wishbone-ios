@@ -118,12 +118,13 @@ enum Audit {
       if issue.auditType == .dynamicType, let row = issue.element?.label, rows.contains(where: row.hasPrefix) {
         return true
       }
-      // Done in the Settings sheet's bar is the system's own bar button, on the system's glass. The audit reports
-      // its text as low contrast, where its screenshot shows black on glass of about (240, 240, 245), near 18:1.
-      // It reports that the text doesn't grow, where iOS shows a bar button in the large content viewer instead.
-      // A label with a text style of its own changes neither. The exception is for that button only.
+      // Done in a sheet's bar (Settings, Share diagnostics) is the system's own bar button, on the system's glass.
+      // The audit reports its text as low contrast, where its screenshot shows black on glass of about
+      // (240, 240, 245), near 18:1. It reports that the text doesn't grow, where iOS shows a bar button in the large
+      // content viewer instead. A label with a text style of its own changes neither. The exception is for Done in
+      // a navigation bar only.
       if [.contrast, .dynamicType].contains(issue.auditType), let done = issue.element, done.elementType == .button,
-        done.label == words("Done"), app.navigationBars[words("Settings")].buttons[words("Done")].exists
+        done.label == words("Done"), app.navigationBars.buttons[words("Done")].exists
       {
         return true
       }
