@@ -160,6 +160,7 @@ To move the pin:
 ### Temporary folders: ScratchDirectory
 
 - `ScratchDirectory` in `TestSupport` is the one place where a test names a temporary folder. A fitness test bans `temporaryDirectory`, `NSTemporaryDirectory(`, and `mkdtemp(` everywhere else.
+- The hosted bundle links no `TestSupport`, so `ScratchDirectory` is not there. A hosted test makes a folder under `URL.cachesDirectory` with a UUID in its name, and removes it in a `defer`, as `HostedTests/SessionKeychainTests.swift` does. The fitness test doesn't ban `cachesDirectory`.
 - Each test process has one root. A folder is removed when its last holder goes, and the root is removed when the process exits. At the next start, the roots of dead processes are removed.
 - Each server's data folder is under that root, with its process ID beside it. A server stops when its holder goes, and when its test process exits. The sweep at start-up stops a server whose test process is dead before it removes the root, so a crashed run cleans up too.
 - The built server and its source live in the checkout's build folder, under `build/server/`, one for each pin. Moving the pin deletes the old one.
