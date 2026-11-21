@@ -118,5 +118,6 @@ These tests hold the rules above. They run in `just gate`.
 - The three `AccentColor` assets are equal.
 - No `temporaryDirectory`, `NSTemporaryDirectory(`, or `mkdtemp(` outside `ScratchDirectory`.
 - No app icon badge.
+- The app icon is the layered icon in the app target, with a light and a dark fill.
 - No `Text(verbatim:)`, `String(format:)`, or text joined into UI strings outside a short allow list. The String Catalog has no stale entry and no key without English.
 - The app's privacy manifest against the diagnostics vocabulary.
