@@ -189,7 +189,7 @@ To move the pin:
 ### Fixtures: the standard family
 
 - The fixture builder in `TestSupport` seeds only through the API, as the admin. The admin makes the users and a login link for each. What only a user can do, such as making a list or claiming an item, the builder does through that user's own session.
-- One call seeds the **standard family**: a parent with an active child and a deactivated child (with lists, a list shared with another recipient, a pending invitation, and a given gift), the admin, a user seen only through the admin's access, nested groups, a shared occasion on groups and one marked Everyone, and a blocked store. Deletion requests join it when the pinned server has them.
+- One call seeds the **standard family**: a parent with an active child and a deactivated child (with lists, a list shared with another recipient, a pending invitation, and a given gift), the admin, a user seen only through the admin's access, nested groups, a shared occasion on groups and one marked Everyone, and a blocked store.
 - Names are unique for each test, and come back as typed handles. Each person can sign in as their own bearer session.
 - Some rows are for the whole instance: an occasion marked Everyone, a blocked store, and every user for the admin. On the shared server, a test sees those rows of other tests too. A test that compares a whole collection picks out its own rows, or starts a private server.
 - Small builder calls add anything special. A test that needs less seeds less. Reveal goes through the server's test hook.

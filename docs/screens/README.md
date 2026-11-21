@@ -59,7 +59,6 @@ In a screen's spec, the **Content** section gives the plain default for the layo
 | [sign-in-and-devices](sign-in-and-devices.md) | Sign-in and devices, with the login link sheet |
 | [reminders-settings](reminders-settings.md) | The Reminders screen |
 | [share-diagnostics](share-diagnostics.md) | The Share diagnostics screen |
-| [delete-account](delete-account.md) | The Delete account screen |
 | [blocked-stores](blocked-stores.md) | Blocked stores, for the admin |
 | [acknowledgements](acknowledgements.md) | Acknowledgements |
 

@@ -2,14 +2,14 @@
 
 ## Purpose
 
-Everything about one person that a giver needs: what they want, what is good to know, and their other lists. For a parent and for the admin, it is also where they act for that user. The rules are in the spec: [The For {name} part](../spec.md#the-for-name-part), [A deactivated child](../spec.md#a-deactivated-child), [The admin's For {name} part](../spec.md#the-admins-for-name-part), and [Account deletion](../spec.md#account-deletion).
+Everything about one person that a giver needs: what they want, what is good to know, and their other lists. For a parent and for the admin, it is also where they act for that user. The rules are in the spec: [The For {name} part](../spec.md#the-for-name-part), [A deactivated child](../spec.md#a-deactivated-child), [The admin's For {name} part](../spec.md#the-admins-for-name-part).
 
 ## How you get here, and where you go
 
 - **Pushed** from Home's people, the People page, the sidebar, and any name that links.
 - A reminder or a widget tap for a person's birthday or custom occasion opens it on top of Home.
 - An item's row pushes the [item's page](item.md). A row in Other lists pushes that [list's page](list.md).
-- The For {name} part pushes the [profile](profile.md) screen, [Sign-in and devices](sign-in-and-devices.md), the Received part of [Gifts](gifts.md), the [Delete account](delete-account.md) screen, and Parents (below).
+- The For {name} part pushes the [profile](profile.md) screen, [Sign-in and devices](sign-in-and-devices.md), the Received part of [Gifts](gifts.md), and Parents (below).
 - **The user's own page is this same page.** It shows their own primary list, with no claim state and no For part. It does not switch to the Lists tab. The user's own profile and devices are in [Settings](settings.md).
 
 ## Content
@@ -40,11 +40,10 @@ The admin's **Parents** row pushes a screen with the user's parents, each with R
 - **A giver sees fewer items than exist:** nothing says so. A fully claimed item is not in the giver's copy.
 - **A parent who is not a recipient:** one line above the items, as on a list's page: "You see what's been claimed here. Fully claimed items don't show."
 - **A deactivated child**, for a parent: the line about the admin, the items read-only, and a For part with only What {name} received.
-- **A deactivated user**, for the admin: the line about reactivating, and the rows Reactivate, Parents, and Delete.
+- **A deactivated user**, for the admin: the line about reactivating, and the rows Reactivate and Parents.
 - **A user seen only through the admin's access:** the line that says so. The page has no items, because the server hides the primary list from that access.
-- **A deletion request is open:** a line in the For part says who asked, and when.
 - **New user, a group didn't take them:** a line names each group that failed (see [new-user](new-user.md)).
-- **The admin's writes wait for the server:** Add parent, Remove, Deactivate, Reactivate, and Delete. With no connection, the page says "Can't reach {address}", and nothing changes.
+- **The admin's writes wait for the server:** Add parent, Remove, Deactivate, and Reactivate. With no connection, the page says "Can't reach {address}", and nothing changes.
 - **Gone:** a user the viewer can no longer see shows the [not-found](not-found.md) page.
 
 ## Windows
@@ -64,17 +63,15 @@ The item rows have the actions of a [list's page](list.md): I'll get this, Open,
 | Edit {name}'s profile | A For row, from `can_edit` | Pushes the profile screen for that user |
 | Sign-in and devices | A For row, from `can_make_login_link` or `can_manage_sessions` | Pushes that screen for the user |
 | What {name} received | A For row, for a parent | Pushes Received for the child |
-| Ask to delete {name}'s account | A For row, for a parent | Pushes the Delete account screen for the child |
 | Parents | A For row, from `can_edit_parents` | Pushes Parents |
 | Add parent, Remove | On Parents | Links or unlinks, with no confirmation |
 | Deactivate {name} | A For row, from `can_deactivate` | Deactivates, after a confirmation |
 | Reactivate {name} | A For row, from `can_reactivate` | Reactivates, with no confirmation |
-| Delete {name} | A For row, from the server's `can_*` field | Deletes the user, after a confirmation that says what goes and what stays |
 | Open in New Window | The toolbar's menu, where several windows are allowed | Opens a window with this page on top of Home |
 
 ## Words
 
-Decided in the spec, some marked as drafts there: the For rows, "Deactivated", the deactivated lines for a parent and for the admin, the admin's-access line, the deletion request lines, and "Delete Emma". Decided, as the web app has them: "Good to know", "Other lists", "For {name}", "{n} of {m} still wanted", "Always wanted", "You claimed {n}".
+Decided in the spec, some marked as drafts there: the For rows, "Deactivated", the deactivated lines for a parent and for the admin, and the admin's-access line. Decided, as the web app has them: "Good to know", "Other lists", "For {name}", "{n} of {m} still wanted", "Always wanted", "You claimed {n}".
 
 **Provisional.** These are drafts:
 
@@ -84,7 +81,6 @@ Decided in the spec, some marked as drafts there: the For rows, "Deactivated", t
 | No items, for a giver | "{name} hasn't added anything yet." |
 | No items, for someone who can edit | "Nothing here yet. Tap Add item to start the list." |
 | Deactivate, confirmation | "Deactivate {name}? Their devices are signed out and their open gifts are released. Only you and their parents see them until you reactivate them.", with the button "Deactivate {name}" |
-| Delete, confirmation | "Delete {name}? Lists that are only theirs, and gifts for them alone, are deleted. Gifts they gave stay with the people who got them. This can't be undone.", then "{child} will have no parent." for each such child, with the button "Delete {name}" |
 | Parents, title | "{name}'s parents" |
 | Parents, empty | "{name} has no parents in Wishbone." |
 | A group didn't take a new user | "{name} wasn't added to {group}. Add them from the group's page." |

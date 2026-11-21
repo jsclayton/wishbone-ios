@@ -14,7 +14,7 @@ Someone in your family, or someone your family trusts, runs a Wishbone server. W
 
 The app also tells that server your device's time zone, so that gifts are revealed at your own midnight, and the dates of your occasions follow your own day. It sends the time zone when you sign in, and again when it changes.
 
-That server is not ours, and we have no way to see what it holds. The operator controls that data, and this policy does not cover it. To ask for your account to be deleted, use Delete account in the app's Settings. The request goes to your family's admin, who completes it on the server.
+That server is not ours, and we have no way to see what it holds. The operator controls that data, and this policy does not cover it. To have your account deleted, ask your family's admin. The operator deletes it on the server.
 
 ## Data stored on your device
 

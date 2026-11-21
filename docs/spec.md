@@ -133,7 +133,6 @@ Two ways in, one way to get help, and nothing to type.
 - Only the API's own answer counts: `application/problem+json` with the code `unauthorized`. A 401 from a reverse proxy, an access gateway, or a captive portal is "unreachable". The test is strict because a wrong sign-out costs the user a new login link from someone else.
 - The device then forgets everything: the Keychain item, the local database with its unsent changes, the image cache, the widget's file, and the scheduled reminders. The session can be revoked because the device was lost.
 - Every window shows the signed-out screen with one message: "You were signed out of {address}. Ask for a new login link to sign in again." The server does not say why (revoked, a year unused, or a deactivated user), so the app can't.
-- If this device had asked for the user's account to be deleted, the message is "Your account has been deleted." (see [Account deletion](#account-deletion)).
 - An extension that gets the 401 deletes the Keychain item and shows its signed-out state. The app clears the rest the next time it runs and finds no item.
 
 ### Unreachable never ends the session
@@ -274,7 +273,6 @@ Screens: [tabs-and-sidebar](screens/tabs-and-sidebar.md), [home](screens/home.md
   - **Sign-in and devices**, with Devices, Passkeys, and "Sign in on another device" (section 2).
   - **Reminders** (section 8).
   - **Share diagnostics** (section 11).
-  - **Delete account** (section 6).
   - **For the admin**: Blocked stores, for the admin only (section 6).
   - **Support Wishbone** (see below).
   - **About**: **Source code**, **Acknowledgements**, and the app's version.
@@ -439,7 +437,6 @@ A child's page has a "For {name}" part, with these rows from their `can_*` field
   - The child's devices (`GET /users/{child}/sessions`), each with Revoke.
   - The child's passkeys, each with Delete only (a parent never renames them), hidden when there are none.
 - **What {name} received** pushes the same Received screen, built for the child (`recipient_id={child}`). Restore ("{name} didn't get this") and Add again show from `can_*`. Add again starts on the gift's list, or else the child's primary list, as the server spec says.
-- **Ask to delete {name}'s account** (see [Account deletion](#account-deletion)).
 
 The time zone is never shown or sent for a child. The Gifts tab's Received is the user's own only (`recipient_id=me`), although `GET /gifts` also returns the children's.
 
@@ -480,11 +477,11 @@ The time zone is never shown or sent for a child. The Gifts tab's Received is th
 
 Relies on the server spec's [Admin and setup](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#admin-and-setup), [Shared occasions](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#shared-occasions), [Deactivation and deletion](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#deactivation-and-deletion), and [Groups](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#groups).
 
-Screens: [people](screens/people.md), [group](screens/group.md), [new-user](screens/new-user.md), [user](screens/user.md), [occasions](screens/occasions.md), [blocked-stores](screens/blocked-stores.md), [delete-account](screens/delete-account.md).
+Screens: [people](screens/people.md), [group](screens/group.md), [new-user](screens/new-user.md), [user](screens/user.md), [occasions](screens/occasions.md), [blocked-stores](screens/blocked-stores.md).
 
 ### Scope
 
-- The app does every admin job that the API offers: New user, linking and unlinking parents, deactivate and reactivate, groups (create, rename, delete, add and remove users, nest groups), shared occasions (create, edit, delete, attach groups, or mark Everyone), blocked stores, Sign-in and devices for any active user, and completing a deletion request.
+- The app does every admin job that the API offers: New user, linking and unlinking parents, deactivate and reactivate, groups (create, rename, delete, add and remove users, nest groups), shared occasions (create, edit, delete, attach groups, or mark Everyone), blocked stores, and Sign-in and devices for any active user.
 - There is no Admin tab. Each admin part shows from `is_admin` or a `can_*` field, so an everyday user never meets one.
 - The app never names a CLI command or an environment variable. The UI says "the person who runs Wishbone". Code and docs say **operator**.
 
@@ -497,9 +494,8 @@ The rows show from their `can_*` fields, in this order.
   - Sign-in and devices
   - **Parents**, which pushes the user's parents, each with Remove, and Add parent. Neither asks for confirmation. A refused loop shows the server's `detail`.
   - **Deactivate {name}**
-  - **Delete {name}** (see [Account deletion](#account-deletion))
 - Deactivate asks for confirmation: the user's devices are signed out, their open gifts are released, and only you and their parents see them until you reactivate them.
-- **A deactivated user:** "Deactivated" beside the name, the line "{name} can't sign in. Reactivate to bring them back as they were.", and the rows **Reactivate {name}** (no confirmation), Parents, and Delete {name}. Profile and Sign-in and devices are hidden.
+- **A deactivated user:** "Deactivated" beside the name, the line "{name} can't sign in. Reactivate to bring them back as they were.", and the rows **Reactivate {name}** (no confirmation) and Parents. Profile and Sign-in and devices are hidden.
 - **A user seen only through the admin's access:** the page says "You see {name} because you're the admin. Their lists show only to people who share a group with them."
 - What {name} received stays a parent's row only. The admin has no access to gifts.
 - An admin who is also a user's parent gets both sets of rows.
@@ -511,10 +507,9 @@ The rows show from their `can_*` fields, in this order.
 
 The People page is reached from the "People" heading on Home, and from a sidebar row in a wide window. Everyone sees the people they can see, by group. For the admin, from top to bottom:
 
-1. **Asked to be deleted**, when there are requests.
-2. Everyone's parts: Your children, Your parents, and your groups.
-3. **For the admin**: **All users** (every user by name, searchable, with "Deactivated" beside a deactivated user, which is also how to reach a user in no group), **All groups**, and **Deactivated**.
-4. **New user** and **New group**, in the toolbar's add menu.
+1. Everyone's parts: Your children, Your parents, and your groups.
+2. **For the admin**: **All users** (every user by name, searchable, with "Deactivated" beside a deactivated user, which is also how to reach a user in no group), **All groups**, and **Deactivated**.
+3. **New user** and **New group**, in the toolbar's add menu.
 
 **Provisional.** Plain default: a system list in the order above. The add menu's symbol is `person.badge.plus`, so that it differs from the tab bar's plus.
 
@@ -562,18 +557,9 @@ The People page is reached from the "People" heading on Home, and from a sidebar
 
 **Provisional.** The words are drafts. Plain default: a system list, with Add in the toolbar.
 
-### Account deletion
+### No account deletion
 
-Apple requires an app to let a person start the deletion of their own account in the app (guideline 5.1.1(v)). Wishbone does this as a request that the admin completes, not as an instant self-deletion. A child can't then wipe their lists and gifts by accident, and deletion stays the admin's decision. This needs a server at the minimum version, which takes deletion requests.
-
-- **The user:** Settings has **Delete account** for every user except the admin. It pushes a screen that says what goes (lists where you are the only recipient, and gifts for you alone) and what stays (gifts you gave stay with their recipients). It also says: "The admin will delete your account. Until then you can keep using Wishbone or cancel the request." It promises no time.
-- **Ask to delete my account** is a destructive button, with one confirmation. While the request is open, the row reads "Deletion asked for on {date}", with **Cancel request**.
-- **The admin's own row** says: "You're the admin, so your account can't be deleted. The person who runs Wishbone can make someone else the admin first."
-- **A parent for a child:** the For {name} part has **Ask to delete {name}'s account**, with the same screen and confirmation. Any of the child's parents, or the child, can cancel it.
-- **The admin completes it.** The request shows on the user's page in the For part ("Asked on 12 Nov to have their account deleted", or "Asked by Dad on 12 Nov"), and at the top of People. **Delete {name}** shows from the server's `can_*` field. Its confirmation says what goes and what stays, and names any child left with no parent. Its button repeats the action ("Delete Emma"). There is no Decline and no badge.
-- **When it is done**, the device is signed out (section 2).
-
-**Provisional.** The words in this section are drafts. Plain default: a pushed screen with the text and one destructive button.
+Wishbone is self-hosted, and there is no sign-up: the family's admin creates every account. So the app has no account deletion, and the API has no route for it. A person who wants their account gone asks the admin. The person who runs Wishbone deletes it on the server with `wishbone delete-user` (the server spec's [Deactivation and deletion](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#deactivation-and-deletion)).
 
 ## 7. Secrecy on the device
 
@@ -863,10 +849,9 @@ Screens: the states in [What every screen shares](screens/README.md#what-every-s
 These writes are never unsent changes either. Each one changes what other people see or can do, or can't be undone on the device. The button waits for the server's answer. With no connection, it says "Can't reach {address}", and nothing changes.
 
 - restore ("I didn't get this"): it hides the gift from the person who tapped it, so a later refusal has nothing to roll back to
-- the admin's writes: New user, parent links, deactivate and reactivate, delete a user, groups, shared occasions, and blocked stores
+- the admin's writes: New user, parent links, deactivate and reactivate, groups, shared occasions, and blocked stores
 - making a login link, revoking a session, and deleting or renaming a passkey: a revoke that waits offline gives a false sense that a lost device is locked out
 - confirming the profile at the profile gate
-- asking to delete an account, and cancelling that request
 - adding a store link to an item, and Refresh prices: the server reads the store's page during the request, and can refuse it
 - leaving a list, and making a child leave: the device can't know what the list then shows until it syncs
 

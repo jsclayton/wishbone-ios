@@ -7,7 +7,7 @@ What is about the user and this device: who is signed in, their profile, their d
 ## How you get here, and where you go
 
 - **A sheet**, from the user's avatar at the top trailing corner of Home, Lists, and Gifts, and from Command-comma.
-- Each row pushes its screen inside the sheet: [Your profile](profile.md), [Sign-in and devices](sign-in-and-devices.md), [Reminders](reminders-settings.md), [Share diagnostics](share-diagnostics.md), [Delete account](delete-account.md), [Blocked stores](blocked-stores.md), and [Acknowledgements](acknowledgements.md).
+- Each row pushes its screen inside the sheet: [Your profile](profile.md), [Sign-in and devices](sign-in-and-devices.md), [Reminders](reminders-settings.md), [Share diagnostics](share-diagnostics.md), [Blocked stores](blocked-stores.md), and [Acknowledgements](acknowledgements.md).
 - **Source code**, the support row, and the link in the For the admin footer open in the browser.
 - **Sign out** closes the sheet, and every window shows the [signed-out](signed-out.md) screen.
 - No link from outside opens Settings.
@@ -21,10 +21,9 @@ In order:
 3. **Sign-in and devices**. This section's footer is the help line on keeping gifts private on a shared device (see [No Face ID lock of the app's own](../spec.md#no-face-id-lock-of-the-apps-own)).
 4. **Reminders**.
 5. **Share diagnostics**.
-6. **Delete account**. For the admin, a line in its place says why there is none. While a request is open, the row says when it was asked.
-7. **For the admin**, for the admin only: **Blocked stores**, with the footer on the jobs that are done on the server.
-8. **Support Wishbone**: one row, only when the spec's rules allow it.
-9. **About**: **Source code**, **Acknowledgements**, and the app's version and build.
+6. **For the admin**, for the admin only: **Blocked stores**, with the footer on the jobs that are done on the server.
+7. **Support Wishbone**: one row, only when the spec's rules allow it.
+8. **About**: **Source code**, **Acknowledgements**, and the app's version and build.
 
 **Provisional.** The order and the sections. Plain default: a system list in the order above, with Done in the toolbar.
 
@@ -54,7 +53,7 @@ In order:
 
 ## Words
 
-Decided in the spec: the row names above, "For the admin", "Blocked stores", "Source code", "Acknowledgements", the Sign out warnings, and the admin's own Delete account line. Decided in the spec, marked as drafts there: the help line on Require Face ID, the For the admin footer, and the Support Wishbone header, row, and footer.
+Decided in the spec: the row names above, "For the admin", "Blocked stores", "Source code", "Acknowledgements", and the Sign out warnings. Decided in the spec, marked as drafts there: the help line on Require Face ID, the For the admin footer, and the Support Wishbone header, row, and footer.
 
 **Provisional.** These are drafts:
 
@@ -63,7 +62,6 @@ Decided in the spec: the row names above, "For the admin", "Blocked stores", "So
 | Title | "Settings" |
 | Signed in | "Signed in as {name}", then the address |
 | Sign out, title and button | "Sign out?", "Sign out" |
-| Delete account, while a request is open | "Deletion asked for on {date}" |
 | For the admin, the link | "Running Wishbone" |
 | About | "About", "Version {version} ({build})" |
 
