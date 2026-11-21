@@ -25,8 +25,10 @@ import WishboneAPI
 /// **The blocked stores are not in `GET /versions`.** So every pull of the admin reads them again, after the
 /// rest, also when `GET /versions` answered 304 (see `pullBlockedStores`). Nobody else asks for them.
 ///
-/// **A summary, a membership and a store link have no answer that carries a version,** so step 4 can't hold for
-/// them. Each is saved with the version that its entry named (see `PullPeople.swift`, and `PullLists.swift`).
+/// **A summary and a store link have no answer that carries a version,** so step 4 can't hold for them. Each is
+/// saved with the version that its entry named (see `PullPeople.swift`, and `PullLists.swift`). A membership's
+/// answers carry its version as their `ETag`, so step 4 holds for it, except for the users of a birthday or a
+/// custom occasion, which the copy takes from the occasion's row.
 ///
 /// A pull writes each thing when its answer arrives. A pull that stops in the middle keeps what it wrote, and the
 /// next pull fetches the rest.

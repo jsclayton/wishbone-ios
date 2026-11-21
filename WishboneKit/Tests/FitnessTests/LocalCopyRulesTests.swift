@@ -27,19 +27,43 @@ enum LocalCopyRules {
 
   /// Each place that opens a write, with the function that it is in.
   static func writes(in files: [SourceFile]) -> [(writer: Writer, finding: Finding)] {
+    places(of: write, in: files, "writes to the database outside change()")
+  }
+
+  /// Each place where the pattern matches, with the function that it is in, and a finding that says `what`.
+  static func places(of pattern: String, in files: [SourceFile], _ what: String) -> [(writer: Writer, finding: Finding)]
+  {
     files.flatMap { file in
-      file.matches(of: write).map { match in
+      file.matches(of: pattern).map { match in
         let before = file.code[..<match.lowerBound]
         let function = before.matches(of: SourceFile.regex(#"\bfunc\s+(\w+)"#)).last
           .flatMap { $0.output[1].substring }.map(String.init)
-        let writer = Writer(path: file.path, function: function ?? "")
-        return (writer, file.finding(at: match.lowerBound, "writes to the database outside change()"))
+        return (Writer(path: file.path, function: function ?? ""), file.finding(at: match.lowerBound, what))
       }
     }
   }
 
   static func findings(in files: [SourceFile]) -> [Finding] {
     writes(in: files).filter { !writers.contains($0.writer) }.map(\.finding)
+  }
+
+  // MARK: - The one change that keeps the ETag
+
+  /// The one function that may keep the `ETag` through a change: the blocked stores, which `GET /versions` doesn't
+  /// cover. Any other change to the copy must drop it.
+  static let outsideTheVersions = [Writer(path: "\(module)/LocalDatabase.swift", function: "replaceBlockedStores")]
+
+  /// An argument that may keep the `ETag`: `isOutsideTheVersions:` with any value but `false`. The parameter's own
+  /// declaration, `isOutsideTheVersions: Bool`, is not one.
+  static let keepsTheETag = #"\bisOutsideTheVersions\s*:(?!\s*(false|Bool)\b)"#
+
+  /// Each place that may keep the `ETag` through a change, with the function that it is in.
+  static func changesOutsideTheVersions(in files: [SourceFile]) -> [(writer: Writer, finding: Finding)] {
+    places(of: keepsTheETag, in: files, "keeps the ETag outside replaceBlockedStores()")
+  }
+
+  static func etagFindings(in files: [SourceFile]) -> [Finding] {
+    changesOutsideTheVersions(in: files).filter { !outsideTheVersions.contains($0.writer) }.map(\.finding)
   }
 
   // MARK: - The schema number rises with the copy
@@ -51,8 +75,8 @@ enum LocalCopyRules {
   ]
 
   /// The parts of other files that say what the copy keeps: the kinds of the answer that the pull keeps, which
-  /// bodies hold the summaries that the copy keeps, how a summary's row is made, and how a row is made from the
-  /// API's model. Each is the code from its first line up to its last, or to the end of the file. A part that
+  /// bodies hold the summaries that the copy keeps, how a summary's row is made, how a row is made from the API's
+  /// model, and which users each body holds as summaries (`HoldsSummaries`, with the users of a gift's flag). Each is the code from its first line up to its last, or to the end of the file. A part that
   /// can't be found fails the test, so a rename can't drop it from the digest.
   static let schemaParts = [
     Part(path: "\(module)/Pull.swift", from: "  struct Named: Sendable {", to: "  // MARK: - One kind of resource"),
@@ -60,9 +84,12 @@ enum LocalCopyRules {
       path: "\(module)/LocalDatabase.swift", from: "  func bodiesNaming(",
       to: "  /// The version of each group in the copy"),
     Part(
-      path: "\(module)/LocalDatabase.swift", from: "  private static func summaryRows(",
+      path: "\(module)/LocalDatabase.swift", from: "  private static func summaryRows<",
       to: "  /// Saves the groups"),
     Part(path: "\(module)/LocalDatabase.swift", from: "// MARK: - A row from the API's model", to: nil),
+    Part(
+      path: Repo.module("WishboneAPI") + "/Models.swift", from: "  public var users: [UserSummary] {",
+      to: "  public static let fields"),
   ]
 
   struct Part {
@@ -84,7 +111,7 @@ enum LocalCopyRules {
   /// **When this fails, what the copy keeps has changed.** Raise `LocalDatabase.copySchema`, so that every device
   /// drops the old copy. Then record the new number here, with the digest that the failure gives. If only the
   /// code's own shape changed, and nothing that a database holds, record the digest alone.
-  static let recorded = (schema: 4, digest: "2530f7ebd735b8b0")
+  static let recorded = (schema: 5, digest: "e6fcca71c46235f8")
 
   /// The digest of the sources: their code, with no comment line and no white space.
   static func digest(of sources: [String]) -> String {
@@ -106,13 +133,54 @@ enum LocalCopyRules {
 
 @Suite("The local copy's rules", .timeLimit(.minutes(1)))
 struct LocalCopyRulesTests {
-  @Test("Every write to the copy goes through change(), which drops the kept ETag in the same change")
+  @Test(
+    """
+    Every write to the copy goes through change(), which drops the kept ETag in the same change. Only the \
+    blocked stores, which GET /versions doesn't cover, keep it
+    """
+  )
   func writesGoThroughChange() throws {
     let files = try Repo.swiftFiles(under: [LocalCopyRules.module])
     // The scan finds the two that are allowed, so it reads the code that it holds.
     #expect(LocalCopyRules.writes(in: files).map(\.writer) == LocalCopyRules.writers)
     let findings = LocalCopyRules.findings(in: files)
     #expect(findings.isEmpty, "\(findings.report)")
+    // The same for the one change that keeps the ETag.
+    #expect(LocalCopyRules.changesOutsideTheVersions(in: files).map(\.writer) == LocalCopyRules.outsideTheVersions)
+    let keeps = LocalCopyRules.etagFindings(in: files)
+    #expect(keeps.isEmpty, "\(keeps.report)")
+  }
+
+  @Test(
+    "The scan catches a change that keeps the ETag outside replaceBlockedStores()",
+    arguments: [
+      "func save() async throws {\n  try await change(isOutsideTheVersions: true) { _ in }\n}",
+      "func save(keep: Bool) async throws {\n  try await change(isOutsideTheVersions: keep) { _ in }\n}",
+      "func replaceBlockedStores() {}\nfunc save() async throws {\n  try await change(isOutsideTheVersions : true) { _ in }\n}",
+    ]
+  )
+  func scanCatchesAChangeThatKeepsTheETag(source: String) {
+    let file = SourceFile(path: "\(LocalCopyRules.module)/LocalDatabase.swift", source: source)
+    #expect(LocalCopyRules.etagFindings(in: [file]).count == 1)
+  }
+
+  @Test("The scan allows the blocked stores, the parameter itself, false, and words in comments")
+  func scanAllowsTheBlockedStores() {
+    let source = """
+      func change(isOutsideTheVersions: Bool = false, _ body: () -> Void) async throws {}
+      func replaceBlockedStores() async throws {
+        try await change(isOutsideTheVersions: true) { }
+      }
+      func save() async throws {
+        // Not change(isOutsideTheVersions: true) here.
+        try await change(isOutsideTheVersions: false) { }
+      }
+      """
+    let file = SourceFile(path: "\(LocalCopyRules.module)/LocalDatabase.swift", source: source)
+    #expect(LocalCopyRules.etagFindings(in: [file]).isEmpty)
+    // The same function in another file is not the one place.
+    let other = SourceFile(path: "\(LocalCopyRules.module)/SessionModel.swift", source: source)
+    #expect(LocalCopyRules.etagFindings(in: [other]).count == 1)
   }
 
   @Test(

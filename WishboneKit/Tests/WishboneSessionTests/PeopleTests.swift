@@ -705,6 +705,106 @@ struct PeopleTests {
     #expect(session.users == saved.users)
     #expect(session.memberships == saved.memberships)
   }
+
+  // MARK: - 10. A membership that changes during a pull
+
+  @Test(
+    """
+    A membership that changes between the answer of GET /versions and its fetch, and changes back before the next \
+    sync, is in step after that sync. The copy saves it with the version that its own answer carried
+    """
+  )
+  func membershipChangesAndChangesBack() async throws {
+    // Two empty groups. Only the admin reads the groups in a group. With no users in either, nesting one in the
+    // other changes that membership, and nothing else that the admin sees.
+    let outer = try await builder.group("Outer")
+    let inner = try await builder.group("Inner")
+    let admin = try await signedIn(as: builder.admin)
+    try await inStep(admin)
+    let session = admin.session
+    let own = try builder.admin.signedIn()
+    #expect(session.members(.groupGroups, of: outer.id) == [])
+
+    // The inner group goes into the outer one. The next answer of GET /versions names that.
+    try await own.send("POST", "/groups/\(outer.id)/groups", json: ["group_id": .string(inner.id)]).expecting(201)
+    let hold = admin.instance.conditioner.hold(Route("GET", "/groups/{id}/groups"), at: .request)
+    async let syncing: Void = session.sync()
+    await hold.waitUntilHeld()
+    // While the fetch is on its way, the inner group comes out again. The fetch reads the outer group as empty.
+    try await own.send("DELETE", "/groups/\(outer.id)/groups/\(inner.id)").expecting(204)
+    hold.release()
+    await syncing
+    #expect(session.members(.groupGroups, of: outer.id) == [])
+
+    // And it goes back in. The instance names what it named at the start of the last sync, so that sync's answer
+    // of GET /versions must not be kept: with it, every sync would get a 304, and the copy would keep the empty
+    // group for good.
+    try await own.send("POST", "/groups/\(outer.id)/groups", json: ["group_id": .string(inner.id)]).expecting(201)
+    let mark = admin.mark
+    await session.sync()
+    #expect(admin.asked(since: mark).first == "GET /versions")
+    #expect(admin.instance.conditioner.requests[mark].headers["if-none-match"] == nil)
+    #expect(session.members(.groupGroups, of: outer.id) == [inner.id])
+    try await inStep(admin)
+  }
+
+  @Test(
+    """
+    A membership whose two pages carry different ETags changed between them. The pull reads it again from its \
+    first page, and saves it with the ETag that both pages then agree on
+    """
+  )
+  func membershipChangesBetweenTwoPages() async throws {
+    // A group with more users in it than a page holds.
+    let robin = try await builder.person("Robin")
+    let builder = builder
+    let users = try await withThrowingTaskGroup { tasks in
+      for number in 1...APIClient.pageSize {
+        tasks.addTask { try await builder.person("Member \(number)", signedIn: false) }
+      }
+      var users = [robin]
+      for try await user in tasks { users.append(user) }
+      return users
+    }
+    let group = try await builder.group("Many", users: users)
+    let signed = try await signedIn(as: robin)
+    try await inStep(signed)
+    let session = signed.session
+    let admin = try builder.admin.signedIn()
+    #expect(session.members(.groupUsers, of: group.id)?.count == APIClient.pageSize + 1)
+
+    // One more user joins, so the next sync reads the group's users.
+    let first = try await builder.person("Joined first", signedIn: false)
+    try await admin.send("POST", "/groups/\(group.id)/users", json: ["user_id": .string(first.id)]).expecting(201)
+
+    // The instance has answered with the first page, and that answer is on its way.
+    let hold = signed.instance.conditioner.hold(Route("GET", "/groups/{id}/users"))
+    let mark = signed.mark
+    async let syncing: Void = session.sync()
+    await hold.waitUntilHeld()
+    // Another user joins before the second page is asked for. So the second page's ETag is not the first one's.
+    let second = try await builder.person("Joined second", signedIn: false)
+    try await admin.send("POST", "/groups/\(group.id)/users", json: ["user_id": .string(second.id)]).expecting(201)
+    hold.release()
+    await syncing
+
+    // The two pages differed, so the pull read the collection again, from its first page.
+    let pages = signed.asked(since: mark).filter { $0.hasPrefix("GET /groups/\(group.id)/users") }
+    #expect(pages.count == 4)
+    #expect(
+      pages.enumerated().allSatisfy { index, page in
+        index.isMultiple(of: 2)
+          ? page == "GET /groups/\(group.id)/users?limit=200"
+          : page.hasPrefix("GET /groups/\(group.id)/users?limit=200&cursor=")
+      })
+    let members = try #require(session.members(.groupUsers, of: group.id))
+    #expect(Set(members) == Set((users + [first, second]).map(\.id)))
+
+    // The user who joined second came after the pull read the users. The next sync brings them, and then the copy
+    // agrees with the instance.
+    await session.sync()
+    try await inStep(signed)
+  }
 }
 
 extension PeopleTests.Signed {
