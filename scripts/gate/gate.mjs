@@ -107,7 +107,8 @@ export async function runGate({
       say(`── step ${number} of ${steps.length}: ${step.name} (limit ${duration(step.limitMs)})`);
       const logPath = path.join(runDirectory, `${number}-${step.name}.log`);
       const logName = path.relative(root, logPath);
-      const result = await runStep({ command: step.command, limitMs: step.limitMs, logPath, cwd: root, signal, echo: out });
+      const result = await runStep({ command: step.command, limitMs: step.limitMs, logPath, cwd: root, signal, echo: out, onStart: (pid) => slot?.watch(pid) });
+      slot?.forget(result.pid);
       times[step.name] = result.ms;
 
       if (result.interrupted) fail('interrupted');
