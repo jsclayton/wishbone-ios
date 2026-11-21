@@ -30,6 +30,8 @@ let package = Package(
     .library(name: "WishboneSession", targets: ["WishboneSession"]),
     .library(name: "WishboneUI", targets: ["WishboneUI"]),
     .library(name: "WishboneDiagnostics", targets: ["WishboneDiagnostics"]),
+    // For the project's test bundles only. No target that ships links it: a fitness test holds each link list.
+    .library(name: "TestSupport", targets: ["TestSupport"]),
   ],
   dependencies: [
     // The local database. It is pinned to an exact version, and moves only in a reviewed pull request. See ADR 0005.
@@ -56,11 +58,17 @@ let package = Package(
     ),
     .target(
       name: "TestSupport",
+      dependencies: ["WishboneAPI"],
       swiftSettings: everyTarget
     ),
     .testTarget(
       name: "WishboneAPITests",
       dependencies: ["WishboneAPI", "TestSupport"],
+      swiftSettings: everyTarget
+    ),
+    .testTarget(
+      name: "WishboneSessionTests",
+      dependencies: ["WishboneAPI", "WishboneSession", "TestSupport"],
       swiftSettings: everyTarget
     ),
     .testTarget(
