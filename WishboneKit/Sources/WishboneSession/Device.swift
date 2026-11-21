@@ -52,6 +52,10 @@ public enum SignInState: Sendable, Equatable {
   /// The device signed out, and the instance could not be reached to revoke the session. So the device still shows
   /// in the user's Devices list.
   case signedOutUnreachable(InstanceAddress)
+
+  /// The instance ended the session with the API's own 401, and the device forgot everything. The server doesn't
+  /// say why: the session was revoked, went a year unused, or its user was deactivated.
+  case signedOutByServer(InstanceAddress)
 }
 
 /// The device: it holds one session at most. It signs in with a login link, and it holds the session model while
@@ -101,7 +105,8 @@ public final class Device {
 
   private let setup: Setup
 
-  /// Whether a sign-out is under way: the device is asking the instance to revoke the session.
+  /// Whether a sign-out is under way: the device is asking the instance to revoke the session, or is clearing
+  /// itself after the API's own 401.
   public private(set) var isSigningOut = false
 
   /// The link that the device keeps while the instance can't be reached, or after too many tries, for Try again.
@@ -303,6 +308,24 @@ public final class Device {
     signInState = wasReached ? .plain : .signedOutUnreachable(model.session.instance)
   }
 
+  /// Forgets the session after the instance ended it with the API's own 401, and says so: every window shows the
+  /// signed-out screen with the message. See "The API's own 401 signs the device out" in `docs/spec.md`.
+  ///
+  /// The session model calls this from the request that got the 401. It does nothing for a session model that the
+  /// device no longer holds, or while a sign-out clears the device: that sign-out forgets everything already.
+  ///
+  /// Diagnostics: never. The API's own 401 is not captured, and not a breadcrumb: it is no fault, and the client
+  /// has logged the request's outcome.
+  private func endedByServer(_ model: SessionModel) async {
+    guard session === model, !isSigningOut else { return }
+    isSigningOut = true
+    defer { isSigningOut = false }
+    session = nil
+    await forget(model)
+    keptLink = nil
+    signInState = .signedOutByServer(model.session.instance)
+  }
+
   /// Forgets everything of the session on the device: its session model, the session keychain's item, and the
   /// local databases. Nothing of the session is left.
   private func forget(_ model: SessionModel) async {
@@ -320,6 +343,8 @@ public final class Device {
   private func model(for session: Session) -> SessionModel? {
     guard let database = LocalDatabase.of(session, in: setup.storage) else { return nil }
     let client = APIClient(session: session, userAgent: setup.userAgent, clock: setup.clock)
-    return SessionModel(session: session, client: client, database: database, timeZone: setup.timeZone)
+    return SessionModel(
+      session: session, client: client, database: database, timeZone: setup.timeZone,
+      endedByServer: { [weak self] model in await self?.endedByServer(model) })
   }
 }

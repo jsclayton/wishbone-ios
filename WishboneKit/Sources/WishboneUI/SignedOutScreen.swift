@@ -34,6 +34,11 @@ public struct SignedOutScreen: View {
         .frame(maxWidth: .infinity, minHeight: window.size.height)
       }
     }
+    .onAppear {
+      // A sign-out can replace the window with this screen and its message at once, so the message appears with
+      // the screen.
+      if let words { AccessibilityNotification.Announcement(words).post() }
+    }
     .onChange(of: device.signInState) {
       // The message is announced when it appears, and so is "Signed in as {name}".
       if let words { AccessibilityNotification.Announcement(words).post() }
@@ -122,6 +127,10 @@ public struct SignedOutScreen: View {
           "Signed out on this device. \(address.text) could not be reached, so this device still shows in your Devices list until you remove it there.",
         bundle: #bundle
       )
+    case .signedOutByServer(let address):
+      String(
+        localized: "You were signed out of \(address.text). Ask for a new login link to sign in again.",
+        bundle: #bundle)
     }
   }
 
