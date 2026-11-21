@@ -1,6 +1,6 @@
 # Wishbone Privacy Policy
 
-Effective date: November 16, 2026
+Effective date: November 21, 2026
 
 Wishbone for iPhone and iPad is an app for Wishbone, a private wish list server that a family runs for itself. The app is developed by Code Monkey Labs, LLC ("we", "us").
 
@@ -11,6 +11,8 @@ Your family's wish lists go only to your family's own Wishbone server. We never 
 ## Your family's Wishbone server
 
 Someone in your family, or someone your family trusts, runs a Wishbone server. We call that person the operator. Everything you and your family enter in the app goes only to that server: lists, items, notes, images, names, birthdays, occasions, and gifts.
+
+The app also tells that server your device's time zone, so that gifts are revealed at your own midnight, and the dates of your occasions follow your own day. It sends the time zone when you sign in, and again when it changes.
 
 That server is not ours, and we have no way to see what it holds. The operator controls that data, and this policy does not cover it. To ask for your account to be deleted, use Delete account in the app's Settings. The request goes to your family's admin, who completes it on the server.
 
