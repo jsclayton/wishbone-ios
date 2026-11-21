@@ -4,7 +4,7 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 
 derived_data := "build/DerivedData"
 catalog := "WishboneKit/Sources/WishboneUI/Resources/Localizable.xcstrings"
-swift_dirs := "Wishbone ShareExtension WidgetExtension WishboneKit/Package.swift WishboneKit/Sources WishboneKit/Tests"
+swift_dirs := "Wishbone ShareExtension WidgetExtension HostedTests JourneyTests WishboneKit/Package.swift WishboneKit/Sources WishboneKit/Tests"
 
 # List recipes
 default:
@@ -23,7 +23,7 @@ gate:
 # Build
 # ============================================================================
 
-# Build the app and both extensions for the simulator, then add new strings to the String Catalog
+# Build the app and both extensions for the simulator, then add new strings to the String Catalog, and make the Acknowledgements
 build:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -35,10 +35,10 @@ build:
         -destination 'generic/platform=iOS Simulator' \
         -derivedDataPath {{derived_data}} \
         ARCHS=arm64 \
-        SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
         > build/xcodebuild.log 2>&1 || { grep -E '(error|warning): ' build/xcodebuild.log || tail -n 40 build/xcodebuild.log; exit 1; }
-    # The build has zero warnings. A warning from the compiler is an error, in the targets and in the package, so
-    # it fails every build until it is fixed. The check below is for what the compiler doesn't own: the linker,
+    # The build has zero warnings. A warning from the compiler is an error, in the targets (the project's
+    # SWIFT_TREAT_WARNINGS_AS_ERRORS) and in the package (Package.swift), so it fails every build until it is
+    # fixed. The check below is for what the compiler doesn't own: the linker,
     # the asset catalogs, and the project. xcodebuild prints those only when it runs the step again.
     # Xcode's App Intents step logs "warning: Metadata extraction skipped" for a target with no App Intents. That
     # line is the step's own log, not a warning about the code.
@@ -49,6 +49,7 @@ build:
         exit 1
     fi
     just sync-strings
+    just acknowledgements
     echo "✓ Built Wishbone, ShareExtension and WidgetExtension for the simulator (log: build/xcodebuild.log)"
 
 # Xcode adds new strings to the catalog when it builds. A build from the command line only writes
@@ -74,6 +75,14 @@ sync-strings:
     done < <(find "$sources" -name '*.swift' | sort)
     xcrun xcstringstool sync {{catalog}} "${args[@]}"
 
+# The Acknowledgements screen shows the license of each package that the app ships. The texts come from the
+# packages that the build fetched, at their pinned commits, and go into a file in git.
+
+# Make the license texts of the Acknowledgements screen from the pinned packages
+[private]
+acknowledgements:
+    node scripts/acknowledgements.mjs
+
 # ============================================================================
 # Test
 # ============================================================================
@@ -90,6 +99,11 @@ server-openapi:
 [positional-arguments]
 test *args: server
     swift test --package-path WishboneKit "$@"
+
+# Run the hosted tests and the journeys on the gate's own simulator. The results go to the folder
+[positional-arguments]
+simulator results="build/simulator": server
+    node scripts/gate/simulator.mjs "$1"
 
 # ============================================================================
 # Lint and format
@@ -113,9 +127,9 @@ lint-ci:
 lint-docs:
     node scripts/check-docs.mjs
 
-# Run the tests of the gate's own scripts, and of the script that builds the test server
+# Run the tests of the gate's own scripts, and of the scripts that the recipes run
 test-gate:
-    node --test 'scripts/gate/*.test.mjs' 'scripts/server/*.test.mjs'
+    node --test 'scripts/*.test.mjs' 'scripts/gate/*.test.mjs' 'scripts/server/*.test.mjs'
 
 # Format the Swift files in place with swift-format
 fmt:

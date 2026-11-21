@@ -15,9 +15,10 @@
 		7B0000000000000000000045 /* WishboneSession in Frameworks */ = {isa = PBXBuildFile; productRef = 7B0000000000000000000055 /* WishboneSession */; };
 		7B0000000000000000000046 /* WishboneUI in Frameworks */ = {isa = PBXBuildFile; productRef = 7B0000000000000000000056 /* WishboneUI */; };
 		7B0000000000000000000047 /* WishboneAPI in Frameworks */ = {isa = PBXBuildFile; productRef = 7B0000000000000000000057 /* WishboneAPI */; };
-		7B0000000000000000000048 /* WishboneUI in Frameworks */ = {isa = PBXBuildFile; productRef = 7B0000000000000000000058 /* WishboneUI */; };
 		7B0000000000000000000049 /* ShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 7B0000000000000000000002 /* ShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		7B000000000000000000004A /* WidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 7B0000000000000000000003 /* WidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		7B0000000000000000000119 /* TestSupport in Frameworks */ = {isa = PBXBuildFile; productRef = 7B000000000000000000011A /* TestSupport */; };
+		7B000000000000000000011B /* WishboneAPI in Frameworks */ = {isa = PBXBuildFile; productRef = 7B000000000000000000011C /* WishboneAPI */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -34,6 +35,20 @@
 			proxyType = 1;
 			remoteGlobalIDString = 7B0000000000000000000062;
 			remoteInfo = WidgetExtension;
+		};
+		7B000000000000000000010D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 7B0000000000000000000070 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7B0000000000000000000060;
+			remoteInfo = Wishbone;
+		};
+		7B000000000000000000010E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 7B0000000000000000000070 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7B0000000000000000000060;
+			remoteInfo = Wishbone;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -56,6 +71,8 @@
 		7B0000000000000000000001 /* Wishbone.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Wishbone.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7B0000000000000000000002 /* ShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		7B0000000000000000000003 /* WidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = WidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		7B0000000000000000000101 /* HostedTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HostedTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		7B0000000000000000000102 /* JourneyTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = JourneyTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -112,6 +129,16 @@
 			path = Config;
 			sourceTree = "<group>";
 		};
+		7B0000000000000000000103 /* HostedTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = HostedTests;
+			sourceTree = "<group>";
+		};
+		7B0000000000000000000104 /* JourneyTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = JourneyTests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -141,7 +168,22 @@
 			buildActionMask = 2147483647;
 			files = (
 				7B0000000000000000000047 /* WishboneAPI in Frameworks */,
-				7B0000000000000000000048 /* WishboneUI in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7B0000000000000000000106 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7B0000000000000000000109 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7B0000000000000000000119 /* TestSupport in Frameworks */,
+				7B000000000000000000011B /* WishboneAPI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -155,6 +197,8 @@
 				7B0000000000000000000011 /* ShareExtension */,
 				7B0000000000000000000012 /* WidgetExtension */,
 				7B0000000000000000000013 /* Config */,
+				7B0000000000000000000103 /* HostedTests */,
+				7B0000000000000000000104 /* JourneyTests */,
 				7B0000000000000000000021 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -165,6 +209,8 @@
 				7B0000000000000000000001 /* Wishbone.app */,
 				7B0000000000000000000002 /* ShareExtension.appex */,
 				7B0000000000000000000003 /* WidgetExtension.appex */,
+				7B0000000000000000000101 /* HostedTests.xctest */,
+				7B0000000000000000000102 /* JourneyTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -244,11 +290,58 @@
 			name = WidgetExtension;
 			packageProductDependencies = (
 				7B0000000000000000000057 /* WishboneAPI */,
-				7B0000000000000000000058 /* WishboneUI */,
 			);
 			productName = WidgetExtension;
 			productReference = 7B0000000000000000000003 /* WidgetExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
+		};
+		7B000000000000000000010B /* HostedTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7B0000000000000000000111 /* Build configuration list for PBXNativeTarget "HostedTests" */;
+			buildPhases = (
+				7B0000000000000000000105 /* Sources */,
+				7B0000000000000000000106 /* Frameworks */,
+				7B0000000000000000000107 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				7B000000000000000000010F /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				7B0000000000000000000103 /* HostedTests */,
+			);
+			name = HostedTests;
+			packageProductDependencies = (
+			);
+			productName = HostedTests;
+			productReference = 7B0000000000000000000101 /* HostedTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		7B000000000000000000010C /* JourneyTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7B0000000000000000000112 /* Build configuration list for PBXNativeTarget "JourneyTests" */;
+			buildPhases = (
+				7B0000000000000000000108 /* Sources */,
+				7B0000000000000000000109 /* Frameworks */,
+				7B000000000000000000010A /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				7B0000000000000000000110 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				7B0000000000000000000104 /* JourneyTests */,
+			);
+			name = JourneyTests;
+			packageProductDependencies = (
+				7B000000000000000000011A /* TestSupport */,
+				7B000000000000000000011C /* WishboneAPI */,
+			);
+			productName = JourneyTests;
+			productReference = 7B0000000000000000000102 /* JourneyTests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 /* End PBXNativeTarget section */
 
@@ -268,6 +361,14 @@
 					};
 					7B0000000000000000000062 = {
 						CreatedOnToolsVersion = 27.2;
+					};
+					7B000000000000000000010B = {
+						CreatedOnToolsVersion = 27.2;
+						TestTargetID = 7B0000000000000000000060;
+					};
+					7B000000000000000000010C = {
+						CreatedOnToolsVersion = 27.2;
+						TestTargetID = 7B0000000000000000000060;
 					};
 				};
 			};
@@ -291,6 +392,8 @@
 				7B0000000000000000000060 /* Wishbone */,
 				7B0000000000000000000061 /* ShareExtension */,
 				7B0000000000000000000062 /* WidgetExtension */,
+				7B000000000000000000010B /* HostedTests */,
+				7B000000000000000000010C /* JourneyTests */,
 			);
 		};
 /* End PBXProject section */
@@ -311,6 +414,20 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		7B0000000000000000000039 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7B0000000000000000000107 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7B000000000000000000010A /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -341,6 +458,20 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7B0000000000000000000105 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7B0000000000000000000108 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -353,6 +484,16 @@
 			isa = PBXTargetDependency;
 			target = 7B0000000000000000000062 /* WidgetExtension */;
 			targetProxy = 7B0000000000000000000064 /* PBXContainerItemProxy */;
+		};
+		7B000000000000000000010F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7B0000000000000000000060 /* Wishbone */;
+			targetProxy = 7B000000000000000000010D /* PBXContainerItemProxy */;
+		};
+		7B0000000000000000000110 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7B0000000000000000000060 /* Wishbone */;
+			targetProxy = 7B000000000000000000010E /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -383,6 +524,7 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -414,6 +556,7 @@
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				VALIDATE_PRODUCT = YES;
@@ -520,6 +663,40 @@
 			};
 			name = Release;
 		};
+		7B0000000000000000000113 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(WISHBONE_BUNDLE_PREFIX).hosted-tests";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Wishbone.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Wishbone";
+			};
+			name = Debug;
+		};
+		7B0000000000000000000114 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(WISHBONE_BUNDLE_PREFIX).hosted-tests";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Wishbone.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Wishbone";
+			};
+			name = Release;
+		};
+		7B0000000000000000000115 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				PRODUCT_BUNDLE_IDENTIFIER = "$(WISHBONE_BUNDLE_PREFIX).journey-tests";
+				TEST_TARGET_NAME = Wishbone;
+			};
+			name = Debug;
+		};
+		7B0000000000000000000116 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				PRODUCT_BUNDLE_IDENTIFIER = "$(WISHBONE_BUNDLE_PREFIX).journey-tests";
+				TEST_TARGET_NAME = Wishbone;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -555,6 +732,24 @@
 			buildConfigurations = (
 				7B0000000000000000000086 /* Debug */,
 				7B0000000000000000000087 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		7B0000000000000000000111 /* Build configuration list for PBXNativeTarget "HostedTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7B0000000000000000000113 /* Debug */,
+				7B0000000000000000000114 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		7B0000000000000000000112 /* Build configuration list for PBXNativeTarget "JourneyTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7B0000000000000000000115 /* Debug */,
+				7B0000000000000000000116 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -609,10 +804,15 @@
 			package = 7B0000000000000000000090 /* XCLocalSwiftPackageReference "WishboneKit" */;
 			productName = WishboneAPI;
 		};
-		7B0000000000000000000058 /* WishboneUI */ = {
+		7B000000000000000000011A /* TestSupport */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 7B0000000000000000000090 /* XCLocalSwiftPackageReference "WishboneKit" */;
-			productName = WishboneUI;
+			productName = TestSupport;
+		};
+		7B000000000000000000011C /* WishboneAPI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7B0000000000000000000090 /* XCLocalSwiftPackageReference "WishboneKit" */;
+			productName = WishboneAPI;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -6,10 +6,13 @@ import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import process from 'node:process';
 
+import { acknowledgementsFile } from '../acknowledgements.mjs';
 import { builtServerProblem } from '../server/build.mjs';
 import { readFloor, runGate } from './gate.mjs';
 import { checkEventStream } from './reading.mjs';
+import { resultBundles, shutDownSimulator } from './simulator.mjs';
 import { slotDirectory } from './slot.mjs';
+import { checkResultBundles } from './xcresult.mjs';
 
 const minute = 60_000;
 const root = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
@@ -17,6 +20,7 @@ const gateDirectory = path.join(root, 'build', 'gate');
 const runDirectory = path.join(gateDirectory, 'run');
 const floorFile = path.join(root, 'scripts', 'gate', 'floor.json');
 const packageEvents = path.join(runDirectory, 'package-events.jsonl');
+const simulatorDirectory = path.join(runDirectory, 'simulator');
 
 // The tests that may be skipped, or may cancel themselves. Each entry is a test's name as the gate prints it
 // (`Module.Suite/function()`), with a comment that says why. A skipped or cancelled test that is not here fails
@@ -58,20 +62,27 @@ const steps = [
     slot: true,
     check: ({ exit }) => {
       if (exit !== 0) return {};
-      // The build adds new strings to the String Catalog. A catalog that differs from the commit means that the
-      // commit doesn't hold every string.
-      const changed = execFileSync('git', ['status', '--porcelain', '--', ':(glob)**/*.xcstrings'], { cwd: root, encoding: 'utf8' })
+      // The build adds new strings to the String Catalog, and makes the Acknowledgements from the pinned
+      // packages. A file that differs from the commit means that the commit doesn't hold what the build makes.
+      const made = [':(glob)**/*.xcstrings', acknowledgementsFile];
+      const changed = execFileSync('git', ['status', '--porcelain', '--', ...made], { cwd: root, encoding: 'utf8' })
         .split('\n')
         .filter((line) => line !== '')
         .map((line) => line.slice(3));
-      return changed.length > 0 ? { fail: `the String Catalog changed. Commit ${changed.join(', ')}` } : {};
+      return changed.length > 0 ? { fail: `the build changed what is in git. Commit ${changed.join(', ')}` } : {};
     },
   },
   {
     name: 'simulator',
-    skip: 'no hosted test or journey exists yet',
+    command: ['just', 'simulator', path.relative(root, simulatorDirectory)],
+    // A first run starts a new simulator, and builds the test bundles. Then come the hosted tests, and the
+    // journeys once in each setting.
+    limitMs: 20 * minute,
     slot: true,
     counts: ['hosted', 'ui'],
+    check: ({ exit }) => checkResultBundles(resultBundles(simulatorDirectory), { exit, allowedSkips }),
+    // The simulator belongs to the system, so stopping the step's processes at its limit leaves it running.
+    after: shutDownSimulator,
   },
 ];
 

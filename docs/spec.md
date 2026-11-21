@@ -125,7 +125,7 @@ Two ways in, one way to get help, and nothing to type.
 - One Keychain item holds the instance address, the token, and the user's ID. It is in a Keychain access group that the app, the share extension, and the widget extension share. One item keeps the address and the token in step.
 - The item never leaves the device: no iCloud Keychain sync, and it is not restored onto another device from a backup. The server spec asks a native app to keep its token out of backups. iOS has no Keychain setting that keeps an item out of an encrypted backup, but a "this device only" item restores only onto the same device, which meets the rule's intent.
 - The item is readable after the first unlock, because the widget and background refresh run while the device is locked.
-- The redeem response has no user ID. The app saves the address and the token at once, because the link is now used. Then it reads `GET /users/me` and adds the ID.
+- The redeem response has the user's ID. The app saves the address, the token, and the ID at once, because the link is now used.
 - Nothing about the session is kept anywhere else. An extension that finds no item shows its signed-out state.
 
 ### The API's own 401 signs the device out

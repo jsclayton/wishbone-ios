@@ -1,6 +1,25 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "%@ runs Wishbone %@. The app needs %@ or later. Ask whoever runs it to update." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ runs Wishbone %2$@. The app needs %3$@ or later. Ask whoever runs it to update."
+          }
+        }
+      }
+    },
+    "Can't reach %@" : {
+
+    },
+    "Can't reach %@. Your link is kept. Try again when you're connected." : {
+
+    },
+    "Cancel" : {
+
+    },
     "Diagnostics settings" : {
 
     },
@@ -10,7 +29,40 @@
     "If Wishbone crashes, it sends a report to its developer, never anything from your family's lists." : {
 
     },
+    "No Wishbone found at %@" : {
+
+    },
+    "Nothing on this list yet." : {
+
+    },
     "Scan QR code" : {
+
+    },
+    "Signed in as %@" : {
+
+    },
+    "Signing in…" : {
+
+    },
+    "Some fields need another look." : {
+
+    },
+    "Something went wrong in Wishbone. Try again." : {
+
+    },
+    "That isn't a Wishbone login link" : {
+
+    },
+    "That link was already used, or it has expired. Ask for a new one." : {
+
+    },
+    "This is gone, or it isn't shared with you." : {
+
+    },
+    "Too many tries. Wait a minute, then try again." : {
+
+    },
+    "Try again" : {
 
     },
     "Wishbone" : {

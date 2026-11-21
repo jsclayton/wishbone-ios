@@ -60,6 +60,28 @@ public final class NetworkConditioner: Sendable {
     return parts?.url ?? url
   }
 
+  /// Every request that reached the conditioner, oldest first, whatever became of it: passed through, held, or
+  /// answered with a canned answer. A request that a drop refused is not here: it never arrived.
+  public var requests: [SeenRequest] {
+    core.requests
+  }
+
+  /// A request as the conditioner saw it.
+  public struct SeenRequest: Sendable {
+    public let method: String
+
+    /// The path, and the query when there is one.
+    public let target: String
+
+    /// The headers, with their names in lower case.
+    public let headers: [String: String]
+
+    /// Whether the request is on the route.
+    public func isOn(_ route: Route) -> Bool {
+      route.matches(method: method, target: target)
+    }
+  }
+
   /// Drops everything, as a device with no network does: every request fails with no answer, and the requests in
   /// flight are cut off. A request that already reached the server still takes effect there. A request that was
   /// held before the server never reaches it, however its hold ends and whenever the network comes back.
@@ -241,6 +263,11 @@ extension NetworkConditioner {
       var rules: [Rule] = []
       var connections: [ObjectIdentifier: NWConnection] = [:]
       var listener: NWListener?
+      var requests: [SeenRequest] = []
+    }
+
+    var requests: [SeenRequest] {
+      state.withLock { $0.requests }
     }
 
     private let server: URL
@@ -353,8 +380,13 @@ extension NetworkConditioner {
       do {
         var reader = HTTPReader(connection: connection)
         guard let request = try await reader.request() else { return }
-        let rule = state.withLock {
-          $0.rules.first { $0.isInForce && $0.route.matches(method: request.method, target: request.target) }
+        let rule = state.withLock { state in
+          var headers: [String: String] = [:]
+          for (name, value) in request.headers {
+            headers[name.lowercased()] = value
+          }
+          state.requests.append(SeenRequest(method: request.method, target: request.target, headers: headers))
+          return state.rules.first { $0.isInForce && $0.route.matches(method: request.method, target: request.target) }
         }
         let answer: CannedAnswer
         switch rule?.action {

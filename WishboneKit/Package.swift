@@ -9,9 +9,14 @@ let approachableConcurrency: [SwiftSetting] = [
   .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
 ]
 
+/// The settings of every target of the package. A warning from the compiler is an error, as it is in the three
+/// targets of the project (`SWIFT_TREAT_WARNINGS_AS_ERRORS`). The setting is here, and not on the command line of
+/// a build, because Xcode builds a remote package such as GRDB with its warnings suppressed, and the two clash.
+let everyTarget: [SwiftSetting] = approachableConcurrency + [.treatAllWarnings(as: .error)]
+
 /// The settings of a module that an app or an extension links. Every one builds with extension-only API, so a
 /// call that an extension can't make, such as `UIApplication.shared`, doesn't compile.
-let moduleSettings: [SwiftSetting] = approachableConcurrency + [.unsafeFlags(["-application-extension"])]
+let moduleSettings: [SwiftSetting] = everyTarget + [.unsafeFlags(["-application-extension"])]
 
 let package = Package(
   name: "WishboneKit",
@@ -25,6 +30,12 @@ let package = Package(
     .library(name: "WishboneSession", targets: ["WishboneSession"]),
     .library(name: "WishboneUI", targets: ["WishboneUI"]),
     .library(name: "WishboneDiagnostics", targets: ["WishboneDiagnostics"]),
+    // For the project's test bundles only. No target that ships links it: a fitness test holds each link list.
+    .library(name: "TestSupport", targets: ["TestSupport"]),
+  ],
+  dependencies: [
+    // The local database. It is pinned to an exact version, and moves only in a reviewed pull request. See ADR 0005.
+    .package(url: "https://github.com/groue/GRDB.swift.git", exact: "7.12.0")
   ],
   targets: [
     .target(
@@ -33,10 +44,12 @@ let package = Package(
     ),
     .target(
       name: "WishboneSession",
+      dependencies: ["WishboneAPI", .product(name: "GRDB", package: "GRDB.swift")],
       swiftSettings: moduleSettings
     ),
     .target(
       name: "WishboneUI",
+      dependencies: ["WishboneAPI", "WishboneSession"],
       resources: [.process("Resources")],
       swiftSettings: moduleSettings + [.defaultIsolation(MainActor.self)]
     ),
@@ -46,21 +59,27 @@ let package = Package(
     ),
     .target(
       name: "TestSupport",
-      swiftSettings: approachableConcurrency
+      dependencies: ["WishboneAPI"],
+      swiftSettings: everyTarget
     ),
     .testTarget(
       name: "WishboneAPITests",
       dependencies: ["WishboneAPI", "TestSupport"],
-      swiftSettings: approachableConcurrency
+      swiftSettings: everyTarget
+    ),
+    .testTarget(
+      name: "WishboneSessionTests",
+      dependencies: ["WishboneAPI", "WishboneSession", "TestSupport"],
+      swiftSettings: everyTarget
     ),
     .testTarget(
       name: "TestSupportTests",
       dependencies: ["TestSupport"],
-      swiftSettings: approachableConcurrency
+      swiftSettings: everyTarget
     ),
     .testTarget(
       name: "FitnessTests",
-      swiftSettings: approachableConcurrency
+      swiftSettings: everyTarget
     ),
   ],
   swiftLanguageModes: [.v6]
