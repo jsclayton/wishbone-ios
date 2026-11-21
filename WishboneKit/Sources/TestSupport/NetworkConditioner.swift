@@ -10,6 +10,14 @@ import Synchronization
 /// `docs/development.md`.
 ///
 /// It stops when its last holder goes.
+///
+/// What it is not, for the code that it tests:
+/// - A drop closes the connection with no answer. `URLSession` reports that as a `URLError` such as
+///   `networkConnectionLost` or `cannotConnectToHost`, and never as `notConnectedToInternet`. So a rule for an
+///   unreachable instance must not depend on one code.
+/// - Every answer has `Connection: close`, so each request is on a connection of its own.
+/// - Response headers with one name come back as one header, joined with commas. An answer has no
+///   `Content-Encoding`: its body comes back as it is after the coding.
 public final class NetworkConditioner: Sendable {
   /// The conditioner's address, such as `http://localhost:50124`. Use it in place of the server's address.
   public let address: URL
@@ -53,7 +61,8 @@ public final class NetworkConditioner: Sendable {
   }
 
   /// Drops everything, as a device with no network does: every request fails with no answer, and the requests in
-  /// flight are cut off. A request that already reached the server still takes effect there.
+  /// flight are cut off. A request that already reached the server still takes effect there. A request that was
+  /// held before the server never reaches it, however its hold ends and whenever the network comes back.
   public func dropEverything() {
     core.dropEverything()
   }
@@ -106,6 +115,9 @@ public final class NetworkConditioner: Sendable {
   }
 
   /// A hold on the requests of one route. The test releases it.
+  ///
+  /// It holds every request on the route that comes before the release, and `waitUntilHeld()` returns when it
+  /// holds the first one. A released hold is over: to hold a later request, make a new hold.
   public final class Hold: Sendable {
     /// Where a request is held.
     public enum Point: Sendable {
@@ -130,8 +142,13 @@ public final class NetworkConditioner: Sendable {
       self.point = point
     }
 
-    /// Returns when the conditioner holds a request. At `.answer`, the server has answered it by then. A test
-    /// waits here, and never for a length of time.
+    /// Whether the test has released the hold.
+    var isReleased: Bool {
+      state.withLock { $0.isReleased }
+    }
+
+    /// Returns when the conditioner holds a request, or has held one. At `.answer`, the server has answered it by
+    /// then. A test waits here, and never for a length of time.
     public func waitUntilHeld() async {
       await withCheckedContinuation { continuation in
         let isHeld = state.withLock { state in
@@ -209,6 +226,11 @@ extension NetworkConditioner {
 
     let route: Route
     let action: Action
+
+    /// A hold that the test released is over, so it must not hide an older rule for its route.
+    var isInForce: Bool {
+      if case .hold(let hold) = action { !hold.isReleased } else { true }
+    }
   }
 
   /// The listener, the open connections, and what the test asked for.
@@ -332,7 +354,7 @@ extension NetworkConditioner {
         var reader = HTTPReader(connection: connection)
         guard let request = try await reader.request() else { return }
         let rule = state.withLock {
-          $0.rules.first { $0.route.matches(method: request.method, target: request.target) }
+          $0.rules.first { $0.isInForce && $0.route.matches(method: request.method, target: request.target) }
         }
         let answer: CannedAnswer
         switch rule?.action {
@@ -340,8 +362,9 @@ extension NetworkConditioner {
           answer = canned
         case .hold(let hold) where hold.point == .request:
           await hold.wait()
-          // A request that was still on its way when the network went never reaches the server.
-          guard !state.withLock({ $0.isDropping }) else { return }
+          // A request that was still on its way when the network went never reaches the server, even when the
+          // network is back by now.
+          guard isOpen(connection) else { return }
           answer = try await forward(request)
         case .hold(let hold):
           answer = try await forward(request)
@@ -350,11 +373,17 @@ extension NetworkConditioner {
           answer = try await forward(request)
         }
         // An answer that comes back after the network went must not arrive.
-        guard !state.withLock({ $0.isDropping }) else { return }
+        guard isOpen(connection) else { return }
         try await send(answer, for: request, on: connection)
       } catch {
         // The client went away, or the server could not be reached. The client sees a connection with no answer.
       }
+    }
+
+    /// Whether the connection is still the conditioner's. A drop, and a stop, take every open connection away for
+    /// good. So what happens to a request goes by its own connection, not by what the conditioner does now.
+    private func isOpen(_ connection: NWConnection) -> Bool {
+      state.withLock { $0.connections[ObjectIdentifier(connection)] != nil }
     }
 
     /// Sends the request to the real server, and returns its answer.

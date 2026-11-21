@@ -32,7 +32,7 @@ struct NetworkConditionerTests {
     let id = try #require(try made.json["id"].string)
     #expect(made.headers["location"] == "/api/v2/groups/\(id)")
     #expect(try await server.admin().get("/groups/\(id)")["name"].string == name)
-    #expect(try await admin.get("/groups?limit=200")["data"].array?.contains { $0["id"].string == id } == true)
+    #expect(try await admin.all("/groups?limit=2").contains { $0["id"].string == id })
 
     // The server's own errors pass through too.
     let missing = try await admin.send("GET", "/groups/0")
@@ -64,7 +64,7 @@ struct NetworkConditionerTests {
 
     await hold.waitUntilHeld()
     // The answer is in flight, and the server has made the group: a read that races it sees the group.
-    let groups = try await server.admin().get("/groups?limit=200")["data"].array ?? []
+    let groups = try await server.admin().all("/groups")
     #expect(groups.contains { $0["name"].string == name })
     // A request on another route is not held. It goes through the conditioner and back while the answer waits.
     #expect(try await TestHTTP.send("GET", conditioner.url("/health")).status == 200)
@@ -84,13 +84,60 @@ struct NetworkConditionerTests {
     await hold.waitUntilHeld()
     // Other requests go through the conditioner and back, and the held one is still not at the server.
     #expect(try await TestHTTP.send("GET", conditioner.url("/health")).status == 200)
-    let before = try await server.admin().get("/groups?limit=200")["data"].array ?? []
+    let before = try await server.admin().all("/groups")
     #expect(!before.contains { $0["name"].string == name })
 
     hold.release()
     #expect(try await answer.status == 201)
-    let after = try await server.admin().get("/groups?limit=200")["data"].array ?? []
+    let after = try await server.admin().all("/groups")
     #expect(after.contains { $0["name"].string == name })
+  }
+
+  @Test(
+    "A request that a drop cut off never reaches the server, however its hold ends",
+    arguments: [HoldEnd.release, .passEverything]
+  )
+  func cutOffRequestNeverArrives(end: HoldEnd) async throws {
+    let hold = conditioner.hold(Route("POST", "/groups"), at: .request)
+    let name = "Cut off \(UUID().uuidString.prefix(8))"
+    async let answer = admin.send("POST", "/groups", json: ["name": .string(name)])
+    await hold.waitUntilHeld()
+
+    // The network goes while the request is on its way. The client sees it fail.
+    conditioner.dropEverything()
+    do {
+      let answer = try await answer
+      Issue.record("The request that was cut off got an answer: \(answer.status)")
+    } catch {
+      #expect(error is URLError)
+    }
+
+    // The network comes back.
+    if end == .release { hold.release() }
+    conditioner.passEverything()
+    // A later write goes to the server and back, and the one that was cut off still hasn't arrived.
+    let later = "Later \(UUID().uuidString.prefix(8))"
+    #expect(try await admin.send("POST", "/groups", json: ["name": .string(later)]).status == 201)
+    let names = try await server.admin().all("/groups").compactMap { $0["name"].string }
+    #expect(names.contains(later))
+    #expect(!names.contains(name))
+  }
+
+  enum HoldEnd: Sendable {
+    case release
+    case passEverything
+  }
+
+  @Test("A released hold is over: it holds nothing more, and an older canned answer for its route shows again")
+  func releasedHoldIsOver() async throws {
+    conditioner.answer(Route("GET", "/health"), with: .init(status: 503))
+    let hold = conditioner.hold(Route("GET", "/health"))
+    async let held = TestHTTP.send("GET", conditioner.url("/health"))
+    await hold.waitUntilHeld()
+    hold.release()
+    #expect(try await held.status == 200)
+
+    #expect(try await TestHTTP.send("GET", conditioner.url("/health")).status == 503)
   }
 
   @Test("It answers a route with a canned response, and the request never reaches the server")

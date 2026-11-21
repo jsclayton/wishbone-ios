@@ -162,12 +162,18 @@ To move the pin:
   - answer a matching route with a canned response (a 5xx, a 410 `api_version_removed`, or a `/health` below the minimum version)
 - The conditioner is a small HTTP server on your Mac, in front of the test server. A test gives the conditioner's address to the code under test as its instance address, so the code needs no seam of its own.
 - A hold is at the answer by default: the request reaches the server at once, and the answer waits. A hold at the request keeps the request from the server until the release. A test waits for the hold to catch a request, never for a length of time.
+- A request that a drop cuts off before it reached the server never reaches it, also after the network is back.
+- What the conditioner is not:
+  - A drop closes the connection with no answer. `URLSession` reports a `URLError` such as `networkConnectionLost` or `cannotConnectToHost`, never `notConnectedToInternet`. The client's rule for an unreachable instance must not depend on one code.
+  - Every answer has `Connection: close`.
+  - Response headers with one name come back joined into one header, and an answer has no `Content-Encoding`.
 
 ### Fixtures: the standard family
 
 - The fixture builder in `TestSupport` seeds only through the API, as the admin. The admin makes the users and a login link for each. What only a user can do, such as making a list or claiming an item, the builder does through that user's own session.
 - One call seeds the **standard family**: a parent with an active child and a deactivated child (with lists, a list shared with another recipient, a pending invitation, and a given gift), the admin, a user seen only through the admin's access, nested groups, a shared occasion on groups and one marked Everyone, and a blocked store. Deletion requests join it when the pinned server has them.
 - Names are unique for each test, and come back as typed handles. Each person can sign in as their own bearer session.
+- Some rows are for the whole instance: an occasion marked Everyone, a blocked store, and every user for the admin. On the shared server, a test sees those rows of other tests too. A test that compares a whole collection picks out its own rows, or starts a private server.
 - Small builder calls add anything special. A test that needs less seeds less. Reveal goes through the server's test hook.
 - There is no checked-in database, and no snapshot of server state.
 

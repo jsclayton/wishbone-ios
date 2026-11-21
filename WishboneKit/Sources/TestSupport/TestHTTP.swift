@@ -118,6 +118,20 @@ public struct BearerSession: Sendable {
     try await send("GET", path).expecting(200).json
   }
 
+  /// Every row of a collection, as the user sees it. It follows `next_cursor` to the last page, so the answer
+  /// doesn't depend on how much the other tests have seeded on a shared server.
+  public func all(_ path: String) async throws -> [JSON] {
+    var rows: [JSON] = []
+    var cursor: String?
+    repeat {
+      let query = cursor.map { "\(path.contains("?") ? "&" : "?")cursor=\($0)" } ?? ""
+      let page = try await get(path + query)
+      rows += page["data"].array ?? []
+      cursor = page["next_cursor"].string
+    } while cursor != nil
+    return rows
+  }
+
   /// The status of a `GET`: 200 for what the user can see, and 404 for what they can't.
   public func status(of path: String) async throws -> Int {
     try await send("GET", path).status
