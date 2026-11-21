@@ -72,7 +72,7 @@ Decided in the spec: the row names above, "For the admin", "Blocked stores", "So
 - The avatar button that opens Settings reads "Settings".
 - Each web link reads its words, then "opens in browser": "Buy John a coffee, opens in browser", "Source code, opens in browser".
 - The instance address is read in full, with its scheme.
-- Sign out is destructive, and its label says what it does.
+- Sign out is destructive. The warning's Sign out button has the destructive role, and the row's words say what it does. The row is not red, because the system red on a row fails the 4.5:1 contrast rule.
 
 ## Secrecy
 
