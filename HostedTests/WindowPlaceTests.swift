@@ -134,4 +134,30 @@ struct WindowPlaceTests {
     #expect(WindowPlace(restoring: saved, for: other) { _ in true } == WindowPlace())
     #expect(WindowPlace(restoring: saved, for: session) { _ in true } == place)
   }
+
+  @Test("Each place that a window opens is named by its kind, never by what it shows")
+  func openedKind() {
+    var place = WindowPlace()
+    let start = place
+    #expect(place.opened(since: start) == nil)
+
+    place.select(.lists)
+    #expect(place.opened(since: start) == .lists)
+    var earlier = place
+    place[pagesOn: .lists] = [.list(id: "list-of-robin")]
+    #expect(place.opened(since: earlier) == .listPage)
+    earlier = place
+    place.open(.people)
+    #expect(place.opened(since: earlier) == .people)
+    earlier = place
+    place[pagesOn: .home] = [.people, .user(id: "robin")]
+    #expect(place.opened(since: earlier) == .userPage)
+    // Back shows the page under it.
+    earlier = place
+    place[pagesOn: .home] = [.people]
+    #expect(place.opened(since: earlier) == .people)
+    earlier = place
+    place.select(.add)
+    #expect(place.opened(since: earlier) == .add)
+  }
 }
