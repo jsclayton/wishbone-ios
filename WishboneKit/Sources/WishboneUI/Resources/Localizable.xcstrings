@@ -140,6 +140,9 @@
     "You use Wishbone in a browser. Open your sign-in screen there. It shows a QR code for you." : {
 
     },
+    "You were signed out of %@. Ask for a new login link to sign in again." : {
+
+    },
     "You're signed in to the app on another device. Open Wishbone there, and use Sign in on another device." : {
 
     },

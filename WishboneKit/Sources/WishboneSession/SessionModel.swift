@@ -77,6 +77,10 @@ public final class SessionModel {
   private let database: LocalDatabase
   private let timeZone: TimeZoneSource
 
+  /// What the session model calls when a request gets the API's own 401: the device forgets the session. It returns
+  /// when the device is cleared, and this session model has ended.
+  private let endedByServer: @MainActor (SessionModel) async -> Void
+
   /// The zone on the user's record, as the instance last gave it in this launch: in the copy's user after a pull
   /// that ended, or in the answer of a report. The outer nil means that no answer has come yet in this launch, so
   /// the app doesn't know the record and reports nothing.
@@ -91,11 +95,18 @@ public final class SessionModel {
   private var observation: AnyDatabaseCancellable?
   private var syncing: Task<Void, Never>?
 
-  init(session: Session, client: APIClient, database: LocalDatabase, timeZone: TimeZoneSource) {
+  init(
+    session: Session,
+    client: APIClient,
+    database: LocalDatabase,
+    timeZone: TimeZoneSource,
+    endedByServer: @escaping @MainActor (SessionModel) async -> Void
+  ) {
     self.session = session
     self.client = client
     self.database = database
     self.timeZone = timeZone
+    self.endedByServer = endedByServer
     // The first snapshot comes at once, so a screen shows what is saved before anything is asked of the instance.
     observation = LocalDatabase.snapshots(ofUser: session.userID).start(
       in: database.writer,
@@ -219,27 +230,41 @@ public final class SessionModel {
   /// syncs" in `docs/spec.md`.
   ///
   /// A call during a sync waits for that sync, and starts no second one.
+  ///
+  /// When the instance answers with the API's own 401, the session is over: the sync returns when the device has
+  /// forgotten it.
   public func sync() async {
     guard !hasEnded else { return }
     if let syncing { return await syncing.value }
     let task = Task {
       // Nothing is sent yet: the unsent changes come with their journal.
-      await pull()
+      guard await pull() == .endedByServer else { return }
+      // This sync is over, so the end of the session waits for no sync.
+      syncing = nil
+      await endedByServer(self)
     }
     syncing = task
     await task.value
-    syncing = nil
+    if syncing == task { syncing = nil }
+  }
+
+  /// How a pull ended.
+  private enum PullEnd {
+    /// The pull ran, or stopped, and the session goes on.
+    case done
+    /// The instance answered with the API's own 401: the session is over.
+    case endedByServer
   }
 
   /// Runs one pull, and publishes whether the instance could be reached.
   ///
   /// Diagnostics, for each way that a pull stops:
-  /// - An unreachable instance, a cancelled request, and a 404: never.
+  /// - An unreachable instance, a cancelled request, a 404, and the API's own 401: never.
   /// - An answer that can't be decoded: captured, as the path template and the key path, never a value.
   /// - A copy that can't be read or written: captured, by its code only.
   ///
   /// Nothing is captured yet: the app has no diagnostics until `WishboneDiagnostics` holds them.
-  private func pull() async {
+  private func pull() async -> PullEnd {
     do {
       let user = try await Pull(client: client, database: database, userID: session.userID).run()
       isInstanceUnreachable = false
@@ -247,12 +272,18 @@ public final class SessionModel {
       // and the pull fetched nothing.
       if let record = user?.record { recordedTimeZone = .some(record.timezone.value) }
     } catch APIError.unreachable {
-      // Unreachable never ends the session. The copy keeps what the pull wrote before it stopped.
+      // Unreachable never ends the session, and a 401 that is not the API's own is unreachable. The copy keeps
+      // what the pull wrote before it stopped.
       isInstanceUnreachable = true
+    } catch APIError.unauthorized {
+      // The API's own 401: the session was revoked, went a year unused, or its user was deactivated. The server
+      // doesn't say which. The device forgets everything.
+      return .endedByServer
     } catch let error as APIError {
-      // The instance answered. What the answer asks of the app is not built yet: the API's own 401 ends the
-      // session, and a 404 for the versions is an instance below the minimum server version, which the version
-      // check tells the person. The copy keeps what the pull wrote before it stopped.
+      // The instance answered. What the answer asks of the app is not built yet: a 404 for the versions is an
+      // instance below the minimum server version, which the version check tells the person. Another refusal,
+      // a 401 with another code included, keeps the session. The copy keeps what the pull wrote before it
+      // stopped.
       isInstanceUnreachable = false
       if case .undecodable(let answer) = error {
         Log.fault(
@@ -265,6 +296,7 @@ public final class SessionModel {
     } catch {
       Log.fault(.session, "The copy can't be read or written.", detail: "\(error)")
     }
+    return .done
   }
 
   // MARK: - The end of the session
@@ -288,6 +320,9 @@ public final class SessionModel {
 
   /// Ends the session model, as a sign-out does: it cancels a sync under way and waits for it to stop, stops
   /// reading the copy, publishes nothing more, and closes the local database. Any later sync does nothing.
+  ///
+  /// A request in flight is abandoned, and its answer is never written: the cancelled sync writes nothing more,
+  /// and any other answer finds the session model ended.
   func end() async {
     hasEnded = true
     syncing?.cancel()
@@ -340,10 +375,15 @@ public final class SessionModel {
     defer { isReportingTimeZone = false }
     do {
       let user = try await client.reportTimeZone(zone)
+      // The session ended while the answer was on its way. The database is gone, and stays gone.
+      guard !hasEnded else { return }
       recordedTimeZone = .some(user.resource.timezone.value)
       // The answer is the user's record as it is now, with its version. With it in the copy, the next pull has no
       // user to fetch. A copy that can't take it changes nothing: the next pull fetches the user.
       try? await database.save([user])
+    } catch .unauthorized {
+      // The API's own 401 ends the session, as it does for a sync. Diagnostics: never.
+      await endedByServer(self)
     } catch {
       // Diagnostics: never. A failed report is not captured, and not a breadcrumb: the next foreground sends it
       // again. It changes nothing, not even whether the instance can be reached: the sync decides that. The client
