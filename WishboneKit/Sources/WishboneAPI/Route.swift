@@ -6,12 +6,14 @@ public enum Route: String, Sendable, CaseIterable {
   case health
   case redeemLoginLink
   case me
+  case updateMe
   case listItems
 
   public var method: String {
     switch self {
     case .health, .me, .listItems: "GET"
     case .redeemLoginLink: "POST"
+    case .updateMe: "PATCH"
     }
   }
 
@@ -20,7 +22,7 @@ public enum Route: String, Sendable, CaseIterable {
     switch self {
     case .health: "/health"
     case .redeemLoginLink: "/login-links/redeem"
-    case .me: "/users/me"
+    case .me, .updateMe: "/users/me"
     case .listItems: "/lists/{id}/items"
     }
   }
@@ -30,7 +32,7 @@ public enum Route: String, Sendable, CaseIterable {
   public var isPublic: Bool {
     switch self {
     case .health, .redeemLoginLink: true
-    case .me, .listItems: false
+    case .me, .updateMe, .listItems: false
     }
   }
 
@@ -38,6 +40,7 @@ public enum Route: String, Sendable, CaseIterable {
   public var sentFields: [String] {
     switch self {
     case .redeemLoginLink: fields(of: RedeemBody.CodingKeys.self)
+    case .updateMe: fields(of: UserChanges.CodingKeys.self)
     case .health, .me, .listItems: []
     }
   }
@@ -47,7 +50,7 @@ public enum Route: String, Sendable, CaseIterable {
     switch self {
     case .health: Health.fields
     case .redeemLoginLink: RedeemedLoginLink.fields
-    case .me: User.fields
+    case .me, .updateMe: User.fields
     case .listItems: Page<Item>.fields
     }
   }
@@ -94,9 +97,24 @@ extension Endpoint where Response == RedeemedLoginLink {
   }
 }
 
+/// The body of `PATCH /users/me`: a merge patch, so a field that is absent doesn't change. The app sets only the
+/// time zone.
+struct UserChanges: Encodable, Sendable {
+  let timezone: String
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case timezone
+  }
+}
+
 extension Endpoint where Response == User {
   static var me: Endpoint {
     Endpoint(route: .me)
+  }
+
+  /// Only the session's own user, `me`, is ever patched with a zone. The app never reports a child's.
+  static func reportTimeZone(_ identifier: String) -> Endpoint {
+    Endpoint(route: .updateMe, body: UserChanges(timezone: identifier))
   }
 }
 

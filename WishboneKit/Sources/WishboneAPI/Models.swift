@@ -53,10 +53,15 @@ public struct User: Model, Equatable {
   /// The user's primary list. The key is absent for a caller who can't see the list.
   public let primaryList: ListSummary?
 
+  /// The user's IANA time zone, such as `Europe/Paris`. Nil when none is set, and when the caller can't see it:
+  /// only the user, their parents, and the admin see it.
+  public let timezone: String?
+
   enum CodingKeys: String, CodingKey, CaseIterable {
     case id
     case name
     case primaryList = "primary_list"
+    case timezone
   }
 
   public static let fields = WishboneAPI.fields(of: CodingKeys.self, nested: ["primary_list": ListSummary.fields])

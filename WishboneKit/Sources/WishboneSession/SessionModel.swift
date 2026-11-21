@@ -27,15 +27,22 @@ public final class SessionModel {
 
   private let client: APIClient
   private let database: LocalDatabase
+  private let timeZone: TimeZoneSource
+
+  /// The zone on the user's record, from the last answer of the instance that held the record. The outer nil means
+  /// that no answer has come yet in this launch, so the app doesn't know the record and reports nothing.
+  private var recordedTimeZone: String??
+  private var isReportingTimeZone = false
 
   /// Stops when the session model goes.
   private var observation: AnyDatabaseCancellable?
   private var syncing: Task<Void, Never>?
 
-  init(session: Session, client: APIClient, database: LocalDatabase) {
+  init(session: Session, client: APIClient, database: LocalDatabase, timeZone: TimeZoneSource) {
     self.session = session
     self.client = client
     self.database = database
+    self.timeZone = timeZone
     // The first snapshot comes at once, so a screen shows what is saved before anything is asked of the instance.
     observation = LocalDatabase.snapshots(ofUser: session.userID).start(
       in: database.writer,
@@ -79,10 +86,43 @@ public final class SessionModel {
       return
     }
     isInstanceUnreachable = false
+    recordedTimeZone = .some(user.timezone)
     do {
       try await database.save(user: user, primaryListItems: items)
     } catch {
       Log.fault(.session, "The copy can't be written.", detail: "\(error)")
+    }
+  }
+
+  // MARK: - The app comes to the foreground
+
+  /// What the app does each time it comes to the foreground: it syncs, and then reports the time zone. Only the app
+  /// calls this, never an extension.
+  public func cameToForeground() async {
+    await sync()
+    await reportTimeZone()
+  }
+
+  // MARK: - The time zone
+
+  /// Compares the device's zone with the zone on the user's record, and sends `PATCH /users/me` with the device's
+  /// IANA name when they differ. It runs after sign-in and at each foreground. See "Time zone" in `docs/spec.md`.
+  ///
+  /// It shows nothing. A failure changes nothing, and the next foreground tries again. It reports only the
+  /// session's own user, never a child.
+  func reportTimeZone() async {
+    guard !isReportingTimeZone, case .some(let recorded) = recordedTimeZone else { return }
+    let zone = timeZone.identifier()
+    guard zone != recorded else { return }
+    isReportingTimeZone = true
+    defer { isReportingTimeZone = false }
+    do {
+      let user = try await client.reportTimeZone(zone)
+      recordedTimeZone = .some(user.timezone)
+    } catch {
+      // Diagnostics: never. A failed report is not captured, and not a breadcrumb: the next foreground sends it
+      // again. It changes nothing, not even whether the instance can be reached: the sync decides that. The client
+      // has logged the request's outcome.
     }
   }
 }

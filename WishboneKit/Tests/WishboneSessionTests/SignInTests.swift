@@ -212,7 +212,8 @@ struct SignInTests {
     await until { session.primaryListItems.count == 1 }
 
     let requests = instance.conditioner.requests
-    #expect(requests.map(\.method) == ["GET", "POST", "GET", "GET"])
+    // The version check, the redeem, the first sync (the user and the list's items), and the report of the zone.
+    #expect(requests.map(\.method) == ["GET", "POST", "GET", "GET", "PATCH"])
     for request in requests {
       #expect(request.headers["user-agent"] == "Wishbone iOS/1.0 (iPhone)")
       let needsNoSession = request.isOn(Route("GET", "/health")) || request.isOn(Route("POST", "/login-links/redeem"))

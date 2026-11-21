@@ -59,16 +59,21 @@ public final class Device {
     /// The clock of every timeout.
     public var clock: any Clock<Duration>
 
+    /// The device's time zone, which the session reports to the user's record.
+    public var timeZone: TimeZoneSource
+
     public init(
       userAgent: UserAgent,
       keychain: any SessionKeychain,
       storage: SessionStorage,
-      clock: any Clock<Duration> = ContinuousClock()
+      clock: any Clock<Duration> = ContinuousClock(),
+      timeZone: TimeZoneSource = .system
     ) {
       self.userAgent = userAgent
       self.keychain = keychain
       self.storage = storage
       self.clock = clock
+      self.timeZone = timeZone
     }
   }
 
@@ -98,7 +103,8 @@ public final class Device {
 
   /// Signs in with the text that a person pasted. A text that is not a login link changes nothing but the message.
   ///
-  /// It returns when the sign-in has ended. After a sign-in that worked, the first sync has ended too.
+  /// It returns when the sign-in has ended. After a sign-in that worked, the first sync and the report of the time
+  /// zone have ended too. Nothing on screen waits for the report.
   public func signIn(pasting text: String) async {
     guard canStartSignIn else { return }
     guard let link = LoginLink(text) else {
@@ -181,12 +187,13 @@ public final class Device {
     session = model
     signInState = .signedIn(name: redeemed.name)
     await model.sync()
+    await model.reportTimeZone()
   }
 
   /// The session model of a session, with its local database and its client.
   private func model(for session: Session) -> SessionModel? {
     guard let database = LocalDatabase.of(session, in: setup.storage) else { return nil }
     let client = APIClient(session: session, userAgent: setup.userAgent, clock: setup.clock)
-    return SessionModel(session: session, client: client, database: database)
+    return SessionModel(session: session, client: client, database: database, timeZone: setup.timeZone)
   }
 }
