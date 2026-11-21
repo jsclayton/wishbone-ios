@@ -162,3 +162,28 @@ test('an XCTest known issue is read by name, and fails', () => {
   assert.deepEqual(reading.known, ['Tests.OldTests/testKnown()']);
   assert.deepEqual(reading.failed, []);
 });
+
+test('a log with the XCTest runs of several test targets gives the sum of their counts', () => {
+  // `swift test` writes one XCTest run for each test target, and every one of them comes before Swift Testing's.
+  const first = xctestLog({ 'BTests.Old/testA': 'pass', 'BTests.Old/testB': 'pass', 'BTests.Old/testC': 'skip' });
+  const second = xctestLog({ 'ATests.Old/testD': 'pass', 'ATests.Old/testE': 'fail' });
+  const reading = readXCTestLog(`${first}${second}\u{1001C8}  Test run started.\n`);
+  assert.equal(reading.tests, 5);
+  assert.equal(reading.ended, true);
+  assert.deepEqual(reading.failed, ['ATests.Old/testE()']);
+  assert.deepEqual(reading.skipped, ['BTests.Old/testC()']);
+});
+
+test('an XCTest run of a later test target that died has no end', () => {
+  const log = xctestLog({ 'BTests.Old/testA': 'pass' }) + xctestLog({ 'ATests.Old/testB': 'pass' }, { ended: false });
+  assert.equal(readXCTestLog(log).ended, false);
+});
+
+test('a test that prints its own end line is read from its last end line', () => {
+  const log = xctestLog({ 'Tests.OldTests/testOff': 'skip', 'Tests.OldTests/testB': 'fail' })
+    .replace("Test Case '-[Tests.OldTests testOff]' started.", "$&\nTest Case '-[Tests.OldTests testOff]' passed (0.001 seconds).")
+    .replace("Test Case '-[Tests.OldTests testB]' started.", "$&\nTest Case '-[Tests.OldTests testB]' passed (0.001 seconds).");
+  const reading = readXCTestLog(log);
+  assert.deepEqual(reading.skipped, ['Tests.OldTests/testOff()']);
+  assert.deepEqual(reading.failed, ['Tests.OldTests/testB()']);
+});

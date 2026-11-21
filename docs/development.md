@@ -216,7 +216,7 @@ To move the pin:
 
 The gate reads its own results:
 
-- It counts the tests from Swift Testing's summary for each test target, from XCTest's summary for an XCTest test in the package, and from each result bundle. XCTest runs before Swift Testing, so only the XCTest part of the log gives the XCTest count.
+- It counts the tests from Swift Testing's summary for each test target, from XCTest's summary for each test target with an XCTest test, and from each result bundle. XCTest runs before Swift Testing, so only the XCTest part of the log gives the XCTest count.
 - It fails on any failure or recorded issue, on a bundle with 0 tests, and on a skip that is not on a short named list.
 - A known issue is a recorded issue, so it fails too: in Swift Testing (`withKnownIssue`) and in XCTest (`XCTExpectFailure`).
 - An issue recorded with the severity `.warning` (`Issue.record(_:severity:)`) is not a failure, so the gate passes it. Swift Testing leaves a warning out of the event stream that the gate reads.

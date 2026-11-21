@@ -106,52 +106,64 @@ const swiftTestingStarted = /^\S*\s*Test run started\.$/;
  * Reads XCTest's lines in the text of a `swift test` run.
  *
  * Returns `{ tests, ended, failed, known, skipped }`. A test's name is `Module.Class/method()`. `ended` is false
- * when the run started and didn't end. A text with no XCTest run reads as 0 tests, ended.
+ * when a run started and didn't end. A text with no XCTest run reads as 0 tests, ended.
  *
- * XCTest runs first, and Swift Testing after it, so the reading stops where Swift Testing's run starts. Before
- * that, the count comes from the last end of XCTest's run. Between a test's start and its end, only that test's
- * own lines count, so what an XCTest test prints can't end the run or start Swift Testing's. A known issue
- * (`XCTExpectFailure`, then a failure) ends with `passed`, after a line that says `Expected failure in`.
+ * `swift test` writes one XCTest run for each test target, and then Swift Testing's runs. So the reading stops
+ * where Swift Testing's first run starts, and `tests` is the sum of the XCTest runs. A run's count comes from its
+ * last end, before the next run starts. Between a test's start and its end, only that test's own lines count, so
+ * what an XCTest test prints can't end the run or start Swift Testing's. A test's last end line says how it
+ * ended, so a test that prints its own end line is still read. A known issue (`XCTExpectFailure`, then a
+ * failure) ends with `passed`, after a line that says `Expected failure in`.
  */
 export function readXCTestLog(text) {
   const failed = new Set();
   const known = new Set();
   const skipped = new Set();
   const name = (match) => `${match[1]}/${match[2]}()`;
-  let tests = 0;
+  let finishedTests = 0; // The sum of the runs before this one.
+  let runTests = 0;
   let ended = true;
   let ending = false;
-  let running = null; // The test that started and hasn't ended.
+  let last = null; // The test that started last.
+  let running = false; // Whether `last` hasn't ended yet.
   for (const line of text.split('\n')) {
-    if (running !== null) {
-      const testEnded = line.match(xctestCaseEnded);
-      if (testEnded && name(testEnded) === running) {
-        if (testEnded[3] === 'failed') failed.add(running);
-        if (testEnded[3] === 'skipped') skipped.add(running);
-        running = null;
-        continue;
-      }
-      const knownIssue = line.match(xctestKnownIssue);
-      if (knownIssue && name(knownIssue) === running) known.add(running);
+    const testEnded = line.match(xctestCaseEnded);
+    if (testEnded && last !== null && name(testEnded) === last) {
+      failed.delete(last);
+      skipped.delete(last);
+      if (testEnded[3] === 'failed') failed.add(last);
+      if (testEnded[3] === 'skipped') skipped.add(last);
+      running = false;
+      ending = false;
       continue;
     }
+    const knownIssue = line.match(xctestKnownIssue);
+    if (knownIssue && last !== null && name(knownIssue) === last) {
+      known.add(last);
+      continue;
+    }
+    if (running) continue;
     const testStarted = line.match(xctestCaseStarted);
     if (testStarted) {
-      running = name(testStarted);
+      last = name(testStarted);
+      running = true;
     } else if (xctestRunStarted.test(line)) {
+      finishedTests += runTests;
+      runTests = 0;
       ended = false;
     } else if (xctestRunEnded.test(line)) {
       ending = true;
       continue;
     } else if (ending && xctestExecuted.test(line)) {
-      tests = Number(line.match(xctestExecuted)[1]);
+      runTests = Number(line.match(xctestExecuted)[1]);
       ended = true;
     } else if (swiftTestingStarted.test(line)) {
       break;
     }
     ending = false;
   }
-  return { tests, ended, failed: [...failed].sort(), known: [...known].sort(), skipped: [...skipped].sort() };
+  const sorted = (names) => [...names].sort();
+  return { tests: finishedTests + runTests, ended, failed: sorted(failed), known: sorted(known), skipped: sorted(skipped) };
 }
 
 /** Reads the event stream at `path`. A file that is missing reads as a run with no summary. */
