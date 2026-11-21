@@ -31,8 +31,10 @@ struct ClientContractTests {
       #expect(responses["204"] != .null, "\(route.method) \(route.template) has no 204 answer in the copy")
       return
     }
-    let answer = responses["200"]["content"]["application/json"]["schema"]
-    #expect(answer != .null, "\(route.method) \(route.template) has no 200 answer in the copy")
+    // A route that makes a resource, such as an upload, answers 201.
+    let success = responses["200"] != .null ? responses["200"] : responses["201"]
+    let answer = success["content"]["application/json"]["schema"]
+    #expect(answer != .null, "\(route.method) \(route.template) has no 200 or 201 answer in the copy")
     #expect(!route.decodedFields.isEmpty)
     for field in route.decodedFields {
       #expect(schema(at: field, in: answer) != nil, "\(route.method) \(route.template) has no \(field) in its answer")

@@ -69,6 +69,36 @@ public struct APIClient: Sendable {
     try await versioned(.reportTimeZone(identifier))
   }
 
+  /// `PATCH /users/me`: a merge patch of the session's own user. Gives back the user, with the version that the
+  /// answer carried.
+  public func updateMe(_ changes: UserChanges) async throws(APIError) -> Versioned<User> {
+    try await versioned(.updateMe(changes))
+  }
+
+  /// `POST /users/me/confirm-profile`: the session's own user confirms their profile. Gives back the user, with the
+  /// version that the answer carried. A profile that is already confirmed keeps its first time.
+  public func confirmProfile() async throws(APIError) -> Versioned<User> {
+    try await versioned(.confirmProfile)
+  }
+
+  /// `POST /images`: uploads the bytes of an image file. The image is attached to nothing until a write names its
+  /// ID, and the server deletes it a day later if nothing does.
+  public func uploadImage(_ file: Data) async throws(APIError) -> ImageSummary {
+    try await load(.uploadImage(file))
+  }
+
+  /// The request for an image of the instance, such as an avatar, with the session's token. The image's address is
+  /// a path under `/api/v2`. Nil for any other address, which never gets the token.
+  public func imageRequest(_ image: ImageSummary) -> URLRequest? {
+    let prefix = InstanceAddress.apiPrefix + "/"
+    guard image.url.hasPrefix(prefix), let url = instance.url(path: String(image.url.dropFirst(prefix.count - 1)))
+    else { return nil }
+    var request = URLRequest(url: url)
+    request.setValue(userAgent.text, forHTTPHeaderField: "User-Agent")
+    if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+    return request
+  }
+
   // MARK: - Users, groups and occasions
 
   /// `GET /users`: every user that the session's user can see, each with its version.
@@ -308,7 +338,10 @@ public struct APIClient: Sendable {
     // The token goes only to the instance address, on a route that needs a session.
     if let token, !route.isPublic { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
     if let etag = endpoint.ifNoneMatch { request.setValue(etag, forHTTPHeaderField: "If-None-Match") }
-    if let body = endpoint.body {
+    if let file = endpoint.file {
+      request.httpBody = file
+      request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+    } else if let body = endpoint.body {
       guard let data = try? await JSONCoding.encode(body) else { throw .undecodable(.init(route: route, keyPath: "")) }
       request.httpBody = data
       request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -384,7 +417,7 @@ public struct APIClient: Sendable {
       Log.request(route, "refused", status: status)
       if status == 401, code == .unauthorized { throw .unauthorized }
       if status == 410, code == .apiVersionRemoved { throw .appTooOld }
-      throw .refused(.init(status: status, code: code, detail: problem.detail))
+      throw .refused(.init(status: status, code: code, detail: problem.detail, fields: problem.fields))
     }
   }
 

@@ -46,10 +46,15 @@ public enum APIError: Error, Sendable, Equatable {
     public let code: ErrorCode
     public let detail: String
 
-    public init(status: Int, code: ErrorCode, detail: String) {
+    /// The fields of the request's body that the problem's `errors` names, such as `name` or `birthday`, each once,
+    /// in the server's order. A 422 `invalid_input` marks them on the form. Empty when the problem names none.
+    public let fields: [String]
+
+    public init(status: Int, code: ErrorCode, detail: String, fields: [String] = []) {
       self.status = status
       self.code = code
       self.detail = detail
+      self.fields = fields
     }
   }
 

@@ -73,8 +73,8 @@ public final class SessionModel {
   /// saved under the line "Can't reach {address}".
   public private(set) var isInstanceUnreachable = false
 
-  private let client: APIClient
-  private let database: LocalDatabase
+  let client: APIClient
+  let database: LocalDatabase
   private let timeZone: TimeZoneSource
 
   /// What the session model calls when a request gets the API's own 401: the device forgets the session. It returns
@@ -89,7 +89,7 @@ public final class SessionModel {
 
   /// Whether the session is over: the device signed out. An ended session model publishes nothing, and asks the
   /// instance nothing.
-  private var hasEnded = false
+  private(set) var hasEnded = false
 
   /// Stops when the session model goes.
   private var observation: AnyDatabaseCancellable?

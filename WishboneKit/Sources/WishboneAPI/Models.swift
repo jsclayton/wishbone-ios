@@ -1033,4 +1033,26 @@ public struct FetchedCollection<Row: Sendable>: Sendable {
 struct Problem: Decodable, Sendable {
   let code: String
   let detail: String
+
+  /// The problems with each field of the input. Only their places are read.
+  let errors: [FieldError]?
+
+  struct FieldError: Decodable, Sendable {
+    /// Where the problem is, such as `body.name` or `body.birthday.month`.
+    let location: String?
+  }
+
+  /// The top-level fields of the body that `errors` names, each once, in the server's order: `body.birthday.month`
+  /// names `birthday`.
+  var fields: [String] {
+    var seen: Set<String> = []
+    return (errors ?? []).compactMap { error in
+      guard let location = error.location else { return nil }
+      let parts = location.split(separator: ".")
+      guard parts.first == "body", parts.count > 1 else { return nil }
+      // A place in a list, such as `parent_ids[1]`, names the list.
+      let field = String(parts[1].prefix { $0 != "[" })
+      return seen.insert(field).inserted ? field : nil
+    }
+  }
 }

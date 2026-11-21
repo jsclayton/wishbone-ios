@@ -24,6 +24,8 @@ nonisolated final class SignOutJourney: XCTestCase {
     let server = try await TestServer.shared()
     let builder = try await FixtureBuilder(server: server)
     let robin = try await builder.person("Robin")
+    // A user who confirmed their profile, so the app shows them no profile gate.
+    try await builder.confirmProfile(of: robin)
     let list = try await builder.primaryList(of: robin)
     _ = try await builder.item("Kite", on: list, as: robin)
     let link = try await builder.loginLink(for: robin).absoluteString

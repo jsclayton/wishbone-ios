@@ -1,8 +1,8 @@
 import SwiftUI
 import WishboneSession
 
-/// What a window shows: the signed-out screen while the device holds no session, and then the tabs. See "What
-/// sits in front of the tabs" in `docs/spec.md`.
+/// What a window shows: the signed-out screen while the device holds no session, the profile gate while the user's
+/// profile is not confirmed, and then the tabs. See "What sits in front of the tabs" in `docs/spec.md`.
 ///
 /// Every window reads the one `Device` that the app's composition root puts in the environment, so a sign-in in
 /// one window signs in every window. Each window has its own place, and saves it for its scene.
@@ -17,9 +17,16 @@ public struct WindowRoot: View {
   public var body: some View {
     Group {
       if let session = device.session, !isWelcoming {
-        PlacedFrame(session: session, saved: saved) { saved = $0 }
-          // Another session model is another session: its windows start again.
-          .id(ObjectIdentifier(session))
+        Group {
+          if session.needsProfileGate, let user = session.user {
+            // In front of the tabs until the profile is confirmed, in every window.
+            ProfileGateScreen(session: session, user: user)
+          } else {
+            PlacedFrame(session: session, saved: saved) { saved = $0 }
+          }
+        }
+        // Another session model is another session: its windows start again.
+        .id(ObjectIdentifier(session))
       } else {
         SignedOutScreen()
       }

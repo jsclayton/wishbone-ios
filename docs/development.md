@@ -196,7 +196,7 @@ To move the pin:
 - The simulator tests run one at a time, on the gate's own simulator: the hosted test bundle, then a few XCUITest journeys against a real test server. `just simulator` runs them. The simulator is named "Wishbone gate". The first run makes it, and each run shuts it down at its end.
 - A journey starts the test server itself, from inside the simulator, as a package test does on your Mac.
 - A journey launches with a login link passed in as if pasted: the link is in the launch environment, and the app signs in with it through the same call as the paste button. A journey can also ask the app to start signed out, because a simulator keeps the session keychain's item between runs. Only a Debug build reads these two variables.
-- The journeys are: sign in, add an item, claim and mark bought as a giver, move an item between lists, add from the share extension, and sign out.
+- The journeys are: sign in (and sign in again as a user with no confirmed profile, through the profile gate), add an item, claim and mark bought as a giver, move an item between lists, add from the share extension, and sign out.
 - Journeys check that things work, not how they look. **There are no snapshot comparisons.** Each journey attaches screenshots as evidence for a person to look at, never as pass or fail.
 - Journeys never swipe or drag, except one drag test. Every action goes through its button or menu item, which proves that the route exists.
 
