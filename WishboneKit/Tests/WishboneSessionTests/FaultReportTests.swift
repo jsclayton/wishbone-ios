@@ -170,7 +170,9 @@ struct FaultReportTests {
 
     instance.conditioner.dropEverything()
     await session.syncNow()
-    #expect(diagnostics.breadcrumbs.last == .request(.versions, .none))
+    // The sync's own breadcrumbs hold its request: its start, the request, and its outcome.
+    #expect(
+      diagnostics.breadcrumbs.suffix(3) == [.syncStarted, .request(.versions, .none), .syncEnded(.unreachable)])
 
     instance.conditioner.passEverything()
     await device.signOut()

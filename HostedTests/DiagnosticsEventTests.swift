@@ -213,6 +213,40 @@ extension DiagnosticsTests {
     #expect(events.allSatisfy { tags($0)["fault"] == nil })
   }
 
+  @Test("Each sync leaves a breadcrumb at its start and one with its outcome, with no host and no address")
+  func syncBreadcrumbs() async throws {
+    let (receiver, _, diagnostics) = try await running()
+    let instance = try await StandInInstance.start()
+    // A sync through Sync now, and one in a background run, each to its end.
+    let device = try signedInDevice(on: instance, diagnostics: diagnostics.reporter)
+    #expect(try await #require(device.session).syncNow() == .succeeded)
+    #expect(await device.refreshInBackground() == .succeeded)
+    // A sync that can't reach its instance: nothing listens on the port.
+    let nowhere = try signedInDevice(at: "http://127.0.0.1:9", diagnostics: diagnostics.reporter)
+    #expect(try await #require(nowhere.session).syncNow() == .unreachable)
+    diagnostics.sendProbe()
+    await diagnostics.flush()
+    diagnostics.isOn = false
+
+    let envelope = try #require(receiver.envelopes.first { !$0.events.isEmpty })
+    let event = try #require(envelope.events.first)
+    let syncs = (event["breadcrumbs"] as? [[String: Any]] ?? []).filter {
+      ["sync_started", "sync_ended"].contains($0["category"] as? String)
+    }
+    let crumbs = syncs.map { crumb in
+      [crumb["category"] as? String ?? ""] + (crumb["data"] as? [String: String] ?? [:]).map { "\($0)=\($1)" }.sorted()
+    }
+    #expect(
+      crumbs == [
+        ["sync_started"], ["sync_ended", "outcome=succeeded"], ["sync_started"], ["sync_ended", "outcome=succeeded"],
+        ["sync_started"], ["sync_ended", "outcome=unreachable"],
+      ])
+    #expect(syncs.allSatisfy { $0["message"] == nil })
+    for secret in ["127.0.0.1", ":\(instance.port)", "a-token-for-the-test"] {
+      #expect(!envelope.text.contains(secret), "The envelope holds \(secret).")
+    }
+  }
+
   @Test("Every event has the Wishbone version tag")
   func versionTag() async throws {
     let (receiver, place, diagnostics) = try await running()

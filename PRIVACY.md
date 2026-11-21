@@ -44,6 +44,7 @@ When diagnostics are on, the app sends:
 - The app's version, the version of Wishbone that your server runs, your device's model, and its iOS version
 - For requests to your server: the kind of request and which part of Wishbone's interface it used, with every ID removed, and whether it succeeded
 - When the app starts, goes to the background, or comes back, and the kind of screen you opened (such as "list page"), never what the screen showed
+- When the app brings its copy of your server's data up to date, and whether that worked, couldn't reach the server, or stopped. Never what it fetched, or how much
 - A random diagnostics ID that the app makes on your device. It is not your Apple Account, your Wishbone user, or anything your server knows.
 
 Diagnostics never include:

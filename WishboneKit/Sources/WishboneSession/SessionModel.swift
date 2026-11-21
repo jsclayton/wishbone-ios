@@ -131,6 +131,15 @@ public final class SessionModel {
   /// Starts a sync at each change of the device's network, until the session model ends.
   private var watchingNetwork: Task<Void, Never>?
 
+  /// Where the session asks iOS for its next background refresh.
+  private let refresh: any RefreshScheduler
+
+  /// The least time that the session asks iOS to wait before the next background refresh. iOS decides when it runs.
+  static let refreshInterval = Duration.seconds(60 * 60)
+
+  /// Where the sync's breadcrumbs go.
+  private let diagnostics: any DiagnosticsReporter
+
   init(
     session: Session,
     client: APIClient,
@@ -138,6 +147,8 @@ public final class SessionModel {
     timeZone: TimeZoneSource,
     timerClock: any Clock<Duration>,
     network: any NetworkChanges,
+    refresh: any RefreshScheduler,
+    diagnostics: any DiagnosticsReporter,
     endedByServer: @escaping @MainActor (SessionModel) async -> Void
   ) {
     self.session = session
@@ -145,6 +156,8 @@ public final class SessionModel {
     self.database = database
     self.timeZone = timeZone
     self.timerClock = timerClock
+    self.refresh = refresh
+    self.diagnostics = diagnostics
     self.endedByServer = endedByServer
     // The first snapshot comes at once, so a screen shows what is saved before anything is asked of the instance.
     observation = LocalDatabase.snapshots(ofUser: session.userID).start(
@@ -305,6 +318,8 @@ public final class SessionModel {
     let next = Task {
       _ = await running.value
       waiting = nil
+      // iOS ended the background run that waited for this sync. See `refreshInBackground()`.
+      guard !Task.isCancelled else { return SyncOutcome.stopped }
       return await startSync()
     }
     waiting = next
@@ -322,7 +337,10 @@ public final class SessionModel {
   }
 
   /// One sync. Nothing is sent yet: the unsent changes come with their journal.
+  ///
+  /// Diagnostics: a breadcrumb at its start, and one with its outcome, whatever started it. They name nothing more.
   private func runSync() async -> SyncOutcome {
+    diagnostics.leave(.syncStarted)
     let end = await pull()
     if end == .endedByServer {
       // The session is over. No sync starts after this one, and the end of the session waits for no sync: this one
@@ -332,7 +350,9 @@ public final class SessionModel {
       updateTimer()
       await endedByServer(self)
     }
-    return syncEnded(end)
+    let outcome = syncEnded(end)
+    diagnostics.leave(.syncEnded(outcome.end))
+    return outcome
   }
 
   /// Where every sync ends, and gets its outcome. It publishes whether the instance could be reached, and starts or
@@ -451,6 +471,49 @@ public final class SessionModel {
         }
       }
     }
+  }
+
+  // MARK: - Background refresh
+
+  /// A background refresh, which iOS runs when it lets the app: one sync, through Sync now, as every other way that
+  /// a sync starts. Then it asks for the next one. See "When the app syncs" in `docs/spec.md`.
+  ///
+  /// When iOS ends the run early, it cancels the task that calls this. The sync then stops at its next request: the
+  /// request in flight is abandoned, and nothing of its answer is written. Each write to the copy is whole, so every
+  /// row is the old one or the new one, and the next sync fetches the rest. A sync that waited to start doesn't
+  /// start.
+  ///
+  /// It returns the sync's outcome. After the session ended, it does nothing, asks for nothing, and returns
+  /// `.stopped`.
+  ///
+  /// Diagnostics: the sync's breadcrumbs, as for every sync. A run that iOS ends early is never captured.
+  public func refreshInBackground() async -> SyncOutcome {
+    guard !hasEnded else { return .stopped }
+    let outcome: SyncOutcome
+    if Task.isCancelled {
+      outcome = .stopped
+    } else {
+      outcome = await withTaskCancellationHandler {
+        await syncNow()
+      } onCancel: {
+        Task { @MainActor [weak self] in self?.cancelSyncs() }
+      }
+    }
+    if !hasEnded { refresh.requestRefresh(after: Self.refreshInterval) }
+    return outcome
+  }
+
+  /// Says that the app went to the background: no window of it is in the foreground. The session asks for the next
+  /// background refresh. Only the app calls this, never an extension.
+  public func wentToBackground() {
+    guard !hasEnded else { return }
+    refresh.requestRefresh(after: Self.refreshInterval)
+  }
+
+  /// Stops the sync that runs, and the one that waits to start, as iOS ends a background run early.
+  private func cancelSyncs() {
+    running?.cancel()
+    waiting?.cancel()
   }
 
   // MARK: - The end of the session

@@ -22,6 +22,12 @@ public enum Log {
     loggers[category]?.fault("\(message.description, privacy: .public) \(detail, privacy: .private)")
   }
 
+  /// A line about something that went wrong and is no fault of the app, such as a request that iOS refused because
+  /// the person turned a feature off. `detail` is private: it can hold family content.
+  public static func notice(_ category: Category, _ message: StaticString, detail: String = "") {
+    loggers[category]?.notice("\(message.description, privacy: .public) \(detail, privacy: .private)")
+  }
+
   /// A request and how it ended. The route gives the method and the path template, which hold nothing of the
   /// family's: never the instance address, the query, a header, or a body.
   static func request(_ route: Route, _ outcome: StaticString, status: Int? = nil) {
