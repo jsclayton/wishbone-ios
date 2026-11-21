@@ -1,0 +1,64 @@
+{
+  "fill-specializations" : [
+    {
+      "value" : {
+        "linear-gradient" : [
+          "srgb:1.00000,0.47843,0.34902,1.00000",
+          "srgb:0.85098,0.23137,0.47843,1.00000"
+        ],
+        "orientation" : {
+          "start" : { "x" : 0.5, "y" : 0 },
+          "stop" : { "x" : 0.5, "y" : 1 }
+        }
+      }
+    },
+    {
+      "appearance" : "dark",
+      "value" : {
+        "linear-gradient" : [
+          "srgb:0.45098,0.16471,0.18824,1.00000",
+          "srgb:0.25098,0.07843,0.20000,1.00000"
+        ],
+        "orientation" : {
+          "start" : { "x" : 0.5, "y" : 0 },
+          "stop" : { "x" : 0.5, "y" : 1 }
+        }
+      }
+    }
+  ],
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "fill-specializations" : [
+            {
+              "value" : {
+                "solid" : "srgb:1.00000,1.00000,1.00000,1.00000"
+              }
+            },
+            {
+              "appearance" : "dark",
+              "value" : {
+                "solid" : "srgb:1.00000,0.85098,0.80000,1.00000"
+              }
+            }
+          ],
+          "image-name" : "wishbone.svg",
+          "name" : "wishbone"
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "specular" : true,
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.3
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "squares" : "shared"
+  }
+}

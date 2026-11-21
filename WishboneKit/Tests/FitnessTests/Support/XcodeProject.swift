@@ -39,6 +39,24 @@ struct XcodeProject {
     }.sorted()
   }
 
+  /// The value of a build setting in each of the target's configurations, by configuration name. A configuration
+  /// that doesn't set it is left out.
+  func buildSetting(_ key: String, of target: String) throws -> [String: String] {
+    guard let id = try object(ofTarget: target)["buildConfigurationList"] as? String, let list = objects[id] else {
+      throw Unreadable(what: "\(target) has no build configurations")
+    }
+    var values: [String: String] = [:]
+    for configuration in try references(from: list, "buildConfigurations") {
+      guard let name = configuration["name"] as? String else {
+        throw Unreadable(what: "\(target) has a build configuration with no name")
+      }
+      if let value = (configuration["buildSettings"] as? [String: Any])?[key] as? String {
+        values[name] = value
+      }
+    }
+    return values
+  }
+
   private func object(ofTarget name: String) throws -> [String: Any] {
     let found = objects.values.first { $0["isa"] as? String == "PBXNativeTarget" && $0["name"] as? String == name }
     guard let found else { throw Unreadable(what: "no target named \(name)") }
