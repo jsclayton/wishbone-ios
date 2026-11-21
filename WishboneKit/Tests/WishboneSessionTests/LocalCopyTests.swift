@@ -91,7 +91,7 @@ struct LocalCopyTests {
 
   @Test("A list longer than one page comes whole, in the list's order")
   func longList() async throws {
-    let titles = (1...101).map { "Item \($0)" }
+    let titles = (1...(APIClient.pageSize + 1)).map { "Item \($0)" }
     let robin = try await instance.person(items: titles)
     let device = instance.device()
     await device.signIn(pasting: try await instance.loginLink(for: robin))

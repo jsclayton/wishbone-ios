@@ -27,9 +27,25 @@ public final class SessionModel {
     primaryList.map { [$0] } ?? []
   }
 
-  /// Every list and every user in the copy, by ID.
+  /// Every list in the copy, by ID.
   private var lists: [String: ListRow] = [:]
-  private var users: [String: UserRow] = [:]
+
+  /// Every user that the copy holds, by name: the ones that the session's user sees in full, and the ones that
+  /// the user gets only as a summary inside another resource.
+  public private(set) var users: [UserRow] = []
+
+  /// The same users, by ID.
+  private var usersByID: [String: UserRow] = [:]
+
+  /// Every group that the copy holds, by name: the groups that the session's user is in, directly or through
+  /// nesting. For the admin, it is every group.
+  public private(set) var groups: [GroupRow] = []
+
+  /// Every occasion that the copy holds, the soonest first.
+  public private(set) var occasions: [OccasionRow] = []
+
+  /// Every membership that the copy holds. See `members(_:of:)`.
+  public private(set) var memberships: [MembershipRow] = []
 
   /// Whether the last sync found that the instance can't be reached. The session stays, and screens show what is
   /// saved under the line "Can't reach {address}".
@@ -67,6 +83,10 @@ public final class SessionModel {
         self?.primaryListItems = snapshot.primaryListItems
         self?.lists = snapshot.lists
         self?.users = snapshot.users
+        self?.usersByID = Dictionary(snapshot.users.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+        self?.groups = snapshot.groups
+        self?.occasions = snapshot.occasions
+        self?.memberships = snapshot.memberships
       }
     )
   }
@@ -77,9 +97,18 @@ public final class SessionModel {
     lists[id]
   }
 
-  /// The user in the copy with the ID. Nil for a user who is not in the copy.
+  /// The user in the copy with the ID, in full or as a summary. Nil for a user who is not in the copy.
   public func user(id: String) -> UserRow? {
-    users[id]
+    usersByID[id]
+  }
+
+  /// The members of a group or of an occasion, as IDs in the server's order.
+  ///
+  /// **Nil is not "no members".** It says that the copy holds nothing for this membership: the first sync has not
+  /// brought it yet, or the session's user can't read it. For example, only the admin reads the groups in a group.
+  /// A membership with no members is an empty list.
+  public func members(_ kind: MembershipRow.Kind, of ownerID: String) -> [String]? {
+    memberships.first { $0.kind == kind && $0.ownerID == ownerID }?.memberIDs
   }
 
   /// Brings the instance and the copy in step: a sync sends the unsent changes, then pulls. See "When the app
@@ -111,7 +140,7 @@ public final class SessionModel {
       isInstanceUnreachable = false
       // The instance has just said that the copy's user is the user's record, also when it said so with a 304
       // and the pull fetched nothing.
-      if let user { recordedTimeZone = .some(user.timezone) }
+      if let record = user?.record { recordedTimeZone = .some(record.timezone.value) }
     } catch APIError.unreachable {
       // Unreachable never ends the session. The copy keeps what the pull wrote before it stopped.
       isInstanceUnreachable = true
@@ -154,7 +183,10 @@ public final class SessionModel {
     defer { isReportingTimeZone = false }
     do {
       let user = try await client.reportTimeZone(zone)
-      recordedTimeZone = .some(user.timezone)
+      recordedTimeZone = .some(user.resource.timezone.value)
+      // The answer is the user's record as it is now, with its version. With it in the copy, the next pull has no
+      // user to fetch. A copy that can't take it changes nothing: the next pull fetches the user.
+      try? await database.save([user])
     } catch {
       // Diagnostics: never. A failed report is not captured, and not a breadcrumb: the next foreground sends it
       // again. It changes nothing, not even whether the instance can be reached: the sync decides that. The client

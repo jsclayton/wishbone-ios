@@ -16,8 +16,10 @@ struct PullTests {
 
   let instance: Instance
 
+  /// Each test has a server of its own. On the shared one, a row for the whole instance that another test makes,
+  /// such as an occasion for everyone, is one more thing for the pull to fetch.
   init() async throws {
-    instance = try await Instance()
+    instance = try await Instance(server: try await TestServer.start())
   }
 
   /// Signs a new device in, and waits for the titles. The first sync has ended by then.
@@ -27,10 +29,8 @@ struct PullTests {
   private func signedIn(
     as person: Fixture.Person,
     storage: SessionStorage = .memory,
-    expecting titles: [String],
-    on own: Instance? = nil
+    expecting titles: [String]
   ) async throws -> (device: Device, session: SessionModel) {
-    let instance = own ?? instance
     try await person.signedIn().send("PATCH", "/users/me", json: ["timezone": .string(Self.zone)]).expecting(200)
     let device = instance.device(storage: storage, timeZone: .fixed(Self.zone))
     await device.signIn(pasting: try await instance.loginLink(for: person))
@@ -45,13 +45,13 @@ struct PullTests {
   }
 
   /// What the device asked of the instance after the mark, oldest first.
-  private func requests(since mark: Int, on own: Instance? = nil) -> [NetworkConditioner.SeenRequest] {
-    Array((own ?? instance).conditioner.requests.dropFirst(mark))
+  private func requests(since mark: Int) -> [NetworkConditioner.SeenRequest] {
+    Array(instance.conditioner.requests.dropFirst(mark))
   }
 
   /// The same requests as text, such as `GET /items/12`: the method, and the path under `/api/v2` with any query.
-  private func asked(since mark: Int, on own: Instance? = nil) -> [String] {
-    requests(since: mark, on: own).map { "\($0.method) \($0.target.dropFirst(TestServer.apiPrefix.count))" }
+  private func asked(since mark: Int) -> [String] {
+    requests(since: mark).map { "\($0.method) \($0.target.dropFirst(TestServer.apiPrefix.count))" }
   }
 
   private func item(_ title: String, in session: SessionModel) throws -> ItemRow {
@@ -60,22 +60,19 @@ struct PullTests {
 
   @Test("A sync after no change is one request, answered 304, and nothing is written")
   func noChange() async throws {
-    // A server of its own: on the shared one, another test's occasion for everyone changes the versions.
-    let instance = try await Instance(server: try await TestServer.start())
     let robin = try await instance.person(items: ["Kite", "Puzzle"])
     let folder = try ScratchDirectory("device")
-    let (_, session) = try await signedIn(
-      as: robin, storage: .folder(folder.url), expecting: ["Kite", "Puzzle"], on: instance)
+    let (_, session) = try await signedIn(as: robin, storage: .folder(folder.url), expecting: ["Kite", "Puzzle"])
     let file = try DatabaseFile(under: folder.url)
     let before = try file.contents
-    let mark = instance.conditioner.requests.count
+    let mark = self.mark
 
     await session.sync()
 
     // One request, with no query: the server refuses any query on this route.
-    #expect(asked(since: mark, on: instance) == ["GET /versions"])
+    #expect(asked(since: mark) == ["GET /versions"])
     // It carries the kept ETag, and the server answers that ETag with a 304 for this user.
-    let etag = try #require(requests(since: mark, on: instance).first?.headers["if-none-match"])
+    let etag = try #require(requests(since: mark).first?.headers["if-none-match"])
     let answer = try await TestHTTP.send(
       "GET", instance.server.url("/versions"),
       headers: ["Authorization": "Bearer \(try robin.signedIn().token)", "If-None-Match": etag])
@@ -115,7 +112,7 @@ struct PullTests {
 
     let mark = self.mark
     await session.sync()
-    #expect(asked(since: mark) == ["GET /versions", "GET /lists/\(list.id)/items"])
+    #expect(asked(since: mark) == ["GET /versions", "GET /lists/\(list.id)/items?limit=200"])
     await until { session.primaryListItems.map(\.title) == ["Tent", "Kite", "Puzzle"] }
   }
 
@@ -311,7 +308,7 @@ struct PullTests {
     #expect(requests(since: mark).first?.headers["if-none-match"] == nil)
     #expect(asked(since: mark).first == "GET /versions")
     #expect(asked(since: mark).contains("GET /items/\(kite.id)"))
-    #expect(!asked(since: mark).contains("GET /users/me"))
+    #expect(!asked(since: mark).contains("GET /users/\(robin.id)"))
     #expect(!session.isInstanceUnreachable)
     #expect(session.user?.name == renamed)
   }
