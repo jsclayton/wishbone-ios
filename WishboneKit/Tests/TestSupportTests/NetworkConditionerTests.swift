@@ -180,6 +180,23 @@ struct NetworkConditionerTests {
     #expect(try await TestHTTP.send("GET", conditioner.url("/health")).json["version"] != "1.0.0")
   }
 
+  @Test("It loses the connection of the next requests on a route, which never reach the server, and then passes")
+  func losesConnections() async throws {
+    conditioner.loseConnection(Route("POST", "/groups"), count: 2)
+    let name = "Lost \(UUID().uuidString.prefix(8))"
+    for _ in 0..<2 {
+      await #expect(throws: URLError.self) { try await admin.send("POST", "/groups", json: ["name": .string(name)]) }
+    }
+    // A request on another route passes.
+    #expect(try await TestHTTP.send("GET", conditioner.url("/health")).status == 200)
+    let groups = try await server.admin().all("/groups?limit=200")
+    #expect(!groups.contains { $0["name"].string == name })
+
+    let made = try await admin.send("POST", "/groups", json: ["name": .string(name)]).expecting(201)
+    #expect(try made.json["name"].string == name)
+    #expect(conditioner.requests.filter { $0.isOn(Route("POST", "/groups")) }.count == 3)
+  }
+
   @Test("A route matches its method, and its path under /api/v2 with any ID")
   func routes() {
     let route = Route("post", "/items/{id}/gifts")

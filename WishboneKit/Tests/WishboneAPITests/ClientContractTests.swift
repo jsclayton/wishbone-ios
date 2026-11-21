@@ -57,6 +57,14 @@ struct ClientContractTests {
     }
   }
 
+  @Test("Every header that the client sends on a route is one that the route takes", arguments: Route.allCases)
+  func sentHeadersAreInTheCopy(route: Route) throws {
+    let taken = try parameters(of: route, in: "header")
+    for name in route.sentHeaders {
+      #expect(taken.contains(name), "\(route.method) \(route.template) takes no \(name) header")
+    }
+  }
+
   @Test(
     "A route whose answer has pages declares limit and cursor, so the client asks for each page",
     arguments: Route.allCases)

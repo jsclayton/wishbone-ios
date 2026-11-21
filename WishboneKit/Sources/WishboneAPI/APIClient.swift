@@ -338,6 +338,7 @@ public struct APIClient: Sendable {
     // The token goes only to the instance address, on a route that needs a session.
     if let token, !route.isPublic { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
     if let etag = endpoint.ifNoneMatch { request.setValue(etag, forHTTPHeaderField: "If-None-Match") }
+    if let key = endpoint.idempotencyKey { request.setValue(key, forHTTPHeaderField: "Idempotency-Key") }
     if let file = endpoint.file {
       request.httpBody = file
       request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
@@ -350,8 +351,14 @@ public struct APIClient: Sendable {
     let data: Data
     let answer: HTTPURLResponse
     do {
+      // One time limit covers the request and its one resend.
       let (body, response) = try await withTimeout(timeout, clock: clock) { [request] in
-        try await Self.urlSession.data(for: request, delegate: NoRedirects())
+        do {
+          return try await Self.urlSession.data(for: request, delegate: NoRedirects())
+        } catch let error as URLError where error.code == .networkConnectionLost && Self.isSafeToResend(request) {
+          Log.request(route, "lost its connection, and is sent once more")
+          return try await Self.urlSession.data(for: request, delegate: NoRedirects())
+        }
       }
       guard let response = response as? HTTPURLResponse else {
         Log.request(route, "is not HTTP")
@@ -418,6 +425,21 @@ public struct APIClient: Sendable {
       if status == 401, code == .unauthorized { throw .unauthorized }
       if status == 410, code == .apiVersionRemoved { throw .appTooOld }
       throw .refused(.init(status: status, code: code, detail: problem.detail, fields: problem.fields))
+    }
+  }
+
+  /// Whether a write is safe to send once more when its connection was lost before its answer: it is idempotent by
+  /// HTTP (`PUT`, `DELETE`, or `PATCH` with `If-Match`), or it carries an `Idempotency-Key`. A server or a reverse
+  /// proxy closes an idle kept connection, and a request that goes on it at that moment is lost. `URLSession` sends
+  /// a `GET` again by itself, on a new connection, but fails a write with `networkConnectionLost`. A write that is
+  /// not safe to repeat, such as a redeem, is never sent again. See "Unreachable never ends the session" in
+  /// `docs/spec.md`.
+  private static func isSafeToResend(_ request: URLRequest) -> Bool {
+    if request.value(forHTTPHeaderField: "Idempotency-Key") != nil { return true }
+    switch request.httpMethod {
+    case "PUT", "DELETE": return true
+    case "PATCH": return request.value(forHTTPHeaderField: "If-Match") != nil
+    default: return false
     }
   }
 
