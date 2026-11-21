@@ -36,6 +36,9 @@ nonisolated final class SignInJourney: XCTestCase {
     app.launch()
     let scan = app.buttons[Audit.words("Scan QR code")]
     XCTAssertTrue(scan.waitForExistence(timeout: 60), "The signed-out screen didn't show.")
+    // The simulator has no camera, so the audit covers the "no camera" state of the screen.
+    XCTAssertFalse(scan.isEnabled)
+    XCTAssertTrue(app.staticTexts[Audit.words("This device has no camera to scan with. Paste a link.")].exists)
     try await Audit.run(on: app, showing: "the signed-out screen", in: self)
     app.terminate()
 

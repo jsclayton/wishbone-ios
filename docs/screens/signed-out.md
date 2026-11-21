@@ -92,8 +92,10 @@ Decided in the spec: "Scan QR code", "I don't have a link", "Signed in as {name}
 | Can't reach, during sign-in | "Can't reach {address}. Your link is kept. Try again when you're connected." |
 | Certificate not trusted | "This device doesn't trust the certificate of {address}. Ask the person who runs Wishbone." |
 | Camera denied | "Wishbone needs the camera to scan a QR code. You can turn it on in Settings, or paste a link." |
+| Camera restricted, as by Screen Time | "The camera is turned off on this device, so Wishbone can't scan. Paste a link." |
 | Camera not available | "This device has no camera to scan with. Paste a link." |
 | The scanner's help | "Point the camera at the QR code of your login link." |
+| The camera's permission string | "Wishbone uses the camera to scan the QR code of a login link." |
 | Help sheet, title | "Getting a login link" |
 | Help sheet, a family member runs it | "Someone in your family runs Wishbone. Ask them, or your parent, for a login link." |
 | Help sheet, the browser | "You use Wishbone in a browser. Open your sign-in screen there. It shows a QR code for you." |

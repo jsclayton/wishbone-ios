@@ -43,6 +43,34 @@ struct LoginLinkTests {
     #expect(LoginLink(text) == nil)
   }
 
+  @Test(
+    "A QR code that holds anything but a login link is ignored",
+    arguments: [
+      // Text that is not a URL.
+      "WIFI:S:Home;T:WPA;P:hunter2;;",
+      "BEGIN:VCARD\nVERSION:3.0\nFN:Robin\nEND:VCARD",
+      "mailto:robin@example.com",
+      // A URL with no /login/.
+      "https://shop.example/products/kite",
+      "https://wishbone.example/lists/7",
+      // A URL with /login/ and no token.
+      "https://wishbone.example/login/",
+      "https://wishbone.example/login",
+    ]
+  )
+  func qrCodeOfSomethingElse(payload: String) {
+    #expect(LoginLink(payload) == nil)
+  }
+
+  @Test("A QR code of a login link gives its instance address and its token")
+  func qrCodeOfALoginLink() throws {
+    let link = try #require(LoginLink("http://10.0.0.5:8080/family/login/Ab3_x-Y9"))
+    #expect(link.instance == InstanceAddress("http://10.0.0.5:8080/family"))
+    // The token is the text after /login/: the same text gives the same link, and another token another link.
+    #expect(LoginLink("http://10.0.0.5:8080/family/login/Ab3_x-Y9") == link)
+    #expect(LoginLink("http://10.0.0.5:8080/family/login/Ab3_x-Y8") != link)
+  }
+
   @Test("A login link and a session never print their secret")
   func secretsStayOut() throws {
     let link = try #require(LoginLink("https://wishbone.example/login/s3cr3t-link-token"))

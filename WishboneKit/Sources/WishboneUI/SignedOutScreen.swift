@@ -4,8 +4,8 @@ import WishboneSession
 
 /// The signed-out screen: the way in. See `docs/screens/signed-out.md`.
 ///
-/// Paste signs in. The scanner, the help sheet, and the diagnostics screen are not built yet, so their controls
-/// are in place and do nothing.
+/// Scan and paste sign in. The help sheet and the diagnostics screen are not built yet, so their controls are in
+/// place and do nothing.
 public struct SignedOutScreen: View {
   @Environment(Device.self) private var device
 
@@ -58,7 +58,7 @@ public struct SignedOutScreen: View {
         if isSigningIn { ProgressView() }
         Text(words)
           .multilineTextAlignment(.center)
-        if case .unreachable = device.signInState {
+        if device.keepsLink {
           Button {
             Task { await device.tryAgain() }
           } label: {
@@ -115,13 +115,9 @@ public struct SignedOutScreen: View {
   /// The two ways in, and the way to get help.
   private var ways: some View {
     VStack(spacing: 16) {
-      Button {
-      } label: {
-        Text("Scan QR code", bundle: #bundle)
-          .foregroundStyle(Color(.onAccent))
-      }
-      .buttonStyle(.borderedProminent)
-      .controlSize(.large)
+      #if os(iOS)
+        ScanButton()
+      #endif
 
       // The system paste button, so iOS shows no "allow paste" alert. The system gives it its words.
       PasteButton(payloadType: String.self) { pasted in
