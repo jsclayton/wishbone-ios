@@ -15,12 +15,13 @@ Where each rule lives in the code, and the rules that hold the code together. Wh
 |---|---|---|---|
 | `WishboneAPI` | The Codable models, the API client, the error codes, the session keychain and the install marker, the version check against `GET /health`, and the one `Logger` file | macOS and iOS | the app, the share extension, the widget |
 | `WishboneSession` | The session model, the local database (GRDB) with the unsent changes and the sync, the server's shift rule for a move, and the reminder plan | macOS and iOS | the app, the share extension |
-| `WishboneUI` | Every screen and component (the add form included), the widget's views, the one String Catalog, the person palette, the words for each error code, and the markdown renderer | iOS | the app, the share extension, the widget |
+| `WishboneUI` | Every screen and component (the add form included), the one String Catalog, the person palette, the words for each error code, and the markdown renderer | iOS | the app, the share extension |
 | `WishboneDiagnostics` | The one file that imports Sentry, the event vocabulary, and the scrubber | iOS | the app only |
 | `TestSupport` | The server harness, `ScratchDirectory`, the network conditioner, the fixture builder, and fakes | macOS and iOS | test targets only |
 
 - Every package module builds with extension-only API. Anything that needs `UIApplication.shared` stays in the app target.
-- A fitness test holds each target's link list.
+- The widget extension links only `WishboneAPI`. It never links `WishboneSession` or GRDB, and `WishboneUI` imports `WishboneSession`.
+- A fitness test holds each target's link list, and each test bundle's.
 - A new module is cut only when a target's link list, or a macOS build, needs it.
 
 ## Where the other pieces live
@@ -37,13 +38,15 @@ Where each rule lives in the code, and the rules that hold the code together. Wh
 | The accent color | Each thin target's `AccentColor` | A test holds the three equal. |
 | The pinned test server | `WishboneKit/Server/` | The pin file and the copy of the server's OpenAPI document. The contract test holds them against `minimumServerVersion` in `WishboneAPI`. See [A real server](development.md#a-real-server). |
 | Permission strings | Each target's `InfoPlist.xcstrings` | |
+| The license texts of Acknowledgements | `WishboneUI`'s resources, as `Acknowledgements.json` | `just build` makes the file from the pinned packages, and the file is in git. See [What the build writes](development.md#what-the-build-writes). |
 
 ## State: the session model
 
 See [ADR 0003](adr/0003-one-session-model-is-shared-by-every-window-with-no-view-models.md), [ADR 0005](adr/0005-grdb-is-the-local-database-and-screens-read-only-it.md), and [ADR 0006](adr/0006-writes-are-a-journal-of-unsent-changes-the-server-decides-and-claims-are-online-only.md).
 
 - There are no view models. A screen keeps its own `@State`.
-- One `SessionModel` for each signed-in session, `@Observable` and `@MainActor`. The app's composition root builds it once and puts it in the environment of every window scene.
+- One `Device` for the app, `@Observable` and `@MainActor`. It holds one session at most: it signs in with a login link, publishes what the signed-out screen shows, and holds the session model while it is signed in. The app's composition root builds it once, and puts it in the environment of every window scene.
+- One `SessionModel` for each signed-in session, `@Observable` and `@MainActor`. The `Device` builds it at sign-in, and at launch from the session keychain. Every window reads the same one.
 - The session model owns the local database. Screens read only the database, through the session model, and never call the API client.
 - Every write goes through the session model: it records the change, applies it to the copy, and sends it. A claim and a raise of a gift's quantity wait for the server instead.
 - Sign-out, or the API's own 401, discards the session model, the database, and its unsent changes.
@@ -60,7 +63,7 @@ See [ADR 0004](adr/0004-the-api-client-is-written-by-hand-and-checked-against-a-
 - Models ignore unknown keys. Every enum has an `unknown(String)` case. A field that can be hidden keeps "absent" apart from `null` where it matters.
 - Error codes are one open enum, with `unknown(String)`.
 - Collections always follow `next_cursor`.
-- The token goes only to the instance address. A store's image loads with no token.
+- The token goes only to the instance address, and only on a route that needs a session. The client follows no redirect. A store's image loads with no token.
 - Family content in a log line (names, titles, notes, addresses) is always `.private`.
 
 ## Concurrency

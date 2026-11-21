@@ -21,6 +21,7 @@ The native iPhone and iPad app for Wishbone, private self-hosted family wish lis
 pnpm install                 # git hooks (lefthook and commitlint)
 just gate                    # every check a pull request must pass. Quote its last line
 just test                    # the package tests on macOS, against the pinned Wishbone server
+just simulator               # the hosted tests and the journeys, on the gate's own simulator
 just server                  # fetch and build that server. `just test` and `just gate` run it first
 just lint                    # swift-format lint --strict, actionlint, shellcheck, the docs check, the gate's own tests
 just fmt                     # format the Swift files
@@ -33,7 +34,7 @@ swift test --package-path WishboneKit --filter TestName     # one package test
 - Never commit `.agent/`, `.claude/`, `.beads/`, or `*.local.md`. The pre-commit hook and CI refuse them.
 - The pre-commit hook runs `swift-format lint --strict` on the staged Swift files. Run `just fmt` to fix them.
 - The build has zero warnings.
-- The build adds new strings to the String Catalog. Commit the changed `.xcstrings` file, or the gate fails.
+- The build adds new strings to the String Catalog, and makes `Acknowledgements.json` from the pinned packages. Commit the changed file, or the gate fails.
 - Every string in the Swift package has `bundle: #bundle`.
 - Name a temporary folder only through `ScratchDirectory` in `TestSupport`.
 - One file imports Sentry, and one file imports StoreKit. Only the app target links `WishboneDiagnostics`.

@@ -70,9 +70,10 @@ An xcconfig file treats `//` as the start of a comment. To write a URL in one, s
 | Recipe | What it does |
 |---|---|
 | `just gate` | Every check that a pull request must pass, in order (see [The gate](#the-gate)) |
-| `just build` | Builds the app and both extensions for the simulator, with zero warnings, and adds new strings to the String Catalog |
+| `just build` | Builds the app and both extensions for the simulator, with zero warnings. Then it adds new strings to the String Catalog, and makes the Acknowledgements (see [What the build writes](#what-the-build-writes)) |
 | `just server` | Fetches and builds the pinned Wishbone server that the tests run against, or reuses the built one |
 | `just test` | The package tests on macOS, with `swift test`. It runs `just server` first |
+| `just simulator` | The hosted tests and the journeys, on the gate's own simulator (see [The simulator tier](#the-simulator-tier)). It runs `just server` first |
 | `just lint` | `swift-format lint --strict`, actionlint and shellcheck, the docs check, and the tests of the gate's own scripts |
 | `just fmt` | Formats the Swift files with swift-format |
 
@@ -88,6 +89,8 @@ swift test --package-path WishboneKit --filter TestName
 Wishbone/           The app target
 ShareExtension/     The share extension
 WidgetExtension/    The widget extension: the countdown widget and the Add item control
+HostedTests/        The hosted test bundle: the tests that need iOS, inside the app
+JourneyTests/       The journeys: XCUITests of the whole app
 WishboneKit/        The local Swift package: the modules (see architecture.md) and their tests
 Config/             Shared.xcconfig, and your own Local.xcconfig
 AppStore/           The App Store listing, as files
@@ -104,6 +107,13 @@ docs/               The spec, the ADRs, and the guides
 - The pre-commit hook runs `swift-format lint --strict` on the staged Swift files. It reports, and never rewrites them.
 - There is no SwiftLint. A rule that swift-format can't hold is a fitness test (see [Fitness tests](architecture.md#fitness-tests)).
 
+## What the build writes
+
+`just build` writes two things that are in git. The gate fails when its build changed either one, so commit them with the change that caused it.
+
+- **The String Catalog.** The build adds each new string from the code to `Localizable.xcstrings` in `WishboneUI`.
+- **The Acknowledgements.** The build writes the name and the full license text of each package that the app ships to `Acknowledgements.json` in `WishboneUI`'s resources. It reads each text from the package that the build fetched, at the commit in `Package.resolved`. So a pull request that moves a pin shows the pin's license in its diff, and the texts never go out of date.
+
 ## Tests and the gate
 
 ### What to test, and where
@@ -114,7 +124,7 @@ docs/               The spec, the ADRs, and the guides
 - Don't test the API client on its own (beyond the contract test), private helpers, or screens.
 - Where a test goes:
   - A test that needs only the package goes in the package, and runs under `swift test` on macOS, with a database in memory and the injected clock.
-  - A test that needs iOS goes in the hosted test bundle: the session keychain item and its access group, the widget's file in the shared container, and `WishboneUI` pieces with logic, such as the person palette and the words for each error code.
+  - A test that needs iOS goes in the hosted test bundle: the session keychain item and its access group, the widget's file in the shared container, and `WishboneUI` pieces with logic, such as the person palette and the words for each error code. The bundle runs inside the app, and reaches the package's modules through the app. It links none of them itself, because a second copy would give the process two of each class.
   - A test of the whole app is a journey (see below).
 - There is one test target for each module, and one for the fitness tests.
 
@@ -125,7 +135,7 @@ docs/               The spec, the ADRs, and the guides
   - `WishboneKit/Server/server-pin.json` is the pin: the server's release tag, and that tag's commit.
   - `WishboneKit/Server/openapi.json` is the copy.
   - `minimumServerVersion` in `WishboneAPI` is the minimum server version.
-- A script fetches the pinned commit over HTTPS, builds it with `-tags e2e`, and stamps its version. An unstamped build reports `dev`, which the app's version check refuses. Go's version comes from that commit's `go.mod`, through mise. The built server is reused until the pin moves.
+- A script fetches the pinned commit over HTTPS, builds it with `-tags e2e`, and stamps its version. An unstamped build reports `dev`, which the app's version check can't read. The check passes such a version, so a test of the check against it would hold nothing. Go's version comes from that commit's `go.mod`, through mise. The built server is reused until the pin moves.
   - `just server` runs the script. `just test` and the gate run it first.
   - The fetch fails if the tag is no longer at the pin's commit.
   - The script uses none of your git settings, so the fetch never needs an SSH key.
@@ -179,14 +189,18 @@ To move the pin:
 
 ### The simulator tier
 
-- The simulator tests run one at a time, on the gate's own simulator: the hosted test bundle, then a few XCUITest journeys against a real test server.
-- A journey launches with a login link passed in as if pasted. The journeys are: sign in, add an item, claim and mark bought as a giver, move an item between lists, add from the share extension, and sign out.
+- The simulator tests run one at a time, on the gate's own simulator: the hosted test bundle, then a few XCUITest journeys against a real test server. `just simulator` runs them. The simulator is named "Wishbone gate". The first run makes it, and each run shuts it down at its end.
+- A journey starts the test server itself, from inside the simulator, as a package test does on your Mac.
+- A journey launches with a login link passed in as if pasted: the link is in the launch environment, and the app signs in with it through the same call as the paste button. A journey can also ask the app to start signed out, because a simulator keeps the session keychain's item between runs. Only a Debug build reads these two variables.
+- The journeys are: sign in, add an item, claim and mark bought as a giver, move an item between lists, add from the share extension, and sign out.
 - Journeys check that things work, not how they look. **There are no snapshot comparisons.** Each journey attaches screenshots as evidence for a person to look at, never as pass or fail.
 - Journeys never swipe or drag, except one drag test. Every action goes through its button or menu item, which proves that the route exists.
 
 ### Accessibility checks
 
 - Every journey runs `performAccessibilityAudit` on each screen it reaches, in four settings: the default, the largest accessibility text size, dark mode, and Increase Contrast. Any issue fails. An exception is allowed one at a time, in code, with a reason.
+- The settings are the simulator's own, as a person sets them in the Settings app. A test can't change them from inside the simulator, so `just simulator` sets them with `simctl`, and runs the journeys once in each. A journey that you run in Xcode audits in the settings that your simulator has.
+- A fifth run is in the double-length pseudo-language, in which iOS shows each string of the String Catalog twice. There, the audit finds text that is cut short. A journey finds a control by its words, twice over, so text that is not in the String Catalog fails the journey.
 - A unit test checks the accent color and every person color against their backgrounds, in light, dark, and Increase Contrast: 4.5:1 for text, and 3:1 for large text and controls.
 - A test can't show whether VoiceOver and Voice Control make the common tasks possible. A person checks that on a device before each release that claims an accessibility label.
 
@@ -211,12 +225,13 @@ To move the pin:
 1. **Lint:** `swift-format lint --strict`, and the rest of `just lint`.
 2. **Server:** builds the pinned test server, or reuses the built one.
 3. **Package:** `swift test` on macOS, in parallel: the contract test, the fitness tests, the session model, the secrecy suite, and the pure units.
-4. **Build:** the app, the share extension, and the widget for the simulator, with zero warnings. Then the check that the String Catalog didn't change.
-5. **Simulator:** the hosted test bundle and the journeys, one at a time, on the gate's own simulator. The result bundles stay inside the checkout.
+4. **Build:** the app, the share extension, and the widget for the simulator, with zero warnings. Then the check that the build changed nothing that is in git (see [What the build writes](#what-the-build-writes)).
+5. **Simulator:** `just simulator`: the hosted test bundle, then the journeys once in each setting, one at a time, on the gate's own simulator. The result bundles stay inside the checkout, in `build/gate/run/simulator/`, with the log of each run.
 
 The gate reads its own results:
 
 - It counts the tests from Swift Testing's summary for each test target, from XCTest's summary for each test target with an XCTest test, and from each result bundle. XCTest runs before Swift Testing, so only the XCTest part of the log gives the XCTest count.
+- The journeys' result bundles hold the same tests, once for each setting. So the UI count is the count of one of them, and a bundle that holds other tests than the first fails.
 - It fails on any failure or recorded issue, on a bundle with 0 tests, and on a skip that is not on a short named list.
 - A known issue is a recorded issue, so it fails too: in Swift Testing (`withKnownIssue`) and in XCTest (`XCTExpectFailure`).
 - An issue recorded with the severity `.warning` (`Issue.record(_:severity:)`) is not a failure, so the gate passes it. Swift Testing leaves a warning out of the event stream that the gate reads.
@@ -228,7 +243,7 @@ The gate reads its own results:
 
 What "zero warnings" means in the build step:
 
-- The compiler treats every warning as an error, in the targets and in the package (`SWIFT_TREAT_WARNINGS_AS_ERRORS`). So a warning from the compiler fails every build until it is fixed.
+- The compiler treats every warning as an error, in the project's targets (`SWIFT_TREAT_WARNINGS_AS_ERRORS` in the project) and in the package's own targets (`treatAllWarnings` in `Package.swift`). So a warning from the compiler fails every build until it is fixed, also in Xcode and under `swift test`. The setting is not on the build's command line, because Xcode builds a remote package such as GRDB with its warnings suppressed, and the two clash.
 - The build's log must have no other `warning:` line. These come from what the compiler doesn't own: the linker, the asset catalogs, and the project.
 - One line is left out: `Metadata extraction skipped`, from Xcode's App Intents step. It is that step's own log for a target with no App Intents, not a warning about the code.
 - Xcode prints a warning from the linker, the asset catalogs, or the project only when it runs that part of the build again. So a build that reuses earlier work can pass where a build from nothing fails. CI always builds from nothing, so CI is the full check. To make the same check locally, run `just clean` before the gate.
@@ -237,6 +252,7 @@ Time and load:
 
 - Each step is stopped, with all its child processes, when it passes its time limit. A step past its limit is a hang, not a flake.
 - A process that a step leaves behind when it ends is stopped too.
+- The gate shuts its own simulator down when the simulator step ends, however it ends. The simulator belongs to the system, so stopping the step's processes leaves it running.
 - A gate that is killed, even with `kill -9`, stops its running step. The slot is free only when that step's processes have stopped.
 - Each run logs its step times to a file that git ignores, `build/gate/times.jsonl`, so a slowdown shows as a trend. The last run's logs are beside it, in `build/gate/run/`.
 - **The budget is 5 minutes**, warm, on the maintainer's laptop. A gate over budget passes with a warning. If it stays over, open an issue to fix it. CI starts cold, so the gate gives no warning there.
