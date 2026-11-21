@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import { judge } from './reading.mjs';
 import { testResults } from './xcresult-fixture.mjs';
-import { checkResultBundles, readResultBundle, readTestResults } from './xcresult.mjs';
+import { attachmentNames, checkAuditScreenshots, checkResultBundles, readResultBundle, readTestResults } from './xcresult.mjs';
 
 const item = 'HostedTests.SessionKeychainTests/item()';
 const signIn = 'JourneyTests.SignInJourney/testSignIn()';
@@ -115,4 +115,43 @@ test("a reading holds the time that its tests took, without Xcode's own time aro
   assert.equal(readTestResults(testResults({ [item]: 'pass', [signIn]: 'pass' })).testsMs, 3000);
   assert.equal(readTestResults({ testNodes: [] }).testsMs, 0);
   assert.equal(readTestResults({}).testsMs, null);
+});
+
+const labels = ['the default settings', 'the largest text size', 'dark mode', 'Increase Contrast'];
+/** The names that Xcode gives the screenshots of a screen in each setting, with its own ending on each. */
+const shots = (screen, settings = labels) => settings.map((label, index) => `${screen}, in ${label}_0_5C9AA6C6-40DD-4147-A856-75E87376AF${String(index).padStart(2, '0')}.png`);
+
+test('the result bundle passes when it has each screen that the journeys reached in the four settings, once', () => {
+  const names = [...shots('the signed-out screen'), ...shots('Home'), 'Kite, the screenshot of a failure_0_1.png', ...shots('Lists')];
+  assert.deepEqual(checkAuditScreenshots(names, labels), { screens: 3, problem: null });
+  assert.deepEqual(checkAuditScreenshots([], labels), { screens: 0, problem: null });
+});
+
+test('the result bundle fails when a later journey audited a screen again', () => {
+  const names = [...shots('the signed-out screen'), ...shots('Home'), ...shots('Home'), ...shots('Lists')];
+  assert.deepEqual(checkAuditScreenshots(names, labels), {
+    screens: 3,
+    problem: 'Home was audited more than once in the run: 2 times in the default settings, 2 times in the largest text size, 2 times in dark mode, 2 times in Increase Contrast',
+  });
+});
+
+test('the result bundle fails when a screen is not in all four settings', () => {
+  const names = [...shots('Home'), ...shots('Gifts', ['the default settings', 'dark mode'])];
+  assert.deepEqual(checkAuditScreenshots(names, labels), { screens: 2, problem: 'Gifts was not audited in the largest text size, Increase Contrast' });
+});
+
+test("the screenshots' names are read from each test's activities, at any depth, in every run", () => {
+  const activities = {
+    testRuns: [
+      {
+        activities: [
+          { title: 'Set Up' },
+          { title: 'Audit', attachments: [{ name: 'Home, in dark mode_0_A.png' }], childActivities: [{ title: 'inner', attachments: [{ name: 'Lists, in dark mode_0_B.png' }] }] },
+        ],
+      },
+      { activities: [{ title: 'again', attachments: [{ name: 'Gifts, in dark mode_0_C.png' }] }] },
+    ],
+  };
+  assert.deepEqual(attachmentNames(activities), ['Home, in dark mode_0_A.png', 'Lists, in dark mode_0_B.png', 'Gifts, in dark mode_0_C.png']);
+  assert.deepEqual(attachmentNames({}), []);
 });

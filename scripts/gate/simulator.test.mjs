@@ -8,10 +8,12 @@ import {
   buildArguments,
   compiledFiles,
   gateSimulators,
+  helperAnswerLimitMs,
   journeyRuns,
   parseArguments,
   pickDevice,
   resultBundles,
+  settingCallLimitMs,
   settingCommands,
   settings,
   settingsApplier,
@@ -257,4 +259,72 @@ test('the settings helper answers 500, with the reason, when a hung call fails a
   const response = await fetch(`${helper.address}/settings/default`, { method: 'POST' });
   assert.equal(response.status, 500);
   assert.equal(await response.text(), "simctl ui SIM appearance light didn't return within 30s, twice, so the simulator isn't in the default settings");
+});
+
+test('the settings helper says to audit a screen the first time a journey names it, and not again in that run', async (t) => {
+  const helper = await startSettingsHelper(async () => {});
+  t.after(() => helper.close());
+  const claim = (screen) => fetch(`${helper.address}/screens`, { method: 'POST', body: screen });
+  // The first journey reaches the signed-out screen and Home. A later journey reaches Home again, and Lists.
+  assert.equal((await claim('the signed-out screen')).status, 201);
+  assert.equal((await claim('Home')).status, 201);
+  assert.equal((await claim('Home')).status, 200);
+  assert.equal((await claim('Lists')).status, 201);
+  assert.equal((await claim('the signed-out screen')).status, 200);
+  // A name is the whole name, with its spaces, commas and slashes.
+  assert.equal((await claim('Home, in a sheet / again')).status, 201);
+  assert.equal((await claim('')).status, 400);
+  assert.equal((await fetch(`${helper.address}/screens`)).status, 404);
+  assert.deepEqual(helper.screens(), ['the signed-out screen', 'Home', 'Lists', 'Home, in a sheet / again']);
+});
+
+test('a new settings helper, for a new run, audits every screen again', async (t) => {
+  const first = await startSettingsHelper(async () => {});
+  t.after(() => first.close());
+  assert.equal((await fetch(`${first.address}/screens`, { method: 'POST', body: 'Home' })).status, 201);
+  const second = await startSettingsHelper(async () => {});
+  t.after(() => second.close());
+  assert.equal((await fetch(`${second.address}/screens`, { method: 'POST', body: 'Home' })).status, 201);
+});
+
+test('the settings applier applies one setting at a time, so a journey never overlaps a call that is still running', async () => {
+  const ran = [];
+  let running = 0;
+  const applier = settingsApplier('SIM', {
+    run: async (command) => {
+      running += 1;
+      assert.equal(running, 1, 'two simctl calls ran at once');
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      ran.push(command[3]);
+      running -= 1;
+    },
+  });
+  // The first apply is still running when the next two come, as when a journey's request timed out and the next
+  // journey asks for its setting.
+  await Promise.all([applier.apply(settings[0]), applier.apply(settings[2]), applier.apply(settings[0])]);
+  assert.deepEqual(ran, ['light', 'disabled', 'large', 'dark', 'light']);
+});
+
+test('a failed apply does not stop the next one', async () => {
+  const ran = [];
+  const applier = settingsApplier('SIM', {
+    run: async (command) => {
+      ran.push(command[3]);
+      if (command[3] === 'dark') throw new Error('Invalid device state');
+    },
+  });
+  await applier.apply(settings[0]);
+  const failed = applier.apply(settings[2]);
+  const next = applier.apply(settings[0]);
+  await assert.rejects(failed, /Invalid device state/);
+  await next;
+  // The failed call left the appearance unknown, so the next apply set it again.
+  assert.deepEqual(ran.slice(3), ['dark', 'light']);
+});
+
+test("a journey waits for the helper longer than the helper's longest answer: each call of an apply hung once, and then hung again", () => {
+  const audit = readFileSync(new URL('../../JourneyTests/Audit.swift', import.meta.url), 'utf8');
+  const seconds = Number(/static let helperTimeout: TimeInterval = (\d+)/.exec(audit)[1]);
+  assert.ok(seconds * 1000 > helperAnswerLimitMs, `Audit.swift waits ${seconds}s, and the helper can take ${helperAnswerLimitMs / 1000}s`);
+  assert.equal(helperAnswerLimitMs, settingCommands(settings[0], 'SIM').length * 2 * settingCallLimitMs);
 });

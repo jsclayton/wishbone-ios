@@ -102,3 +102,57 @@ export function checkResultBundles(tiers, { exit, allowedSkips = [], read = read
   }
   return { counts };
 }
+
+/** The name of every attachment in what `xcresulttool get test-results activities` prints for one test, in order. */
+export function attachmentNames(activities) {
+  const names = [];
+  const visit = (activity) => {
+    for (const attachment of activity.attachments ?? []) names.push(attachment.name);
+    for (const child of activity.childActivities ?? []) visit(child);
+  };
+  for (const run of activities?.testRuns ?? []) for (const activity of run.activities ?? []) visit(activity);
+  return names;
+}
+
+/** The names of the attachments of every test in the result bundle at `bundle`. */
+export function readAttachmentNames(bundle) {
+  const tests = readResultBundle(bundle).names;
+  return tests.flatMap((name) => {
+    // A name is `Bundle.Suite/function()`, and `xcresulttool` knows the test as `Suite/function()`.
+    const printed = execFileSync('xcrun', ['xcresulttool', 'get', 'test-results', 'activities', '--path', bundle, '--test-id', name.slice(name.indexOf('.') + 1)], {
+      encoding: 'utf8',
+      maxBuffer: 256 * 1024 * 1024,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return attachmentNames(JSON.parse(printed));
+  });
+}
+
+/**
+ * Checks the audit's screenshots in the result bundle of the journeys in the four settings. The journeys attach a
+ * screenshot of each screen that they audit, in each setting, named `<screen>, in <setting's label>`, and Xcode
+ * adds its own ending to each name. Each screen that the run reached must be audited in each setting once: a
+ * later journey that reaches a screen again doesn't audit it again. Other attachments don't count.
+ *
+ * Returns `{ screens, problem }`: the number of screens that the run audited, and what is wrong, or null.
+ */
+export function checkAuditScreenshots(names, labels) {
+  const screens = new Map();
+  for (const attached of names) {
+    const name = attached.replace(/_\d+_[0-9A-Za-z-]+\.[a-z]+$/, '');
+    const label = labels.find((one) => name.endsWith(`, in ${one}`));
+    if (label === undefined) continue;
+    const screen = name.slice(0, -`, in ${label}`.length);
+    if (!screens.has(screen)) screens.set(screen, new Map(labels.map((one) => [one, 0])));
+    screens.get(screen).set(label, screens.get(screen).get(label) + 1);
+  }
+  for (const [screen, counts] of screens) {
+    if ([...counts.values()].some((count) => count > 1)) {
+      const times = [...counts].filter(([, count]) => count > 1).map(([label, count]) => `${count} times in ${label}`);
+      return { screens: screens.size, problem: `${screen} was audited more than once in the run: ${times.join(', ')}` };
+    }
+    const missing = [...counts].filter(([, count]) => count === 0).map(([label]) => label);
+    if (missing.length > 0) return { screens: screens.size, problem: `${screen} was not audited in ${missing.join(', ')}` };
+  }
+  return { screens: screens.size, problem: null };
+}
