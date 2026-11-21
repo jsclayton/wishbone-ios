@@ -62,9 +62,18 @@ enum Audit {
   /// journeys. Two screens with one name are one screen to the audit.
   ///
   /// An exception is allowed one at a time, here, with a reason.
-  static func run(on app: XCUIApplication, showing screen: String, in test: XCTestCase) async throws {
+  ///
+  /// `rowsThatLeaveTheScreen` names the rows of a system list, by the start of their words, that a larger text
+  /// pushes off the screen. The list then lets go of them, so the Dynamic Type check can't measure them, and
+  /// reports them as "partially unsupported". Only that issue is allowed for them. The audit at the largest text
+  /// size still checks each row that shows there.
+  static func run(
+    on app: XCUIApplication, showing screen: String, in test: XCTestCase, rowsThatLeaveTheScreen: [String] = []
+  ) async throws {
+    // In the double-length pseudo-language, the words start with the words of English too.
+    let rows = rowsThatLeaveTheScreen
     guard let helper else {
-      try audit(app, screen, in: ownSetting, screenshot: app.screenshot(), test: test)
+      try audit(app, screen, in: ownSetting, screenshot: app.screenshot(), rows: rows, test: test)
       return
     }
     guard try await isNew(screen, helper: helper) else { return }
@@ -73,19 +82,20 @@ enum Audit {
     // is still on its way from one setting to the next, and each change is of one setting only.
     try await apply(settings[0], helper: helper)
     var current = try await settledScreen(of: app, in: settings[0], where: { _ in true })
-    try audit(app, screen, in: settings[0].label, screenshot: current.screenshot, test: test)
+    try audit(app, screen, in: settings[0].label, screenshot: current.screenshot, rows: rows, test: test)
     for setting in settings.dropFirst() {
       try await apply(setting, helper: helper)
       let before = current.pixels
       let shown = try await settledScreen(of: app, in: setting, where: { $0 != before })
-      try audit(app, screen, in: setting.label, screenshot: shown.screenshot, test: test)
+      try audit(app, screen, in: setting.label, screenshot: shown.screenshot, rows: rows, test: test)
       try await apply(settings[0], helper: helper)
       current = try await settledScreen(of: app, in: settings[0], where: { $0 != shown.pixels })
     }
   }
 
   private static func audit(
-    _ app: XCUIApplication, _ screen: String, in setting: String, screenshot: XCUIScreenshot, test: XCTestCase
+    _ app: XCUIApplication, _ screen: String, in setting: String, screenshot: XCUIScreenshot, rows: [String],
+    test: XCTestCase
   ) throws {
     let attachment = XCTAttachment(screenshot: screenshot)
     attachment.name = "\(screen), in \(setting)"
@@ -101,6 +111,10 @@ enum Audit {
       // prompt as clipped also when all of it shows, and when the field holds text. The field's label is the whole
       // prompt, so VoiceOver reads it.
       if issue.auditType == .textClipped, issue.element?.elementType == .searchField { return true }
+      // A row that a larger text pushes off the screen can't be measured. See `run`.
+      if issue.auditType == .dynamicType, let row = issue.element?.label, rows.contains(where: row.hasPrefix) {
+        return true
+      }
       let element = issue.element?.label ?? "no element"
       XCTFail("\(screen), in \(setting): \(issue.compactDescription) (\(element))")
       return true

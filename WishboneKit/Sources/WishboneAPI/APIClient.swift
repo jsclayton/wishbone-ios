@@ -172,6 +172,10 @@ public struct APIClient: Sendable {
         Log.request(route, "was cancelled")
         throw .cancelled
       }
+      if let error = error as? URLError, Self.untrustedCertificate.contains(error.code) {
+        Log.request(route, "has a certificate that the device doesn't trust")
+        throw .unreachable(.untrustedCertificate)
+      }
       // No network, a timeout, a DNS failure, a TLS failure, a connection that closed: all are unreachable. The
       // rule depends on no one code of `URLError`.
       Log.request(route, error is TimedOut ? "timed out" : "got no answer")
@@ -218,6 +222,13 @@ public struct APIClient: Sendable {
       throw .refused(.init(status: status, code: code, detail: problem.detail))
     }
   }
+
+  /// The codes of `URLError` for a certificate that the device doesn't trust. Only these name the certificate:
+  /// any other failure is unreachable with no answer.
+  private static let untrustedCertificate: Set<URLError.Code> = [
+    .serverCertificateUntrusted, .serverCertificateHasUnknownRoot, .serverCertificateHasBadDate,
+    .serverCertificateNotYetValid,
+  ]
 
   /// The one `URLSession` of every client. It keeps no cookie and no cache: the token is the session, and the
   /// local database is the copy.

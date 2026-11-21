@@ -41,6 +41,28 @@ nonisolated final class SignInJourney: XCTestCase {
     XCTAssertFalse(scan.isEnabled)
     XCTAssertTrue(app.staticTexts[Audit.words("This device has no camera to scan with. Paste a link.")].exists)
     try await Audit.run(on: app, showing: "the signed-out screen", in: self)
+
+    // The help sheet: the four ways to get a link, the last with its web link. The journey doesn't follow the
+    // link, which would leave the app for the browser.
+    app.buttons[Audit.words("I don't have a link")].tap()
+    let help = app.staticTexts[Audit.words("Getting a login link")]
+    XCTAssertTrue(help.waitForExistence(timeout: 10), "The help sheet didn't show.")
+    XCTAssertTrue(app.staticTexts[Audit.words("Nobody in your family runs Wishbone yet.")].exists)
+    let runningYourOwn = app.descendants(matching: .any)
+      .matching(NSPredicate(format: "label BEGINSWITH %@", Audit.words("Running your own Wishbone"))).firstMatch
+    XCTAssertTrue(runningYourOwn.exists, "The help sheet has no link on running your own Wishbone.")
+    try await Audit.run(
+      on: app, showing: "the help sheet", in: self,
+      // The rows under the first, which the larger text, or the double-length words, push down and off.
+      rowsThatLeaveTheScreen: [
+        "You use Wishbone in a browser.", "You're signed in to the app on another device.",
+        "Nobody in your family runs Wishbone yet.",
+        "Running your own Wishbone",
+      ])
+    // The sheet's close button has the system's words, so the journey finds it by its place.
+    app.navigationBars.firstMatch.buttons.firstMatch.tap()
+    XCTAssertTrue(scan.waitForExistence(timeout: 10))
+    XCTAssertFalse(help.exists, "The help sheet didn't close.")
     app.terminate()
 
     // The same launch, with a login link passed in as if pasted.

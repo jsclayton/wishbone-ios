@@ -30,6 +30,13 @@ public enum SignInState: Sendable, Equatable {
   /// The instance can't be reached. The device keeps the link, for Try again.
   case unreachable(InstanceAddress)
 
+  /// The server refused the redeem for too many tries (429 `rate_limited`). The device keeps the link, for Try
+  /// again.
+  case tooManyTries
+
+  /// The device doesn't trust the instance's certificate. There is no way around it, so the link is not kept.
+  case certificateNotTrusted(InstanceAddress)
+
   /// The address answered, and not as a Wishbone does.
   case noWishbone(InstanceAddress)
 
@@ -85,7 +92,7 @@ public final class Device {
 
   private let setup: Setup
 
-  /// The link that the device keeps while the instance can't be reached, for Try again.
+  /// The link that the device keeps while the instance can't be reached, or after too many tries, for Try again.
   private var keptLink: LoginLink?
 
   /// Whether the device keeps a link, so the signed-out screen shows Try again and Cancel.
@@ -129,7 +136,7 @@ public final class Device {
     await signIn(with: link)
   }
 
-  /// Tries the kept link again, after the instance could not be reached.
+  /// Tries the kept link again, after the instance could not be reached, or after too many tries.
   public func tryAgain() async {
     guard canStartSignIn, let keptLink else { return }
     await signIn(with: keptLink)
@@ -172,6 +179,8 @@ public final class Device {
       redeemed = try await client.redeem(link)
     } catch {
       switch error {
+      case .unreachable(.untrustedCertificate):
+        signInState = .certificateNotTrusted(link.instance)
       case .unreachable:
         keptLink = link
         signInState = .unreachable(link.instance)
@@ -179,6 +188,10 @@ public final class Device {
         signInState = .plain
       case .refused(let refusal) where refusal.code == .loginLinkInvalid:
         signInState = .linkInvalid
+      case .refused(let refusal) where refusal.code == .rateLimited:
+        // The server refused the try before it looked at the link, so the link still works later.
+        keptLink = link
+        signInState = .tooManyTries
       case .refused(let refusal):
         signInState = .refused(refusal)
       case .unauthorized, .appTooOld, .undecodable:

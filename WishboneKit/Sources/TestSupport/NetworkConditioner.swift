@@ -27,11 +27,32 @@ public final class NetworkConditioner: Sendable {
 
   private let core: Core
 
-  /// Starts a conditioner in front of the server at `server`, on a free port.
-  public init(to server: URL) async throws {
+  /// How the conditioner takes a connection from the code under test.
+  public enum TLS: Sendable {
+    /// Plain HTTP.
+    case none
+
+    /// HTTPS, with a self-signed certificate that no device trusts, as an instance has whose certificate comes
+    /// from a private certificate authority that the device doesn't have. `URLSession` refuses the handshake, so
+    /// no request reaches the conditioner. Only on macOS: the conditioner makes the certificate with `openssl`.
+    case untrustedCertificate
+  }
+
+  /// Starts a conditioner in front of the server at `server`, on a free port. Its address is `https` with `tls`.
+  public init(to server: URL, tls: TLS = .none) async throws {
     core = Core(server: server)
-    let port = try await core.start()
-    guard let address = URL(string: "http://localhost:\(port)") else { throw URLError(.badURL) }
+    let parameters: NWParameters
+    switch tls {
+    case .none:
+      parameters = .tcp
+    case .untrustedCertificate:
+      let options = NWProtocolTLS.Options()
+      sec_protocol_options_set_local_identity(options.securityProtocolOptions, try UntrustedCertificate.identity())
+      parameters = NWParameters(tls: options, tcp: NWProtocolTCP.Options())
+    }
+    let port = try await core.start(with: parameters)
+    let scheme = tls == .none ? "http" : "https"
+    guard let address = URL(string: "\(scheme)://localhost:\(port)") else { throw URLError(.badURL) }
     self.address = address
     self.server = server
   }
@@ -302,8 +323,7 @@ extension NetworkConditioner {
     }
 
     /// Starts to listen on a free port of this machine, and returns the port.
-    func start() async throws -> Int {
-      let parameters = NWParameters.tcp
+    func start(with parameters: NWParameters) async throws -> Int {
       // Only this machine can connect.
       parameters.acceptLocalOnly = true
       let listener = try NWListener(using: parameters, on: .any)
