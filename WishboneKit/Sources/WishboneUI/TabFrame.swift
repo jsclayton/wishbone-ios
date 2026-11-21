@@ -81,38 +81,15 @@ public struct TabFrame: View {
   private var shortcuts: some View {
     VStack(alignment: .leading, spacing: 0) {
       if !session.yourLists.isEmpty {
-        Text("Your lists", bundle: #bundle)
-          .font(.subheadline)
-          .fontWeight(.semibold)
-          .foregroundStyle(.secondary)
-          .frame(minHeight: 44)
-          .accessibilityAddTraits(.isHeader)
+        SidebarHeading(words: String(localized: "Your lists", bundle: #bundle))
         ForEach(session.yourLists) { list in
-          shortcut(to: .list(id: list.id), named: Text(list.name), systemImage: "list.bullet")
+          SidebarShortcut(name: list.name, systemImage: "list.bullet") { place.open(.list(id: list.id)) }
         }
       }
-      shortcut(to: .people, named: Text("People", bundle: #bundle), systemImage: "person.2")
-    }
-  }
-
-  /// A shortcut's row. It reads the name of its list, or of its page.
-  private func shortcut(to page: Page, named name: Text, systemImage: String) -> some View {
-    Button {
-      place.open(page)
-    } label: {
-      Label {
-        name
-      } icon: {
-        Image(systemName: systemImage)
+      SidebarShortcut(name: String(localized: "People", bundle: #bundle), systemImage: "person.2") {
+        place.open(.people)
       }
-      .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-      .contentShape(.rect)
     }
-    .buttonStyle(.plain)
-    #if os(iOS)
-      // With a pointer, the row has the system's hover effect. The package also builds on macOS, for its tests.
-      .hoverEffect()
-    #endif
   }
 
   /// A tab's navigation stack: the tab's first screen, with the window's pages for the tab pushed on it.
