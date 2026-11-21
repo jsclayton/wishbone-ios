@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 
-import { eventStream } from './event-stream-fixture.mjs';
+import { eventStream, xctestLog } from './event-stream-fixture.mjs';
 import { duration, readFloor, runGate } from './gate.mjs';
 import { checkEventStream } from './reading.mjs';
 
@@ -27,16 +27,20 @@ function gateIn(t) {
 const passes = (name, more = {}) => ({ name, command: ['true'], limitMs: 10_000, ...more });
 
 /** A step that runs "tests": it writes the event stream that Swift Testing would, and the gate reads it. */
-function testStep(root, tests, { name = 'package', countName = 'package', allowedSkips, exit = 0, ended = true } = {}) {
+// With `xctest`, the step also writes the lines of an XCTest run (see `xctestLog`) to its output, as `swift test`
+// does, and the gate reads them from the step's log.
+function testStep(root, tests, { name = 'package', countName = 'package', allowedSkips, exit = 0, ended = true, xctest } = {}) {
   const fixture = path.join(root, `${name}-fixture.jsonl`);
   writeFileSync(fixture, eventStream(tests, { ended }));
+  const terminal = path.join(root, `${name}-fixture.log`);
+  writeFileSync(terminal, xctest === undefined ? '' : xctestLog(xctest));
   const events = path.join(root, 'run', `${name}-events.jsonl`);
   return {
     name,
-    command: ['sh', '-c', `cp "${fixture}" "${events}"; exit ${exit}`],
+    command: ['sh', '-c', `cp "${fixture}" "${events}"; cat "${terminal}"; exit ${exit}`],
     limitMs: 10_000,
     counts: [countName],
-    check: ({ exit }) => checkEventStream(events, { exit, countName, allowedSkips }),
+    check: ({ exit, logPath }) => checkEventStream(events, { exit, countName, allowedSkips, xctestLog: xctest === undefined ? undefined : logPath }),
   };
 }
 
@@ -139,6 +143,29 @@ test('a test that cancels itself fails like a skip, and gives no reason to raise
   const result = await runGate({ ...options, steps: [testStep(root, tests)], floor: { package: 2, hosted: 0, ui: 0 } });
   assert.equal(result.line, 'GATE FAIL step 1 (package): 1 skipped, and not on the named list: Tests.Suite/cancels()');
   assert.equal(lines().some((line) => line.startsWith('note:')), false);
+});
+
+test('an XCTest test is counted with the Swift Testing tests', async (t) => {
+  const { root, options } = gateIn(t);
+  const step = testStep(root, twoPassing, { xctest: { 'Tests.OldTests/testA': 'pass', 'Tests.OldTests/testB': 'pass' } });
+  const result = await runGate({ ...options, steps: [step], floor: { package: 4, hosted: 0, ui: 0 } });
+  assert.match(result.line, /^GATE PASS package=4 /);
+});
+
+test('an XCTest test that throws XCTSkip fails unless it is on the named list', async (t) => {
+  const { root, options } = gateIn(t);
+  const xctest = { 'Tests.OldTests/testA': 'pass', 'Tests.OldTests/testOff': 'skip' };
+  const unnamed = await runGate({ ...options, steps: [testStep(root, twoPassing, { xctest })] });
+  assert.equal(unnamed.line, 'GATE FAIL step 1 (package): 1 skipped, and not on the named list: Tests.OldTests/testOff()');
+  const named = await runGate({ ...options, steps: [testStep(root, twoPassing, { xctest, allowedSkips: ['Tests.OldTests/testOff()'] })] });
+  assert.match(named.line, /^GATE PASS package=4 /);
+});
+
+test('a failing XCTest test fails, by name', async (t) => {
+  const { root, options } = gateIn(t);
+  const step = testStep(root, twoPassing, { exit: 1, xctest: { 'Tests.OldTests/testA': 'pass', 'Tests.OldTests/testB': 'fail' } });
+  const result = await runGate({ ...options, steps: [step] });
+  assert.equal(result.line, 'GATE FAIL step 1 (package): 1 failed: Tests.OldTests/testB()');
 });
 
 test('a step past its limit fails the gate, and the next step does not run', async (t) => {

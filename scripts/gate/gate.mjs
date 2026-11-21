@@ -4,8 +4,8 @@
 // - `skip`: the reason why the step doesn't run yet. A skipped step is named in the result.
 // - `slot`: true when the step takes the machine-wide gate slot.
 // - `counts`: the test counts that the step gives, such as `['package']`. Each is held against the floor.
-// - `check({ exit })`: reads the step's own results after it ends. It returns `{ fail, counts }`: `fail` is the
-//   reason why the step fails, and `counts` are its test counts.
+// - `check({ exit, logPath })`: reads the step's own results after it ends, and its log. It returns
+//   `{ fail, counts }`: `fail` is the reason why the step fails, and `counts` are its test counts.
 
 import { appendFileSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
@@ -113,7 +113,7 @@ export async function runGate({
       if (result.interrupted) fail('interrupted');
       else if (result.timedOut) fail(`stopped at its limit of ${duration(step.limitMs)} (log: ${logName})`);
       else {
-        const checked = (await step.check?.({ exit: result.exit })) ?? {};
+        const checked = (await step.check?.({ exit: result.exit, logPath })) ?? {};
         Object.assign(counts, checked.counts);
         if (checked.fail !== undefined) fail(checked.fail);
         else if (result.exit !== 0) fail(`exit ${result.exit ?? 'on a signal'} (log: ${logName})`);
