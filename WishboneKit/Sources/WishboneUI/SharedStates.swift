@@ -75,12 +75,12 @@ private struct CantReachLine: View {
   var body: some View {
     Text(CantReach.words(for: address))
       .font(.footnote)
-      .foregroundStyle(.secondary)
       .fixedSize(horizontal: false, vertical: true)
       .frame(maxWidth: .infinity)
       .padding(.horizontal)
       .padding(.vertical, 8)
-      .background(.bar)
+      // A solid background, so the text has its full contrast over whatever scrolls under it.
+      .background(.background.secondary, ignoresSafeAreaEdges: [])
       .accessibilityElement(children: .combine)
   }
 }

@@ -13,7 +13,10 @@ struct GiftsStandInScreen: View {
       }
     }
     .sharedStates(of: session, hasRows: !session.giving.isEmpty) {
+      // The words are a sentence, so they are the view's description, which wraps, and not its title.
       ContentUnavailableView {
+        EmptyView()
+      } description: {
         Text("You aren't getting anything yet. Open someone on Home and tap I'll get this.", bundle: #bundle)
       }
     }
