@@ -372,10 +372,13 @@ test("at the step's start, a call that hangs once is read back and run again", a
 
 test('a call that passes its limit is stopped, and its error says it timed out', async () => {
   const started = Date.now();
-  await assert.rejects(simctlWithLimit(['30'], 200, { file: 'sleep', prefix: [] }), (error) => error.timedOut === true && /didn't return within 0s/.test(error.message));
-  assert.ok(Date.now() - started < 5000, 'the call was stopped at its limit');
-  await assert.rejects(simctlWithLimit(['-c', 'echo "No devices are booted." >&2; exit 1'], 5000, { file: 'sh', prefix: [] }), (error) => error.timedOut === false && error.message === 'No devices are booted.');
-  assert.equal(await simctlWithLimit(['-c', 'echo ok'], 5000, { file: 'sh', prefix: [] }), 'ok\n');
+  await assert.rejects(simctlWithLimit(['60'], 200, { file: 'sleep', prefix: [] }), (error) => error.timedOut === true && /didn't return within 0s/.test(error.message));
+  // The call sleeps for 60 s, so one that ran to its end took longer than that.
+  assert.ok(Date.now() - started < 60_000, 'the call was stopped at its limit');
+  // These calls are not about the limit, so it is far past their work: a busy machine can take seconds to start one.
+  const noLimitMs = 60 * 60_000;
+  await assert.rejects(simctlWithLimit(['-c', 'echo "No devices are booted." >&2; exit 1'], noLimitMs, { file: 'sh', prefix: [] }), (error) => error.timedOut === false && error.message === 'No devices are booted.');
+  assert.equal(await simctlWithLimit(['-c', 'echo ok'], noLimitMs, { file: 'sh', prefix: [] }), 'ok\n');
 });
 
 test('the settings helper answers 500, with the reason, when a hung call fails a setting', async (t) => {

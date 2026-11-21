@@ -93,8 +93,9 @@ test('a gate that is killed outright holds the slot until its step is stopped', 
   const other = spawn(process.execPath, ['--input-type=module', '-e', gate], { stdio: 'ignore' });
   t.after(() => other.kill('SIGKILL'));
   let pid = null;
-  for (let tries = 0; pid === null; tries += 1) {
-    assert.ok(tries < 250, "the gate's step didn't start");
+  // A busy machine can take many seconds to start the gate and its step.
+  for (const deadline = Date.now() + 120_000; pid === null; ) {
+    assert.ok(Date.now() < deadline, "the gate's step didn't start");
     await sleep(20);
     try {
       pid = Number(readFileSync(pidFile, 'utf8').trim()) || null;
@@ -121,9 +122,11 @@ test('by itself, a script waits in `inSlot` until the gate that holds the slot l
   await gate.release();
   await alone;
   assert.deepEqual(events, ['the gate lets go', 'the script runs']);
-  // The script let go of the slot when it ended, so the next taker gets it at once.
-  const next = await takeSlot(folder);
-  assert.ok(next.waitedMs < 400, `the next taker didn't wait (${next.waitedMs} ms)`);
+  // The script let go of the slot when it ended, so the next taker gets it without a wait. The time to start the
+  // next holder is not a wait: a taker waits only when `lockf` doesn't get the lock, and a held slot never comes
+  // free here, so a minute is far past the start and still ends the test.
+  const stillHeld = new AbortController();
+  const next = await takeSlot(folder, { waitNoticeMs: 60_000, signal: stillHeld.signal, onWait: () => stillHeld.abort() });
   await next.release();
 });
 

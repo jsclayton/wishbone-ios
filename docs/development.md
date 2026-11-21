@@ -277,6 +277,7 @@ While you work, run only the suites you touch. Run the full gate once at the end
 
 - Write the test first, and see it fail.
 - A test never decides a race by the clock on the wall. Timeouts, the 60-second sync timer, reminder dates, and background refresh run on the injected clock. Every suite has a `.timeLimit`.
+- The gate's own tests (`just test-gate`) hold this rule on a busy machine too. A step that is not about its limit gets one far past its work. A test of the limit passes the limit by hand, or gives the step work that lasts far past it. A test waits for what it needs, and gives up only after a long time.
 - Red is red. There is no retry, except for a flake named below with its signature.
 - Test behavior through public interfaces. Nothing private is opened for a test.
 
