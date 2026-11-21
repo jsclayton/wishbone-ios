@@ -30,6 +30,9 @@ public struct WindowRoot: View {
             PlacedFrame(session: session, saved: saved) { saved = $0 }
           }
         }
+        // Each time the window comes to the foreground, the session syncs. A session from an earlier launch shows
+        // what is saved at once, and this brings it up to date.
+        .reportsForeground(to: session)
         // Another session model is another session: its windows start again.
         .id(ObjectIdentifier(session))
       } else if let (block, address) = signInBlock {
@@ -39,8 +42,6 @@ public struct WindowRoot: View {
         SignedOutScreen()
       }
     }
-    // A session from an earlier launch shows what is saved at once. This sync brings it up to date.
-    .task { await device.session?.sync() }
     .onChange(of: device.session == nil) {
       // A place is of one session. A window that sees the device sign out keeps none, so the next session starts
       // at Home. A window that opens on a signed-out device forgets nothing: the device also has no session while

@@ -269,7 +269,7 @@ struct SignInTests {
     let other = try await NetworkConditioner(to: instance.server.address)
     instance.conditioner.answer(
       Route("GET", "/versions"), with: .init(status: 307, headers: ["Location": other.url("/versions").absoluteString]))
-    await session.sync()
+    await session.syncNow()
     #expect(other.requests.isEmpty)
     #expect(session.isInstanceUnreachable)
     #expect(device.session != nil)

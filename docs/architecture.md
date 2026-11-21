@@ -30,6 +30,8 @@ Where each rule lives in the code, and the rules that hold the code together. Wh
 |---|---|---|
 | The reminder plan | `WishboneSession` | Pure: occasions, settings, and a clock in, and requests out. The notification center is behind a protocol. |
 | Background refresh and scheduling | The app target | Only the app registers `.backgroundTask(.appRefresh)` and calls the scheduler. The extensions never schedule. |
+| When a sync starts | `WishboneSession` | The session model's Sync now runs one sync at a time, and every way that a sync starts calls it. The 60-second timer runs on its own injected clock. The network's changes are behind a protocol: the app gives the system's, and every other device gets one that never changes. |
+| Each window's foreground, and pull to refresh | `WishboneUI` | The window's root tells the session model when its scene comes to the foreground and leaves it. The tab frame attaches pull to refresh once, for every screen that scrolls. |
 | The device owner check, and the login link's Copy (this device only, 10 minutes) | `WishboneUI` | Reached only from the app's screens. |
 | The drag type | `WishboneUI` | The in-app reference carries the session's instance and user, so a drop from another session is refused. Other apps get a URL and a title. |
 | The window closing confirmation, and Open in New Window | The app target | They need the window scene. The restore of each window's place (`@SceneStorage`) is in `WishboneUI`'s root. |

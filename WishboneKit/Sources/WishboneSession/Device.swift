@@ -82,6 +82,14 @@ public final class Device {
     /// The clock of every timeout.
     public var clock: any Clock<Duration>
 
+    /// The clock of the timer that syncs every 60 seconds. It is apart from the clock of the timeouts, so a test
+    /// that moves one never moves the other.
+    public var timerClock: any Clock<Duration>
+
+    /// The device's network, whose changes start a sync. The default never changes: only the app gives the
+    /// system's.
+    public var network: any NetworkChanges
+
     /// The device's time zone, which the session reports to the user's record.
     public var timeZone: TimeZoneSource
 
@@ -94,6 +102,8 @@ public final class Device {
       marker: any InstallMarker,
       storage: SessionStorage,
       clock: any Clock<Duration> = ContinuousClock(),
+      timerClock: any Clock<Duration> = ContinuousClock(),
+      network: any NetworkChanges = .unchanging,
       timeZone: TimeZoneSource = .system,
       diagnostics: any DiagnosticsReporter = .none
     ) {
@@ -102,6 +112,8 @@ public final class Device {
       self.marker = marker
       self.storage = storage
       self.clock = clock
+      self.timerClock = timerClock
+      self.network = network
       self.timeZone = timeZone
       self.diagnostics = diagnostics
     }
@@ -303,7 +315,7 @@ public final class Device {
     await model.readOwnUser()
     session = model
     signInState = .signedIn(name: redeemed.name)
-    await model.sync()
+    await model.syncNow()
     await model.reportTimeZone()
   }
 
@@ -370,6 +382,7 @@ public final class Device {
       session: session, userAgent: setup.userAgent, clock: setup.clock, diagnostics: setup.diagnostics)
     return SessionModel(
       session: session, client: client, database: database, timeZone: setup.timeZone,
+      timerClock: setup.timerClock, network: setup.network,
       endedByServer: { [weak self] model in await self?.endedByServer(model) })
   }
 }

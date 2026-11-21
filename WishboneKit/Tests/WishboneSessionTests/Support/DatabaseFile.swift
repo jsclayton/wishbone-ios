@@ -38,6 +38,21 @@ struct DatabaseFile {
     }
   }
 
+  /// Holds the file's write lock while the work runs, as another process that writes to the file would. A write of
+  /// the app's own meanwhile waits for its busy timeout, and fails.
+  func lockingWrites<Result>(during work: () async throws -> Result) async throws -> Result {
+    var connection: OpaquePointer?
+    defer { sqlite3_close(connection) }
+    guard sqlite3_open_v2(url.path(percentEncoded: false), &connection, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK else {
+      throw Refused(description: "The database file will not open.")
+    }
+    guard sqlite3_exec(connection, "BEGIN IMMEDIATE", nil, nil, nil) == SQLITE_OK else {
+      throw Refused(description: String(cString: sqlite3_errmsg(connection)))
+    }
+    defer { sqlite3_exec(connection, "ROLLBACK", nil, nil, nil) }
+    return try await work()
+  }
+
   /// Runs SQL on the file, through SQLite itself.
   func execute(_ sql: String) throws {
     var connection: OpaquePointer?

@@ -308,7 +308,7 @@ struct GiftsTests {
       // The copy agrees with the answer, so the next sync asks for the versions with the kept ETag, and nothing
       // else that the answer covers.
       let mark = signed.mark
-      await signed.session.sync()
+      await signed.session.syncNow()
       let isAdmin = person.id == family.admin.id
       #expect(signed.asked(since: mark) == ["GET /versions"] + (isAdmin ? [Self.blockedStoresRequest] : []), "\(role)")
       #expect(signed.sentKeptETag(since: mark), "\(role)")
@@ -386,7 +386,7 @@ struct GiftsTests {
     // At reveal, the gift is given. The child and their parent hold it, with none of the giver's own fields.
     try await builder.reveal(giftsFor: family.child)
     for signed in [child, parent] {
-      await signed.session.sync()
+      await signed.session.syncNow()
       try await inStep(signed)
       let given = try #require(signed.session.gift(id: gift.id))
       #expect(given.state == .given)
@@ -403,7 +403,7 @@ struct GiftsTests {
 
     // Nobody holds an open gift that someone else gives.
     for signed in [relative, child, parent] {
-      await signed.session.sync()
+      await signed.session.syncNow()
       #expect(signed.session.gifts.filter { $0.state == .open }.allSatisfy { $0.giverID == signed.person.id })
     }
   }
@@ -556,7 +556,7 @@ struct GiftsTests {
         body: try JSON.object(body).data))
 
     let mark = relative.mark
-    await relative.session.sync()
+    await relative.session.syncNow()
     await until { relative.session.gift(id: gift.id)?.version == "\"canned-gift\"" }
     #expect(relative.asked(since: mark) == ["GET /versions", "GET /gifts/\(gift.id)"])
     let held = try #require(relative.session.gift(id: gift.id)?.flags.value)
@@ -623,7 +623,7 @@ struct GiftsTests {
     #expect(!relative.asked().contains("GET /users/\(alex.id)"))
 
     let mark = relative.mark
-    await session.sync()
+    await session.syncNow()
     #expect(relative.asked(since: mark) == ["GET /versions"])
     #expect(relative.sentKeptETag(since: mark))
   }
@@ -647,7 +647,7 @@ struct GiftsTests {
     #expect(child.session.received.isEmpty)
 
     try await builder.reveal(giftsFor: family.child)
-    await relative.session.sync()
+    await relative.session.syncNow()
     try await inStep(relative)
     let given = try #require(relative.session.gift(id: gift.id))
     #expect(given.state == .given)
@@ -657,7 +657,7 @@ struct GiftsTests {
     #expect(relative.session.giving.isEmpty)
     #expect(relative.session.given.map(\.id).contains(gift.id))
 
-    await child.session.sync()
+    await child.session.syncNow()
     try await inStep(child)
     #expect(child.session.received.map(\.id) == [gift.id])
     #expect(child.session.gift(id: gift.id)?.fromLabel == "The cousins")
@@ -676,7 +676,7 @@ struct GiftsTests {
     #expect(relative.session.giving.map(\.id) == [gift.id])
 
     try await family.relative.signedIn().send("DELETE", "/gifts/\(gift.id)").expecting(204)
-    await relative.session.sync()
+    await relative.session.syncNow()
     try await inStep(relative)
     #expect(relative.session.gift(id: gift.id) == nil)
     #expect(relative.session.giving.isEmpty)
@@ -705,7 +705,7 @@ struct GiftsTests {
     let more = try await builder.blockedStore("more")
     try await family.admin.signedIn().send("DELETE", "/blocked-stores/\(family.blockedStore.id)").expecting(204)
     var mark = admin.mark
-    await admin.session.sync()
+    await admin.session.syncNow()
     #expect(admin.asked(since: mark) == ["GET /versions", Self.blockedStoresRequest])
     #expect(admin.sentKeptETag(since: mark))
     #expect(admin.session.blockedStores.map(\.id) == [more.id])
@@ -713,14 +713,14 @@ struct GiftsTests {
 
     // Saving them kept the ETag, so the next sync is a 304 again.
     mark = admin.mark
-    await admin.session.sync()
+    await admin.session.syncNow()
     #expect(admin.asked(since: mark) == ["GET /versions", Self.blockedStoresRequest])
     #expect(admin.sentKeptETag(since: mark))
 
     // Nobody else asks for them, or holds any.
     for person in [family.parent, family.relative, family.outsider] {
       let signed = try await signedIn(as: person)
-      await signed.session.sync()
+      await signed.session.syncNow()
       #expect(!signed.asked().contains { $0.contains("/blocked-stores") }, "\(person.name)")
       #expect(signed.session.blockedStores.isEmpty, "\(person.name)")
     }
@@ -758,7 +758,7 @@ struct GiftsTests {
       #expect(session.blockedStores == saved.stores, "\(held)")
       #expect(entries(of: session) == saved.entries, "\(held)")
 
-      await session.sync()
+      await session.syncNow()
       #expect(session.isInstanceUnreachable, "\(held)")
       #expect(session.gifts == saved.gifts, "\(held)")
       #expect(session.blockedStores == saved.stores, "\(held)")

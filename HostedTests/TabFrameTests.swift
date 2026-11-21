@@ -61,10 +61,40 @@ struct TabFrameTests {
     #expect(window.focusedSearchField?.placeholder == "Paste a link or type what you want")
     #expect(window.place.tab == .add)
   }
+
+  @Test("Pull to refresh on each tab's screen is Sync now, and ends when the sync ends")
+  func pullToRefresh() async throws {
+    let instance = try await StandInInstance.start()
+    let device = try signedInDevice(on: instance)
+    let session = try #require(device.session)
+    let window = try FrameWindow(session: session)
+
+    let titles: [WindowTab: String] = [.home: "Home", .lists: "Lists", .gifts: "Gifts", .add: "Add"]
+    for tab in WindowTab.allCases {
+      window.place.select(tab)
+      await until { window.tabs?.selectedTab?.title == titles[tab] && window.refresh != nil }
+      let before = instance.pullCount
+      window.pullToRefresh()
+      await until { instance.pullCount == before + 1 }
+      await until { window.refresh?.isRefreshing == false }
+      #expect(!session.isInstanceUnreachable)
+    }
+  }
+}
+
+/// A device signed in to the stand-in instance, with its copy in memory. Its timer runs on the clock.
+@MainActor
+func signedInDevice(on instance: StandInInstance, timerClock: ManualClock = ManualClock()) throws -> Device {
+  let address = try #require(InstanceAddress(instance.address))
+  let kept = Session(instance: address, token: "a-token-for-the-test", userID: "7")
+  return Device(
+    Device.Setup(
+      userAgent: UserAgent(version: "1.0", isPad: false), keychain: KeptSession(session: kept),
+      marker: WrittenMarker(), storage: .memory, timerClock: timerClock))
 }
 
 /// A session keychain that holds one session, so a device starts signed in.
-private struct KeptSession: SessionKeychain {
+struct KeptSession: SessionKeychain {
   let session: Session
 
   func read() throws(SessionKeychainError) -> Session? { session }
@@ -73,7 +103,7 @@ private struct KeptSession: SessionKeychain {
 }
 
 /// An install marker that this install has placed, so the kept session is not left over.
-private struct WrittenMarker: InstallMarker {
+struct WrittenMarker: InstallMarker {
   var isPresent: Bool { true }
   func place() {}
 }
@@ -129,6 +159,22 @@ private final class FrameWindow {
     tabs?.selectedViewController.flatMap { Self.first(UINavigationController.self, under: $0) }
   }
 
+  /// The system's pull to refresh on the selected tab's screen. Nil when the screen has none.
+  var refresh: UIRefreshControl? {
+    tabs?.selectedViewController.flatMap { Self.refreshControl(under: $0.view) }
+  }
+
+  /// Pulls to refresh, as a person's pull down on the screen does.
+  func pullToRefresh() {
+    refresh?.beginRefreshing()
+    refresh?.sendActions(for: .valueChanged)
+  }
+
+  private static func refreshControl(under view: UIView) -> UIRefreshControl? {
+    if let control = (view as? UIScrollView)?.refreshControl { return control }
+    return view.subviews.lazy.compactMap { refreshControl(under: $0) }.first
+  }
+
   /// How many pages show on top of the selected tab's first screen.
   var pagesThatShow: Int? {
     stack.map { $0.viewControllers.count - 1 }
@@ -160,7 +206,7 @@ private final class FrameWindow {
 /// Returns when the window meets the condition. It looks again at each turn, and never decides by a length of
 /// time: the suite's time limit ends a wait for something that never comes.
 @MainActor
-private func until(_ condition: @MainActor () -> Bool) async {
+func until(_ condition: @MainActor () -> Bool) async {
   while !condition() {
     try? await Task.sleep(for: .milliseconds(20))
   }

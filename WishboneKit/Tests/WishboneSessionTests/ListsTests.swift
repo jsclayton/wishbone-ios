@@ -342,7 +342,7 @@ struct ListsTests {
     // their own gift on it.
     _ = try await builder.claim(kite, as: family.relative, for: family.groupOccasion)
     #expect(try await family.parent.signedIn().status(of: "/items/\(kite.id)") == 404)
-    await parent.session.sync()
+    await parent.session.syncNow()
     try await inStep(parent)
     #expect(parent.session.item(id: kite.id) == nil)
     #expect(parent.session.list(id: childsList.id)?.itemCount == 0)
@@ -355,7 +355,7 @@ struct ListsTests {
     #expect(!claimed.canClaim)
 
     // The recipient's copy still has no claim state, and the item stays.
-    await child.session.sync()
+    await child.session.syncNow()
     try await inStep(child)
     #expect(child.session.item(id: kite.id)?.stillWanted == .hidden)
     #expect(child.session.item(id: kite.id)?.myClaimedQuantity == .hidden)
@@ -474,7 +474,7 @@ struct ListsTests {
       "PATCH", "/items/\(bike.id)/store-links/\(dear.id)", json: ["price_minor": 5000, "currency": "USD"]
     ).expecting(200)
     let mark = relative.mark
-    await relative.session.sync()
+    await relative.session.syncNow()
     try await inStep(relative)
     #expect(relative.asked(since: mark) == ["GET /versions", "GET /items/\(bike.id)"])
     #expect(
@@ -485,7 +485,7 @@ struct ListsTests {
 
     // The copy agrees with the answer, so the next sync is one request, answered 304.
     let next = relative.mark
-    await relative.session.sync()
+    await relative.session.syncNow()
     #expect(relative.asked(since: next) == ["GET /versions"])
     #expect(relative.instance.conditioner.requests.last?.headers["if-none-match"] != nil)
   }
@@ -510,21 +510,21 @@ struct ListsTests {
     // The item changes, so the pull fetches it. The link's price changes while that fetch is on its way.
     try await own.send("PATCH", "/items/\(bike.id)", json: ["title": "Red bike"]).expecting(200)
     let hold = relative.instance.conditioner.hold(Route("GET", "/items/{id}"), at: .request)
-    async let syncing: Void = session.sync()
+    async let syncing = session.syncNow()
     await hold.waitUntilHeld()
     try await own.send("PATCH", "/items/\(bike.id)/store-links/\(link.id)", json: ["price_minor": 9000]).expecting(200)
     hold.release()
-    await syncing
+    _ = await syncing
     await until { session.storeLinks(ofItem: bike.id).first?.priceMinor == 9000 }
 
     // The item arrived as new as the answer that comes next. Its store link is not, so the item is read again.
     var mark = relative.mark
-    await session.sync()
+    await session.syncNow()
     try await inStep(relative)
     #expect(relative.asked(since: mark) == ["GET /versions", "GET /items/\(bike.id)"])
 
     mark = relative.mark
-    await session.sync()
+    await session.syncNow()
     #expect(relative.asked(since: mark) == ["GET /versions"])
     #expect(relative.instance.conditioner.requests.last?.headers["if-none-match"] != nil)
   }
@@ -641,7 +641,7 @@ struct ListsTests {
 
     // The scarf moves from the primary list to the extra one, as its last item.
     try await own.send("PATCH", "/items/\(scarf.id)", json: ["list_id": .string(family.parentList.id)]).expecting(200)
-    await session.sync()
+    await session.syncNow()
     try await inStep(parent)
     #expect(session.items(onList: parentsList.id).isEmpty)
     #expect(Set(session.items(onList: family.parentList.id).map(\.id)) == [chair.id, scarf.id])
@@ -650,7 +650,7 @@ struct ListsTests {
     // The extra list goes, with both items, its recipient row and the invitation to it.
     try await own.send("DELETE", "/lists/\(family.parentList.id)").expecting(204)
     let mark = parent.mark
-    await session.sync()
+    await session.syncNow()
     try await inStep(parent)
     #expect(parent.asked(since: mark) == ["GET /versions"])
     #expect(session.list(id: family.parentList.id) == nil)
@@ -684,12 +684,12 @@ struct ListsTests {
     _ = try await builder.item("Kite", on: robinsList, as: family.child)
 
     let hold = parent.instance.conditioner.hold(Route("GET", "/lists/{id}/items"), at: .request)
-    async let syncing: Void = session.sync()
+    async let syncing = session.syncNow()
     await hold.waitUntilHeld()
     #expect(parent.instance.conditioner.requests.last?.target.contains("/lists/\(family.parentList.id)/items") == true)
     try await own.send("DELETE", "/lists/\(family.parentList.id)").expecting(204)
     hold.release()
-    await syncing
+    _ = await syncing
 
     // The list's collection answered 404. The list went, and the pull went on to the child's list.
     await until { session.items(onList: robinsList.id).map(\.title) == ["Kite"] }
@@ -701,7 +701,7 @@ struct ListsTests {
     // removes the invitation to the list, which the answer before it still named.
     #expect(session.invitations.map(\.id) == [family.pendingInvitation.id])
     let mark = parent.mark
-    await session.sync()
+    await session.syncNow()
     #expect(parent.asked(since: mark) == ["GET /versions"])
     #expect(parent.instance.conditioner.requests.last?.headers["if-none-match"] == nil)
     try await inStep(parent)
@@ -733,13 +733,13 @@ struct ListsTests {
     _ = try await builder.item("Kite", on: robinsList, as: family.child)
 
     let hold = parent.instance.conditioner.hold(Route("GET", "/lists/{id}/recipients"), at: .request)
-    async let syncing: Void = session.sync()
+    async let syncing = session.syncNow()
     await hold.waitUntilHeld()
     #expect(
       parent.instance.conditioner.requests.last?.target.contains("/lists/\(family.parentList.id)/recipients") == true)
     try await family.parent.signedIn().send("DELETE", "/lists/\(family.parentList.id)").expecting(204)
     hold.release()
-    await syncing
+    _ = await syncing
 
     // The list's recipients answered 404. The list went with its item, and the pull went on to the child's list.
     await until { session.items(onList: robinsList.id).map(\.title) == ["Kite"] }
@@ -750,7 +750,7 @@ struct ListsTests {
 
     // The pull didn't agree with its answer, so it kept no ETag. The next one compares, and the copy is in step.
     let mark = parent.mark
-    await session.sync()
+    await session.syncNow()
     #expect(parent.instance.conditioner.requests.dropFirst(mark).first?.headers["if-none-match"] == nil)
     try await inStep(parent)
   }
@@ -773,7 +773,7 @@ struct ListsTests {
     #expect(!session.yourLists.contains { $0.id == family.parentList.id })
 
     try await builder.accept(invitation)
-    await session.sync()
+    await session.syncNow()
     try await inStep(child)
     #expect(!session.invitations.contains { $0.id == invitation.id })
     #expect(session.list(id: family.parentList.id)?.recipientIDs == [family.parent.id, family.child.id])
@@ -809,7 +809,7 @@ struct ListsTests {
 
     // The copy agrees with the answer, so the next sync is one request, answered 304.
     let mark = relative.mark
-    await session.sync()
+    await session.syncNow()
     #expect(relative.asked(since: mark) == ["GET /versions"])
     #expect(relative.instance.conditioner.requests.last?.headers["if-none-match"] != nil)
   }
@@ -849,7 +849,7 @@ struct ListsTests {
         body: try JSON.object(["data": .array(entries)]).data))
 
     let mark = relative.mark
-    await session.sync()
+    await session.syncNow()
     await until { session.list(id: shared) == nil }
     #expect(session.user(id: family.deactivatedChild.id) == nil)
     #expect(relative.asked(since: mark) == ["GET /versions"])
@@ -890,7 +890,7 @@ struct ListsTests {
     #expect(session.invitations == saved.invitations)
     #expect(session.yourLists.map(\.id) == [parentsList.id, family.parentList.id])
 
-    await session.sync()
+    await session.syncNow()
     #expect(session.isInstanceUnreachable)
     #expect(entries(of: session) == saved.entries)
   }

@@ -1,3 +1,4 @@
+import Foundation
 import GRDB
 import Observation
 import WishboneAPI
@@ -71,7 +72,7 @@ public final class SessionModel {
   public private(set) var memberships: [MembershipRow] = []
 
   /// Whether the last sync found that the instance can't be reached. The session stays, and screens show what is
-  /// saved under the line "Can't reach {address}".
+  /// saved under the line "Can't reach {address}". A sync that stops on a fault of the copy leaves it as it was.
   public private(set) var isInstanceUnreachable = false
 
   /// The version block that every window shows in place of the profile gate and the tabs. Nil while nothing blocks.
@@ -98,20 +99,43 @@ public final class SessionModel {
 
   /// Stops when the session model goes.
   private var observation: AnyDatabaseCancellable?
-  private var syncing: Task<Void, Never>?
   private var checkingVersion: Task<Void, Never>?
+
+  /// The sync that runs. One sync runs at a time.
+  private var running: Task<SyncOutcome, Never>?
+
+  /// The sync that was asked for while one runs. It runs once, after it, however many ask for it.
+  private var waiting: Task<SyncOutcome, Never>?
+
+  /// The windows of the app that are in the foreground, each by the ID that the window gave.
+  private var windowsInForeground: Set<UUID> = []
+
+  /// The timer that syncs every 60 seconds, while it runs. See `updateTimer()`.
+  private var timer: Task<Void, Never>?
+
+  /// The clock of the timer.
+  private let timerClock: any Clock<Duration>
+
+  /// How long the timer waits between two syncs.
+  static let timerInterval = Duration.seconds(60)
+
+  /// Starts a sync at each change of the device's network, until the session model ends.
+  private var watchingNetwork: Task<Void, Never>?
 
   init(
     session: Session,
     client: APIClient,
     database: LocalDatabase,
     timeZone: TimeZoneSource,
+    timerClock: any Clock<Duration>,
+    network: any NetworkChanges,
     endedByServer: @escaping @MainActor (SessionModel) async -> Void
   ) {
     self.session = session
     self.client = client
     self.database = database
     self.timeZone = timeZone
+    self.timerClock = timerClock
     self.endedByServer = endedByServer
     // The first snapshot comes at once, so a screen shows what is saved before anything is asked of the instance.
     observation = LocalDatabase.snapshots(ofUser: session.userID).start(
@@ -132,6 +156,13 @@ public final class SessionModel {
         self?.memberships = snapshot.memberships
       }
     )
+    // The stream starts now, so a change that comes before the task reads it is not lost.
+    let changes = network.changes()
+    watchingNetwork = Task { [weak self] in
+      for await _ in changes {
+        await self?.syncNow()
+      }
+    }
   }
 
   /// Publishes the lists of a snapshot, with their items, store links and recipients, and the invitations.
@@ -232,38 +263,90 @@ public final class SessionModel {
     memberships.first { $0.kind == kind && $0.ownerID == ownerID }?.memberIDs
   }
 
-  /// Brings the instance and the copy in step: a sync sends the unsent changes, then pulls. See "When the app
-  /// syncs" in `docs/spec.md`.
+  // MARK: - Sync now
+
+  /// Sync now: brings the instance and the copy in step. A sync sends the unsent changes, then pulls. Pull to
+  /// refresh calls it, and so does each other way that a sync starts. See "When the app syncs" in `docs/spec.md`.
   ///
-  /// A call during a sync waits for that sync, and starts no second one. While a version block shows, a sync does
-  /// nothing: the app and the instance can't work together.
+  /// One sync runs at a time. A call during a sync asks for one more sync, which runs once, after it, however many
+  /// calls ask for it. Each of those calls returns when that sync ends. While a version block shows, and after the
+  /// session ended, no sync starts, and a call returns `.stopped`.
   ///
-  /// When the instance answers with the API's own 401, the session is over: the sync returns when the device has
-  /// forgotten it.
-  public func sync() async {
-    guard !hasEnded, versionBlock == nil else { return }
-    if let syncing { return await syncing.value }
-    let task = Task {
-      // Nothing is sent yet: the unsent changes come with their journal.
-      guard await pull() == .endedByServer else { return }
-      // This sync is over, so the end of the session waits for no sync.
-      syncing = nil
+  /// It returns when its sync ends, with the sync's outcome. When the instance answers with the API's own 401, the
+  /// session is over: the call returns when the device has forgotten it.
+  @discardableResult
+  public func syncNow() async -> SyncOutcome {
+    if let waiting { return await waiting.value }
+    guard let running else { return await startSync() }
+    let next = Task {
+      _ = await running.value
+      waiting = nil
+      return await startSync()
+    }
+    waiting = next
+    return await next.value
+  }
+
+  /// Starts a sync, as the one that runs, and returns its outcome when it ends.
+  private func startSync() async -> SyncOutcome {
+    guard !hasEnded, versionBlock == nil else { return .stopped }
+    let task = Task { await runSync() }
+    running = task
+    let outcome = await task.value
+    if running == task { running = nil }
+    return outcome
+  }
+
+  /// One sync. Nothing is sent yet: the unsent changes come with their journal.
+  private func runSync() async -> SyncOutcome {
+    let end = await pull()
+    if end == .endedByServer {
+      // The session is over. No sync starts after this one, and the end of the session waits for no sync: this one
+      // is over.
+      hasEnded = true
+      running = nil
+      updateTimer()
       await endedByServer(self)
     }
-    syncing = task
-    await task.value
-    if syncing == task { syncing = nil }
+    return syncEnded(end)
+  }
+
+  /// Where every sync ends, and gets its outcome. It publishes whether the instance could be reached, and starts or
+  /// stops the timer. Work that follows a sync that succeeded goes here. An ended session model does nothing here.
+  private func syncEnded(_ end: PullEnd) -> SyncOutcome {
+    let outcome: SyncOutcome =
+      switch end {
+      case .succeeded: .succeeded
+      case .unreachable: .unreachable
+      case .refused, .faulted, .endedByServer: .stopped
+      }
+    guard !hasEnded else { return outcome }
+    switch end {
+    case .succeeded, .refused: isInstanceUnreachable = false
+    case .unreachable: isInstanceUnreachable = true
+    // A fault of the copy says nothing of the instance. So the line about it stays as it was.
+    case .faulted, .endedByServer: break
+    }
+    updateTimer()
+    return outcome
   }
 
   /// How a pull ended.
   private enum PullEnd {
-    /// The pull ran, or stopped, and the session goes on.
-    case done
+    /// The pull ran to its end.
+    case succeeded
+    /// The instance could not be reached. The session goes on.
+    case unreachable
+    /// The instance answered, and the pull stopped on its answer: a refusal, a version block, or an answer that
+    /// can't be decoded. The session goes on.
+    case refused
+    /// The pull stopped on the copy, which can't be read or written, or on a cancel. The session goes on.
+    case faulted
     /// The instance answered with the API's own 401: the session is over.
     case endedByServer
   }
 
-  /// Runs one pull, and publishes whether the instance could be reached.
+  /// Runs one pull.
   ///
   /// Diagnostics, for each way that a pull stops:
   /// - An unreachable instance, a cancelled request, a 404, and the API's own 401: never.
@@ -274,43 +357,73 @@ public final class SessionModel {
   private func pull() async -> PullEnd {
     do {
       let user = try await Pull(client: client, database: database, userID: session.userID).run()
-      isInstanceUnreachable = false
       // The instance has just said that the copy's user is the user's record, also when it said so with a 304
       // and the pull fetched nothing.
       if let record = user?.record { recordedTimeZone = .some(record.timezone.value) }
+      return .succeeded
     } catch APIError.unreachable {
       // Unreachable never ends the session, and a 401 that is not the API's own is unreachable. The copy keeps
       // what the pull wrote before it stopped.
-      isInstanceUnreachable = true
+      return .unreachable
     } catch APIError.unauthorized {
       // The API's own 401: the session was revoked, went a year unused, or its user was deactivated. The server
       // doesn't say which. The device forgets everything.
       return .endedByServer
     } catch APIError.appTooOld {
       // The API's own 410: this version of the app is too old for the instance. The session stays.
-      isInstanceUnreachable = false
       blockAppTooOld()
+      return .refused
     } catch APIError.refused(let refusal) where refusal.status == 404 {
       // A 404 for the versions is an instance below the minimum server version. The version check says so, and
       // finds nothing when the 404 was for something else. The copy keeps what the pull wrote before it stopped.
-      isInstanceUnreachable = false
       await checkVersion()
+      return .refused
+    } catch APIError.cancelled {
+      // A sign-out cancels the pull's request. The instance said nothing.
+      return .faulted
     } catch let error as APIError {
       // The instance answered. Another refusal, a 401 with another code included, keeps the session. The copy
       // keeps what the pull wrote before it stopped.
-      isInstanceUnreachable = false
       if case .undecodable(let answer) = error {
         Log.fault(
           .session, "An answer of the pull can't be decoded.",
           detail: "\(answer.route.method) \(answer.route.template) \(answer.keyPath)")
       }
+      return .refused
     } catch is CancellationError {
       // A sign-out cancels the pull, and the database can throw this from a write that sees it. It is no fault of
       // the copy, so it is not logged as one.
+      return .faulted
     } catch {
       Log.fault(.session, "The copy can't be read or written.", detail: "\(error)")
+      return .faulted
     }
-    return .done
+  }
+
+  // MARK: - The timer
+
+  /// Starts or stops the timer that syncs every 60 seconds, on the timer's clock. It runs while a window is in the
+  /// foreground, the instance answers, no version block shows, and the session goes on. So it stops while the
+  /// instance can't be reached, and starts again after a sync that reaches it.
+  private func updateTimer() {
+    let shouldRun = !hasEnded && !windowsInForeground.isEmpty && !isInstanceUnreachable && versionBlock == nil
+    if !shouldRun {
+      timer?.cancel()
+      timer = nil
+    } else if timer == nil {
+      let clock = timerClock
+      timer = Task { [weak self] in
+        while true {
+          do {
+            try await clock.sleep(for: Self.timerInterval)
+          } catch {
+            return
+          }
+          guard let self, !Task.isCancelled else { return }
+          await self.syncNow()
+        }
+      }
+    }
   }
 
   // MARK: - The end of the session
@@ -339,8 +452,15 @@ public final class SessionModel {
   /// and any other answer finds the session model ended.
   func end() async {
     hasEnded = true
-    syncing?.cancel()
-    await syncing?.value
+    // A sync that waits to start finds the session ended, and starts nothing.
+    let running = running
+    running?.cancel()
+    timer?.cancel()
+    timer = nil
+    watchingNetwork?.cancel()
+    watchingNetwork = nil
+    windowsInForeground = []
+    _ = await running?.value
     observation?.cancel()
     observation = nil
     user = nil
@@ -365,27 +485,39 @@ public final class SessionModel {
     database.close()
   }
 
-  // MARK: - The app comes to the foreground
+  // MARK: - Windows in the foreground
 
-  /// What the app does each time it comes to the foreground: it runs the version check, syncs, and then reports the
-  /// time zone. While a version block shows, it does only the check. Only the app calls this, never an extension.
-  public func cameToForeground() async {
+  /// What the app does each time one of its windows comes to the foreground: it runs the version check, syncs, and
+  /// then reports the time zone. While a version block shows, it does only the check. While any window is in the
+  /// foreground, the timer syncs every 60 seconds. Only the app calls this, never an extension.
+  ///
+  /// `window` is the window's own ID, the same at each call, so that `leftForeground(window:)` can say that it
+  /// left.
+  public func cameToForeground(window: UUID) async {
     guard !hasEnded else { return }
+    windowsInForeground.insert(window)
+    updateTimer()
     await checkVersion()
     guard versionBlock == nil else { return }
-    await sync()
+    await syncNow()
     await reportTimeZone()
+  }
+
+  /// Says that the window left the foreground, or closed. When no window is in the foreground, the timer stops.
+  public func leftForeground(window: UUID) {
+    windowsInForeground.remove(window)
+    updateTimer()
   }
 
   // MARK: - Version checks
 
   /// Try again on the block for an instance that is too old: it runs the version check at once. When the check
-  /// passes, the block goes, and the session syncs.
+  /// passes, the block goes, and the session syncs once.
   public func tryVersionCheckAgain() async {
     guard !hasEnded else { return }
     await checkVersion()
     guard versionBlock == nil else { return }
-    await sync()
+    await syncNow()
   }
 
   /// Reads `GET /health`, and shows or lifts the block for an instance that is too old. See "Version checks" in
@@ -415,6 +547,7 @@ public final class SessionModel {
       case .noWishbone:
         break
       }
+      updateTimer()
     }
     checkingVersion = task
     await task.value
@@ -428,6 +561,7 @@ public final class SessionModel {
   func blockAppTooOld() {
     guard !hasEnded else { return }
     versionBlock = .appTooOld
+    updateTimer()
   }
 
   // MARK: - The first sign-in

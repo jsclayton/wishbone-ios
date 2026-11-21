@@ -40,10 +40,15 @@ struct Instance {
 
   /// A device as the app's composition root builds it, with the test's keychain. Its time zone is the one given,
   /// so a test never depends on the zone of the Mac that runs it.
+  ///
+  /// Its timer runs on a clock that only a test moves, so a test that doesn't give one never sees the timer sync.
+  /// Its network changes only when a test changes it.
   func device(
     storage: SessionStorage = .memory,
     marker: (any InstallMarker)? = nil,
     clock: any Clock<Duration> = ContinuousClock(),
+    timerClock: any Clock<Duration> = TestClock(),
+    network: any NetworkChanges = .unchanging,
     timeZone: TimeZoneSource = .fixed("UTC"),
     diagnostics: any DiagnosticsReporter = .none
   ) -> Device {
@@ -52,6 +57,8 @@ struct Instance {
         userAgent: UserAgent(version: "1.0", isPad: false), keychain: keychain, marker: marker ?? self.marker,
         storage: storage,
         clock: clock,
+        timerClock: timerClock,
+        network: network,
         timeZone: timeZone,
         diagnostics: diagnostics))
   }

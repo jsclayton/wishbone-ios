@@ -14,9 +14,6 @@ struct WishboneApp: App {
   /// `docs/spec.md`.
   @State private var diagnostics: DiagnosticsSettings
 
-  /// The phase of the whole app: active while any window is in the foreground.
-  @Environment(\.scenePhase) private var scenePhase
-
   init() {
     let diagnostics = Diagnostics.app()
     diagnostics.start()
@@ -35,12 +32,6 @@ struct WishboneApp: App {
         #if DEBUG
           .task { await Journey.pasteLoginLink(into: device) }
         #endif
-    }
-    .onChange(of: scenePhase) { _, phase in
-      // Each time the app comes to the foreground, the session syncs and reports the time zone. Nothing waits for
-      // it. See "Time zone" in `docs/spec.md`.
-      guard phase == .active, let session = device.session else { return }
-      Task { await session.cameToForeground() }
     }
   }
 }
@@ -102,6 +93,7 @@ extension Device.Setup {
       keychain: SystemSessionKeychain(accessGroup: accessGroup),
       marker: installMarker(appGroup: appGroup),
       storage: .folder(.applicationSupportDirectory),
+      network: .system,
       diagnostics: diagnostics
     )
   }
