@@ -137,7 +137,8 @@ export function readAttachmentNames(bundle) {
  * `audited` is the names of the screens that the settings helper answered 201 for: the screens that the run
  * audited. The bundle's screens must be exactly those. So a name that the check can't read, a label in
  * `Audit.swift` that differs from the gate's, or a screen with none of its screenshots fails, and doesn't pass as
- * a run that audited fewer screens.
+ * a run that audited fewer screens. Every journey reaches at least one screen, so a run in which the helper audited
+ * no screen fails too: the journeys didn't reach the helper, and audited only in the simulator's own settings.
  *
  * Returns `{ screens, problem }`: the number of screens in the bundle, and what is wrong, or null.
  */
@@ -151,6 +152,7 @@ export function checkAuditScreenshots(names, labels, audited) {
     if (!screens.has(screen)) screens.set(screen, new Map(labels.map((one) => [one, 0])));
     screens.get(screen).set(label, screens.get(screen).get(label) + 1);
   }
+  if (audited.length === 0) return { screens: screens.size, problem: "the settings helper audited no screen, so the journeys didn't reach it" };
   for (const [screen, counts] of screens) {
     if ([...counts.values()].some((count) => count > 1)) {
       const times = [...counts].filter(([, count]) => count > 1).map(([label, count]) => `${count} times in ${label}`);
@@ -160,7 +162,9 @@ export function checkAuditScreenshots(names, labels, audited) {
     if (missing.length > 0) return { screens: screens.size, problem: `${screen} was not audited in ${missing.join(', ')}` };
   }
   const absent = audited.filter((screen) => !screens.has(screen));
-  if (absent.length > 0) return { screens: screens.size, problem: `the result bundle has no screenshot of ${absent.join(', ')}, which the settings helper audited` };
+  if (absent.length > 0) {
+    return { screens: screens.size, problem: `the result bundle has no screenshot of ${absent.join(', ')}, which the settings helper audited` };
+  }
   const extra = [...screens.keys()].filter((screen) => !audited.includes(screen));
   if (extra.length > 0) {
     return { screens: screens.size, problem: `the result bundle has screenshots of ${extra.join(', ')}, which the settings helper did not audit` };
