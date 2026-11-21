@@ -24,9 +24,8 @@ public enum Fault: Sendable, Equatable {
   /// An answer that the client can't decode: the route, and the key path that failed. Never a value.
   case undecodableAnswer(Route, keyPath: String)
 
-  /// A 400 or 422 refusal of a write that the app sent: the route, the status, and the server's code. Never the
-  /// body.
-  case refusedWrite(Route, status: Int, code: String)
+  /// A 400 or 422 refusal of a write that the app sent: the route, and the server's code. Never the body.
+  case refusedWrite(Route, code: String)
 
   /// An error code that is not in ``ErrorCode``'s list: the code only.
   case unknownErrorCode(String)
@@ -43,8 +42,8 @@ public enum Fault: Sendable, Equatable {
   }
 
   /// A refusal of a write. The code is held to the shape of a code.
-  public static func refused(_ route: Route, status: Int, code: ErrorCode) -> Fault {
-    .refusedWrite(route, status: status, code: Self.code(code))
+  public static func refused(_ route: Route, code: ErrorCode) -> Fault {
+    .refusedWrite(route, code: Self.code(code))
   }
 
   /// An unknown code. The code is held to the shape of a code.
@@ -85,8 +84,8 @@ public enum Fault: Sendable, Equatable {
       ["from": .number(from), "to": .number(to)]
     case .undecodableAnswer(let route, let keyPath):
       ["method": .word(route.method), "path": .word(route.template), "key_path": .word(keyPath)]
-    case .refusedWrite(let route, let status, let code):
-      ["method": .word(route.method), "path": .word(route.template), "status": .number(status), "code": .word(code)]
+    case .refusedWrite(let route, let code):
+      ["method": .word(route.method), "path": .word(route.template), "code": .word(code)]
     case .unknownErrorCode(let code):
       ["code": .word(code)]
     }
@@ -112,7 +111,7 @@ public enum Fault: Sendable, Equatable {
       case .databaseWillNotOpen: ["domain", "code"]
       case .copyDropped: ["from", "to"]
       case .undecodableAnswer: ["method", "path", "key_path"]
-      case .refusedWrite: ["method", "path", "status", "code"]
+      case .refusedWrite: ["method", "path", "code"]
       case .unknownErrorCode: ["code"]
       }
     }

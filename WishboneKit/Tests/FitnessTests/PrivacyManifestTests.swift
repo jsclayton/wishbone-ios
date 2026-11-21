@@ -22,9 +22,6 @@ struct PrivacyManifestTests {
     let collected = try #require(manifest["NSPrivacyCollectedDataTypes"] as? [[String: Any]])
     let types = collected.compactMap { $0["NSPrivacyCollectedDataType"] as? String }
     #expect(Set(types) == Set(DiagnosticsReport.allCases.map(\.dataType.rawValue)))
-    // Each kind of the app's own events and breadcrumbs is in what the vocabulary can send.
-    #expect(Fault.Kind.allCases.allSatisfy { DiagnosticsReport.allCases.contains(.fault($0)) })
-    #expect(Breadcrumb.Kind.allCases.allSatisfy { DiagnosticsReport.allCases.contains(.breadcrumb($0)) })
     #expect(types.count == collected.count)
     for type in collected {
       #expect(type["NSPrivacyCollectedDataTypeLinked"] as? Bool == false)

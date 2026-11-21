@@ -102,7 +102,7 @@ struct FaultReportTests {
     #expect(Fault.undecodable(.health, keyPath: "") == .undecodableAnswer(.health, keyPath: ""))
   }
 
-  @Test("A 422 refusal of a write is captured as its route, status and code, never the body")
+  @Test("A 422 refusal of a write is captured as its route and code, never the body")
   func refusedWrite() async throws {
     let robin = try await instance.person()
     instance.conditioner.answer(
@@ -112,7 +112,7 @@ struct FaultReportTests {
     await device.signIn(pasting: try await instance.loginLink(for: robin))
     #expect(device.session != nil)
 
-    #expect(diagnostics.faults == [.refusedWrite(.updateMe, status: 422, code: "invalid_input")])
+    #expect(diagnostics.faults == [.refusedWrite(.updateMe, code: "invalid_input")])
   }
 
   @Test("A code that is not in the app's list is captured, by the code only")
@@ -172,6 +172,18 @@ struct FaultReportTests {
     instance.conditioner.passEverything()
     await device.signOut()
     #expect(diagnostics.breadcrumbs.last == .request(.revokeCurrentSession, .success))
+    #expect(diagnostics.version == nil)
+  }
+
+  @Test("A sign-in that doesn't end signed in leaves no version to tag events with")
+  func noVersionWithoutSignIn() async throws {
+    let robin = try await instance.person()
+    instance.conditioner.answer(Route("GET", "/health"), with: try .json(200, ["version": .string("0.1.0")]))
+    let device = instance.device(diagnostics: diagnostics)
+    await device.signIn(pasting: try await instance.loginLink(for: robin))
+    #expect(device.session == nil)
+    // The version check read the version, and the device has no instance after it.
+    #expect(diagnostics.breadcrumbs.first == .request(.health, .success))
     #expect(diagnostics.version == nil)
   }
 }

@@ -3,7 +3,7 @@
 /// Diagnostics, for each case (see ``diagnosticSide``):
 /// - `unreachable`, `cancelled`, `unauthorized`, and `appTooOld`: never. A 5xx is unreachable: it is the operator's
 ///   server, not the app's fault.
-/// - `refused`: captured for a 400 or a 422 of a write that the app sent, as the route, the status and the code, and
+/// - `refused`: captured for a 400 or a 422 of a write that the app sent, as the route and the code, and
 ///   for a code that is not in `ErrorCode`'s list, as the code only. Otherwise never: a 404 or a 410 for something
 ///   deleted elsewhere, a 403, a 429.
 /// - `undecodable`: captured, as the path template and the key path, never a value. Except for `GET /health`: an
@@ -86,7 +86,7 @@ extension APIError.Refusal {
   /// A 400 or a 422 of a write is the app's fault: it sent what the server can't take. So is a code that the app
   /// doesn't know. Any other refusal is the server's answer to the person, and no fault.
   public var diagnosticSide: DiagnosticSide {
-    if route.isWrite, status == 400 || status == 422 { return .captured(.refused(route, status: status, code: code)) }
+    if route.isWrite, status == 400 || status == 422 { return .captured(.refused(route, code: code)) }
     if case .unknown(let text) = code { return .captured(.unknown(text)) }
     return .never
   }

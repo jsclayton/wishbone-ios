@@ -239,6 +239,11 @@ nonisolated private final class Recorder: DiagnosticsReporter {
       SentryReporter.sendProbe()
     }
 
+    /// For the tests only: the debug ID of the image that ``sendPlanted(_:words:)`` plants.
+    @_spi(Testing) public nonisolated static var plantedImageID: String {
+      SentryReporter.plantedImageID
+    }
+
     /// For the tests only: the part of a file's path that an event keeps. See ``Scrubber/pathInsideBundle(_:)``.
     @_spi(Testing) public nonisolated static func pathInsideBundle(_ path: String) -> String {
       Scrubber.pathInsideBundle(path)

@@ -129,7 +129,10 @@ enum SentryReporter {
   private nonisolated static func scrub(_ event: Event, diagnosticsID: String) -> Event? {
     event.user = User(userId: diagnosticsID)
     for image in event.debugMeta ?? [] {
-      image.codeFile = image.codeFile.map(Scrubber.pathInsideBundle)
+      image.codeFile = image.codeFile.map { Scrubber.text(Scrubber.pathInsideBundle($0)) }
+      // An image is found by its debug ID, which is a UUID, and its kind, which is a name such as `macho`.
+      image.debugID = image.debugID.flatMap { Scrubber.isUUID($0) ? $0 : nil }
+      image.type = Scrubber.name(image.type)
     }
 
     let fault = event.tags?["fault"].flatMap(Fault.Kind.init(rawValue:))
@@ -415,12 +418,22 @@ enum SentryReporter {
       exception.mechanism = mechanism
       exception.stacktrace = SentryStacktrace(frames: [frame], registers: [:])
       event.exceptions = [exception]
+      // An image of the debug meta, with its path and its kind planted, and a real debug ID.
+      let image = DebugMeta()
+      image.codeFile = text
+      image.type = free
+      image.debugID = plantedImageID
+      image.imageAddress = "0x0000000100000000"
+      event.debugMeta = [image]
       let thread = SentryThread(threadId: 1)
       thread.name = free
       thread.stacktrace = SentryStacktrace(frames: [frame], registers: [:])
       event.threads = [thread]
       SentrySDK.capture(event: event)
     }
+
+    /// For the tests only: the debug ID of the image that ``sendPlanted(_:words:)`` plants, by which a test finds it.
+    nonisolated static let plantedImageID = "8C1E1B9A-0C3D-4F43-9C77-6A3B2E5D1F00"
 
     /// For the tests only: waits until the SDK has tried to send what it holds.
     static func flush() async {

@@ -2,11 +2,15 @@ import Testing
 import WishboneAPI
 
 /// Every error type of the app picks its side: captured, a breadcrumb, or never. So an error type of the app's code
-/// conforms to `Diagnosed`, which names the side where the type is defined, and never to `Error` alone. See
-/// "Diagnostics" in `docs/architecture.md`.
+/// conforms to `Diagnosed`, which names the side where the type is defined, and never to `Error` alone. A protocol
+/// that refines `Error` refines `Diagnosed` instead, so no type gets past through it. See "Diagnostics" in
+/// `docs/architecture.md`.
 enum ErrorSides {
-  /// A declaration whose list of types it conforms to names an error protocol.
-  static let pattern = #"\b(?:enum|struct|class|actor|extension)\s+[\w.]+(?:<[^>{]*>)?\s*:([^{]*)\{"#
+  /// A declaration whose list of types it conforms to, or refines, names an error protocol.
+  static let pattern = #"\b(?:enum|struct|class|actor|extension|protocol)\s+([\w.]+)(?:<[^>{]*>)?\s*:([^{]*)\{"#
+
+  /// The one protocol that refines `Error` on its own: the one that names the side.
+  static let sideProtocol = "Diagnosed"
 
   /// The error protocols that a type of the app's must not conform to on their own.
   static let errorProtocols: Set<String> = ["Error", "LocalizedError", "CustomNSError"]
@@ -15,7 +19,8 @@ enum ErrorSides {
     files.flatMap { file in
       file.matches(of: pattern).compactMap { range -> Finding? in
         let declaration = file.code[range]
-        guard let colon = declaration.firstIndex(of: ":") else { return nil }
+        let name = declaration.split { $0.isWhitespace || $0 == ":" || $0 == "<" }.dropFirst().first ?? ""
+        guard name != sideProtocol, let colon = declaration.firstIndex(of: ":") else { return nil }
         let names = declaration[declaration.index(after: colon)...].split { !$0.isLetter && !$0.isNumber && $0 != "_" }
           .map(String.init)
         guard names.contains(where: errorProtocols.contains), !names.contains("Diagnosed") else { return nil }
@@ -52,6 +57,8 @@ struct DiagnosticsVocabularyTests {
       "final class Failure: NSObject, LocalizedError {}",
       "extension Refused: CustomNSError {}",
       "struct Held<Value>: Sendable, Error where Value: Sendable {}",
+      "public protocol AppFailure: Error {}",
+      "protocol Remote: Sendable, LocalizedError {\n  var code: Int { get }\n}",
     ]
   )
   func scanCatches(source: String) {
@@ -61,6 +68,8 @@ struct DiagnosticsVocabularyTests {
   @Test("The scan allows an error type that names its side, and a type that is not an error")
   func scanAllows() {
     let source = """
+      public protocol Diagnosed: Error {}
+      protocol AppFailure: Diagnosed {}
       public struct TimedOut: Diagnosed, Sendable {}
       enum Route: String, CaseIterable {}
       // struct Lost: Error {}

@@ -38,7 +38,7 @@ extension DiagnosticsTests {
     case .databaseWillNotOpen: .databaseWillNotOpen(ErrorCause(domain: .sqlite, code: 14))
     case .copyDropped: .copyDropped(from: 4, to: 5)
     case .undecodableAnswer: .undecodableAnswer(.listItems, keyPath: "data[].title")
-    case .refusedWrite: .refusedWrite(.updateMe, status: 422, code: "invalid_input")
+    case .refusedWrite: .refusedWrite(.updateMe, code: "invalid_input")
     case .unknownErrorCode: .unknownErrorCode("brand_new_code")
     }
   }
@@ -160,6 +160,11 @@ extension DiagnosticsTests {
     #expect((frame?["function"] as? String)?.contains("[host]") == true, "\(frame ?? [:])")
     #expect(exception?["value"] == nil)
     #expect(exception?["type"] == nil)
+    // The planted image of the debug meta went, with its path through the text rules too, and its kind dropped.
+    let images = (event["debug_meta"] as? [String: Any])?["images"] as? [[String: Any]] ?? []
+    let image = images.first { ($0["debug_id"] as? String)?.uppercased() == Diagnostics.plantedImageID }
+    #expect((image?["code_file"] as? String)?.contains("[url]") == true, "\(images)")
+    #expect(image?["type"] == nil, "\(image ?? [:])")
   }
 
   @Test("Unreachable, a timeout, a cancel, the API's own 401, a 404, a 410, a version block and a 5xx give no event")

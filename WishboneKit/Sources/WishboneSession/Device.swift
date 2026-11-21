@@ -229,6 +229,9 @@ public final class Device {
   }
 
   private func signIn(with link: LoginLink) async {
+    // The version check read the version of the link's instance. A sign-in that doesn't end signed in leaves the
+    // device with no instance, so no event names that version.
+    defer { if session == nil { setup.diagnostics.wishboneVersion(nil) } }
     keptLink = nil
     signInState = .signingIn
     let client = APIClient(

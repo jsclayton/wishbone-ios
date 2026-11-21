@@ -233,11 +233,21 @@ struct DiagnosticsTests {
     // No automatic breadcrumbs.
     #expect((event["breadcrumbs"] as? [Any] ?? []).isEmpty)
     // The second net: nowhere in the envelope, under any name.
-    let text = envelope.items.map { String(decoding: $0.payload, as: UTF8.self) }.joined()
-    let zone = TimeZone.current.identifier
-    for key in ["timezone", "time_zone", "ip_address", "device_app_hash"] + (zone.contains("/") ? [zone] : []) {
-      #expect(!text.contains(key), "The envelope holds \(key).")
+    let forbidden = Self.zoneAndIDs(zone: TimeZone.current.identifier)
+    for key in forbidden {
+      #expect(!envelope.text.contains(key), "The envelope holds \(key).")
     }
+    // The check can fail: an envelope that holds the device's zone, as Sentry's JSON writes it, with `/` as `\/`.
+    let zone = TimeZone.current.identifier.replacingOccurrences(of: "/", with: #"\/"#)
+    let planted = EnvelopeReceiver.envelope(Data(#"{}\#n{"type":"event"}\#n{"contexts":{"tz":"\#(zone)"}}"#.utf8))
+    #expect(forbidden.contains { planted.text.contains($0) }, "The check can't find the zone \(zone).")
+  }
+
+  /// What an envelope never holds: the names of the fields for the time zone, the IP address and the vendor's
+  /// hash, and the device's zone itself. A zone such as `America/Denver` is found anywhere in the text. A zone with
+  /// no `/`, such as `UTC`, is found as a whole value, so a word inside another value doesn't count.
+  static func zoneAndIDs(zone: String) -> [String] {
+    ["timezone", "time_zone", "ip_address", "device_app_hash", "\"\(zone)\""] + (zone.contains("/") ? [zone] : [])
   }
 
   @Test("An event names no install folder: each image's path is its path inside the app's bundle")
