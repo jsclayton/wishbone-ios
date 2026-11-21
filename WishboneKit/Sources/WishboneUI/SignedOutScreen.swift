@@ -48,7 +48,6 @@ public struct SignedOutScreen: View {
 
       // The system paste button, so iOS shows no "allow paste" alert. The system gives it its words.
       PasteButton(payloadType: String.self) { _ in }
-        .controlSize(.large)
 
       Button {
       } label: {
@@ -65,7 +64,6 @@ public struct SignedOutScreen: View {
         "If Wishbone crashes, it sends a report to its developer, never anything from your family's lists.",
         bundle: #bundle
       )
-      .foregroundStyle(.secondary)
       .multilineTextAlignment(.center)
 
       Button {
