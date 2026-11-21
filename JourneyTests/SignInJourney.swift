@@ -210,20 +210,23 @@ nonisolated final class SignInJourney: XCTestCase {
     let link = try await builder.loginLink(for: sky)
     let parts = try XCTUnwrap(URLComponents(url: link, resolvingAgainstBaseURL: false))
     let address = "\(parts.scheme ?? "")://\(parts.host ?? "")\(parts.port.map { ":\($0)" } ?? "")"
-    let line = Audit.words("Can't reach \(address)")
+    // In the double-length pseudo-language, iOS doubles the format and fills only its first part, so the line
+    // reads "Can't reach @ Can't reach {address}". The journey finds it by the words with the address.
+    let lineWords = NSPredicate(format: "label CONTAINS %@", "Can't reach \(address)")
 
     let app = Audit.app()
     app.launchEnvironment["WISHBONE_JOURNEY_START_SIGNED_OUT"] = "1"
     app.launchEnvironment["WISHBONE_JOURNEY_LOGIN_LINK"] = link.absoluteString
     app.launch()
     XCTAssertTrue(app.staticTexts["Lantern"].waitForExistence(timeout: 60), "Home didn't show after the sign-in.")
-    XCTAssertFalse(app.staticTexts[line].exists)
+    XCTAssertFalse(app.staticTexts.matching(lineWords).firstMatch.exists)
 
     // The instance goes away. A window that comes to the foreground syncs, and finds it gone. The journey never
     // pulls to refresh, which is a swipe.
     server.stop()
     try sendHomeAndBack(app)
-    XCTAssertTrue(app.staticTexts[line].waitForExistence(timeout: 60), "The line didn't show on Home.")
+    XCTAssertTrue(
+      app.staticTexts.matching(lineWords).firstMatch.waitForExistence(timeout: 60), "The line didn't show on Home.")
     XCTAssertTrue(app.staticTexts["Lantern"].exists, "What is saved went with the instance.")
     try await Audit.run(on: app, showing: "Home, with the line", in: self)
     app.terminate()
@@ -234,12 +237,14 @@ nonisolated final class SignInJourney: XCTestCase {
     relaunched.launch()
     XCTAssertTrue(relaunched.staticTexts["Lantern"].waitForExistence(timeout: 60), "The relaunch didn't show Home.")
     XCTAssertTrue(
-      relaunched.staticTexts[line].waitForExistence(timeout: 60), "The line didn't show after the relaunch.")
+      relaunched.staticTexts.matching(lineWords).firstMatch.waitForExistence(timeout: 60),
+      "The line didn't show after the relaunch.")
     let tabs = relaunched.tabBars.firstMatch
     tabs.buttons[Audit.words("Gifts")].tap()
     let tryAgain = relaunched.buttons[Audit.words("Try again")]
     XCTAssertTrue(tryAgain.waitForExistence(timeout: 10), "Gifts didn't show the unreachable view.")
-    XCTAssertTrue(relaunched.staticTexts[line].exists, "The unreachable view doesn't name the instance.")
+    XCTAssertTrue(
+      relaunched.staticTexts.matching(lineWords).firstMatch.exists, "The unreachable view doesn't name the instance.")
     XCTAssertFalse(
       relaunched.staticTexts[Audit.words("No gifts yet.")].exists, "Gifts claims to be empty.")
     try await Audit.run(on: relaunched, showing: "the unreachable view", in: self)
