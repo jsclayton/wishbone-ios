@@ -12,7 +12,8 @@ public final class SessionModel {
   /// The instance and the user of the session.
   public let session: Session
 
-  /// The session's user. Nil until the first sync has filled the copy.
+  /// The session's user. Nil until the copy holds it: after a sign-in, the sign-in reads it before the device
+  /// publishes the session, and otherwise the first sync brings it.
   public private(set) var user: UserRow?
 
   /// The user's primary list. Nil until the first sync has filled the copy.
@@ -427,6 +428,32 @@ public final class SessionModel {
   func blockAppTooOld() {
     guard !hasEnded else { return }
     versionBlock = .appTooOld
+  }
+
+  // MARK: - The first sign-in
+
+  /// Reads the session's own user with `GET /users/me`, and saves it to the copy, before the device publishes the
+  /// session. So the first screen after "Signing in…" knows whether the profile gate shows, however slow the first
+  /// pull is. See "The profile gate" in `docs/spec.md`.
+  ///
+  /// A read that fails changes nothing: the first sync brings the user, as it does at every launch. A 401 or a 410
+  /// is left to that sync too, which ends the session or shows the block.
+  ///
+  /// Diagnostics: never. The client captures an answer that it can't decode, and logs the request's outcome.
+  func readOwnUser() async {
+    guard !hasEnded, let answer = try? await client.me() else { return }
+    do {
+      try await database.save([answer])
+      // The copy's observation publishes the row later, on the main queue. The window must see it now, so the row
+      // is published here too, and the observation then publishes the same row again.
+      guard !hasEnded, let row = try await database.user(session.userID) else { return }
+      user = row
+      if let record = row.record { recordedTimeZone = .some(record.timezone.value) }
+    } catch is CancellationError {
+      // The sign-in was cancelled. It is no fault of the copy.
+    } catch {
+      Log.fault(.session, "The copy can't take the user's record.", detail: "\(error)")
+    }
   }
 
   // MARK: - The time zone

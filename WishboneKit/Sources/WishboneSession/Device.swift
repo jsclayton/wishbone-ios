@@ -298,6 +298,9 @@ public final class Device {
       signInState = .failed
       return
     }
+    // The user is in the copy before the session is published, still during "Signing in…". So a user whose profile
+    // is not confirmed goes straight to the profile gate, and never sees the tabs first.
+    await model.readOwnUser()
     session = model
     signInState = .signedIn(name: redeemed.name)
     await model.sync()
