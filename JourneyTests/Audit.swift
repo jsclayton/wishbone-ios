@@ -25,6 +25,9 @@ enum Audit {
     Setting(name: "increase-contrast", label: "Increase Contrast"),
   ]
 
+  /// The largest text size, which audits Dynamic Type on every row that shows. See `run`.
+  private static let largestText = settings[1]
+
   /// The gate's settings helper, such as `http://127.0.0.1:50123`. A run from Xcode, and the gate's run in the
   /// double-length pseudo-language, have none.
   static let helper: URL? = ProcessInfo.processInfo.environment["WISHBONE_SETTINGS_HELPER"].flatMap { address in
@@ -88,7 +91,7 @@ enum Audit {
       let before = current.pixels
       let shown = try await settledScreen(of: app, in: setting, where: { $0 != before })
       // The largest text size gets no rows, so it checks Dynamic Type on every row that shows. See above.
-      let rows = setting.name == "largest-text" ? [] : rowsThatLeaveTheScreen
+      let rows = setting.name == largestText.name ? [] : rowsThatLeaveTheScreen
       try audit(app, screen, in: setting.label, screenshot: shown.screenshot, rows: rows, test: test)
       try await apply(settings[0], helper: helper)
       current = try await settledScreen(of: app, in: settings[0], where: { $0 != shown.pixels })
@@ -124,9 +127,11 @@ enum Audit {
       // The audit reports its text as low contrast, where its screenshot shows black on glass of about
       // (240, 240, 245), near 18:1. It reports that the text doesn't grow, where iOS shows a bar button in the large
       // content viewer instead. A label with a text style of its own changes neither. The exception is for Done in
-      // a navigation bar only.
+      // a navigation bar only: the element must be the bar's Done itself, not another Done on the screen.
       if [.contrast, .dynamicType].contains(issue.auditType), let done = issue.element, done.elementType == .button,
-        done.label == words("Done"), app.navigationBars.buttons[words("Done")].exists
+        done.label == words("Done"),
+        case let barDone = app.navigationBars.buttons[words("Done")].firstMatch, barDone.exists,
+        barDone.frame == done.frame
       {
         return true
       }
@@ -155,9 +160,9 @@ enum Audit {
   }
 
   /// How long the settings helper may take to answer. It gives each `simctl` call 30 seconds, and runs a call that
-  /// hangs once more. One change of setting runs at most three calls, one for each of the simulator's settings, so
-  /// the helper answers within 180 seconds (`helperAnswerLimitMs` in `scripts/gate/simulator.mjs`), with an error
-  /// that names the call when a call hangs twice. A gate test holds this limit above that.
+  /// hangs again while the change has time left. It never starts a call that could end after 180 seconds
+  /// (`helperAnswerLimitMs` in `scripts/gate/simulator.mjs`), so it answers within that, with an error that names
+  /// the call when a call keeps hanging. A gate test holds this limit above that.
   private static let helperTimeout: TimeInterval = 200
 
   /// Asks the settings helper whether the screen is new in the run. The helper remembers each screen that a

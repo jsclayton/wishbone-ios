@@ -12,8 +12,12 @@ import {
   journeyRuns,
   parseArguments,
   pickDevice,
+  readinessAnswerLimitMs,
+  readinessCallLimitMs,
   resultBundles,
   settingCallLimitMs,
+  settingPauseMs,
+  settingReadLimitMs,
   settingCommands,
   settings,
   settingsApplier,
@@ -184,7 +188,7 @@ test('the settings applier runs only the simctl calls that change something', as
   await applier.apply(settings[0]);
   assert.deepEqual(ran, []);
   assert.equal(applier.calls(), 9);
-  assert.equal(applier.retries(), 0);
+  assert.equal(applier.hangs(), 0);
 });
 
 test('a simctl call that fails leaves its setting unknown, so the next apply runs it again', async () => {
@@ -207,41 +211,156 @@ test('a simctl call that fails leaves its setting unknown, so the next apply run
 /** An error like the one that `simctlWithLimit` gives for a call that passed its limit. */
 const hung = () => Object.assign(new Error("didn't return within 30s"), { timedOut: true });
 
-test('a simctl call that hangs is run once more, and the applier counts it', async () => {
+/**
+ * A simulator for the applier, on its own clock. It holds each setting's value, answers a read with it, and sets it
+ * on a call. `hangs(command)` says whether a call hangs: then it takes its whole limit, and, with `lands`, its
+ * setting changes anyway. Returns `{ applier, ran, clock }`: `ran` has each call, with `read` for a read.
+ */
+function fakeSimulator({ hangs = () => false, lands = false, ...options } = {}) {
+  const values = new Map();
   const ran = [];
+  const clock = { ms: 0, longest: 0 };
+  let applyStarted = 0;
   const applier = settingsApplier('SIM', {
     run: async (command, limitMs) => {
-      assert.equal(limitMs, 30_000);
-      ran.push(command[3]);
-      if (command[3] === 'dark' && ran.filter((value) => value === 'dark').length === 1) throw hung();
+      const [, , name, value] = command;
+      ran.push(value === undefined ? `read ${name}` : `${name} ${value}`);
+      if (value === undefined) {
+        clock.ms += 1;
+        return `${values.get(name) ?? 'unknown'}\n`;
+      }
+      if (hangs(command, ran)) {
+        clock.ms += limitMs;
+        if (lands) values.set(name, value);
+        throw hung();
+      }
+      clock.ms += 1_000;
+      values.set(name, value);
+      return '';
     },
+    now: () => clock.ms,
+    sleep: async (ms) => {
+      clock.ms += ms;
+    },
+    ...options,
+  });
+  const apply = async (setting, more) => {
+    applyStarted = clock.ms;
+    try {
+      return await applier.apply(setting, more);
+    } finally {
+      clock.longest = Math.max(clock.longest, clock.ms - applyStarted);
+    }
+  };
+  return { applier: { ...applier, apply }, ran, clock };
+}
+
+test('a simctl call that hangs, and whose setting reads back unchanged, is run again, and the applier counts the hang', async () => {
+  const { applier, ran } = fakeSimulator({ hangs: (command, calls) => command[3] === 'dark' && calls.filter((one) => one === 'appearance dark').length === 1 });
+  await applier.apply(settings[0]);
+  await applier.apply(settings[2]);
+  assert.deepEqual(ran.slice(3), ['appearance dark', 'read appearance', 'appearance dark']);
+  assert.equal(applier.calls(), 5);
+  assert.equal(applier.hangs(), 1);
+});
+
+test('a simctl call that hangs, but whose setting reads back as set, did its work and is not run again', async () => {
+  const { applier, ran } = fakeSimulator({ hangs: (command) => command[3] === 'dark', lands: true });
+  await applier.apply(settings[0]);
+  await applier.apply(settings[2]);
+  assert.deepEqual(ran.slice(3), ['appearance dark', 'read appearance']);
+  assert.equal(applier.hangs(), 1);
+  // The applier knows the simulator is in dark mode, so the way back is one call.
+  await applier.apply(settings[0]);
+  assert.deepEqual(ran.slice(5), ['appearance light']);
+});
+
+test('the applier waits after a hang, before it reads the setting back', async () => {
+  const waits = [];
+  const { applier } = fakeSimulator({
+    hangs: (command, calls) => command[3] === 'dark' && calls.filter((one) => one === 'appearance dark').length === 1,
+    sleep: async (ms) => waits.push(ms),
   });
   await applier.apply(settings[0]);
   await applier.apply(settings[2]);
-  assert.deepEqual(ran.slice(3), ['dark', 'dark']);
+  assert.deepEqual(waits, [5_000]);
+});
+
+test('a simctl call that hangs for a minute, as on a CI runner, is run until the simulator answers again', async () => {
+  // Seen on CI: two calls in a row hung, and the simulator answered a minute or two later.
+  let hangsLeft = 0;
+  const { applier, ran } = fakeSimulator({ hangs: (command) => command[3] === 'disabled' && hangsLeft-- > 0 });
+  await applier.apply(settings[0]);
+  hangsLeft = 3;
+  await applier.apply(settings[3]);
+  await applier.apply(settings[0]);
+  assert.deepEqual(ran.slice(4), [
+    'increase_contrast disabled',
+    'read increase_contrast',
+    'increase_contrast disabled',
+    'read increase_contrast',
+    'increase_contrast disabled',
+    'read increase_contrast',
+    'increase_contrast disabled',
+  ]);
+  assert.equal(applier.hangs(), 3);
+});
+
+test('a simctl call that keeps hanging fails the setting within the answer limit, with the setting, the call and its hangs in the error', async () => {
+  const { applier, clock } = fakeSimulator({ hangs: (command) => command[2] === 'content_size' && command[3] !== 'large' });
+  await applier.apply(settings[0]);
+  await assert.rejects(applier.apply(settings[1]), {
+    message: "simctl ui SIM content_size accessibility-extra-extra-extra-large didn't return within 30s, 5 times in 2m55s, so the simulator isn't in the largest text size",
+  });
+  assert.equal(applier.hangs(), 5);
+  assert.ok(clock.longest <= helperAnswerLimitMs, `the apply took ${clock.longest}ms`);
+});
+
+test("no call starts that could end after the helper's answer limit, also when an earlier call of the change used the time", async () => {
+  // The appearance hangs until the change has no time left for another try, so the content size isn't run.
+  const { applier, ran, clock } = fakeSimulator({ hangs: (command) => command[3] === 'light' });
+  await assert.rejects(applier.apply(settings[0]), /^Error: simctl ui SIM appearance light didn't return within 30s, 5 times/);
+  assert.ok(clock.longest <= helperAnswerLimitMs, `the apply took ${clock.longest}ms`);
+  assert.ok(!ran.includes('content_size large'));
+  // A change whose earlier call hung three times, and then answered, leaves the next call no time, and says so.
+  const slow = fakeSimulator({ hangs: (command, calls) => command[3] === 'light' && calls.length < 7, answerLimitMs: 135_500 });
+  await assert.rejects(slow.applier.apply(settings[0]), {
+    message: /^simctl ui SIM increase_contrast disabled wasn't run: the change's earlier calls took its 2m1\ds, so the simulator isn't in the default settings$/,
+  });
+  assert.deepEqual(slow.ran.at(-1), 'appearance light');
+  assert.ok(slow.clock.longest <= 135_500);
+});
+
+test('a read that fails or hangs after a hang counts as a setting that is not set, so the call runs again', async () => {
+  let first = true;
+  const applier = settingsApplier('SIM', {
+    run: async (command) => {
+      if (command.length === 3) throw hung();
+      if (command[3] === 'dark' && first) {
+        first = false;
+        throw hung();
+      }
+      return '';
+    },
+    sleep: async () => {},
+  });
+  await applier.apply(settings[0]);
+  await applier.apply(settings[2]);
   assert.equal(applier.calls(), 5);
-  assert.equal(applier.retries(), 1);
 });
 
 test("an apply can give its calls a longer limit, as the step's start does while the simulator gets ready", async () => {
   const limits = [];
   const applier = settingsApplier('SIM', { run: async (command, limitMs) => limits.push(limitMs) });
-  await applier.apply(settings[0], { limitMs: 300_000 });
+  await applier.apply(settings[0], { limitMs: 300_000, answerLimitMs: readinessAnswerLimitMs });
   await applier.apply(settings[1]);
   assert.deepEqual(limits, [300_000, 300_000, 300_000, 30_000]);
 });
 
-test('a simctl call that hangs twice fails the setting, with the setting and the call in the error', async () => {
-  const applier = settingsApplier('SIM', {
-    run: async (command) => {
-      if (command[2] === 'content_size' && command[3] !== 'large') throw hung();
-    },
-  });
-  await applier.apply(settings[0]);
-  await assert.rejects(applier.apply(settings[1]), {
-    message: "simctl ui SIM content_size accessibility-extra-extra-extra-large didn't return within 30s, twice, so the simulator isn't in the largest text size",
-  });
-  assert.equal(applier.retries(), 1);
+test("at the step's start, a call that hangs once is read back and run again", async () => {
+  const { applier, ran } = fakeSimulator({ hangs: (command, calls) => calls.length === 1 });
+  await applier.apply(settings[0], { limitMs: readinessCallLimitMs, answerLimitMs: readinessAnswerLimitMs });
+  assert.deepEqual(ran, ['appearance light', 'read appearance', 'appearance light', 'increase_contrast disabled', 'content_size large']);
 });
 
 test('a call that passes its limit is stopped, and its error says it timed out', async () => {
@@ -253,12 +372,13 @@ test('a call that passes its limit is stopped, and its error says it timed out',
 });
 
 test('the settings helper answers 500, with the reason, when a hung call fails a setting', async (t) => {
-  const applier = settingsApplier('SIM', { run: async () => Promise.reject(hung()) });
+  // A hang on the applier's own clock: there is no time left for another try.
+  const { applier } = fakeSimulator({ hangs: () => true, answerLimitMs: 30_000 });
   const helper = await startSettingsHelper((setting) => applier.apply(setting));
   t.after(() => helper.close());
   const response = await fetch(`${helper.address}/settings/default`, { method: 'POST' });
   assert.equal(response.status, 500);
-  assert.equal(await response.text(), "simctl ui SIM appearance light didn't return within 30s, twice, so the simulator isn't in the default settings");
+  assert.equal(await response.text(), "simctl ui SIM appearance light didn't return within 30s, once in 30s, so the simulator isn't in the default settings");
 });
 
 test('the settings helper says to audit a screen the first time a journey names it, and not again in that run', async (t) => {
@@ -322,9 +442,10 @@ test('a failed apply does not stop the next one', async () => {
   assert.deepEqual(ran.slice(3), ['dark', 'light']);
 });
 
-test("a journey waits for the helper longer than the helper's longest answer: each call of an apply hung once, and then hung again", () => {
+test("a journey waits for the helper longer than the helper's longest answer", () => {
   const audit = readFileSync(new URL('../../JourneyTests/Audit.swift', import.meta.url), 'utf8');
   const seconds = Number(/static let helperTimeout: TimeInterval = (\d+)/.exec(audit)[1]);
   assert.ok(seconds * 1000 > helperAnswerLimitMs, `Audit.swift waits ${seconds}s, and the helper can take ${helperAnswerLimitMs / 1000}s`);
-  assert.equal(helperAnswerLimitMs, settingCommands(settings[0], 'SIM').length * 2 * settingCallLimitMs);
+  // A call that hangs gets at least two tries more in a change.
+  assert.ok(helperAnswerLimitMs >= 3 * settingCallLimitMs + 2 * (settingPauseMs + settingReadLimitMs));
 });

@@ -189,18 +189,32 @@ export function settingCommands(setting, simulator) {
 /** How long one `simctl` call that changes a setting for a journey may take, before it counts as hung. */
 export const settingCallLimitMs = 30_000;
 
+/** How long a call that reads a setting back, after a hang, may take. */
+export const settingReadLimitMs = 10_000;
+
+/** How long the applier waits after a hang, before it reads the setting back and runs the call again. */
+export const settingPauseMs = 5_000;
+
 /**
- * The longest time that the helper takes to answer a journey: an `apply` runs at most one call for each of the
- * three settings, and each call can hang once and then hang again. `helperTimeout` in `JourneyTests/Audit.swift`
- * is longer, so a journey gets the helper's own error, which names the call, not a request that timed out.
+ * The longest time that the helper takes to answer a journey. An `apply` never starts a call that could end after
+ * it, so a call that keeps hanging fails the setting within it. `helperTimeout` in `JourneyTests/Audit.swift` is
+ * longer, so a journey gets the helper's own error, which names the call, not a request that timed out.
  */
-export const helperAnswerLimitMs = 3 * 2 * settingCallLimitMs;
+export const helperAnswerLimitMs = 180_000;
 
 /**
  * How long a `simctl` call may take at the step's start. Just after a new simulator's first boot, its calls wait
  * minutes for the simulator to be ready, so they are not hung until much later than a journey's.
  */
 export const readinessCallLimitMs = 5 * 60_000;
+
+/**
+ * The time that the step's first `apply`, with its longer calls, may take: a call can hang once, be read back, and
+ * run again. Each call that `apply` starts must fit its whole limit in the time left, so after a hang and a slow
+ * second try, a later call of the change isn't run, and the change fails. A journey's change that runs all three
+ * calls is the same: a call that hangs until the time is up leaves the others no time.
+ */
+export const readinessAnswerLimitMs = 3 * readinessCallLimitMs;
 
 /**
  * Runs `xcrun simctl <args>`, and stops it when it passes `limitMs`. Resolves when it ends well. Rejects when it
@@ -226,58 +240,96 @@ export function simctlWithLimit(args, limitMs = settingCallLimitMs, { file = 'xc
  * change something: a change from the default to one setting, and back, is one call each way, not three. Its first
  * `apply` runs every call, because the simulator can be in any setting from an earlier run.
  *
- * A call that passes its limit is hung. It is run once more, and a second hang fails the setting, with an error
- * that names the setting and the call. So a hang in CI shows as itself, not as a journey's request that timed out.
+ * A call that passes its limit is hung. This is the named flake "a `simctl ui` call hangs on a CI runner" in
+ * docs/development.md: the simulator stops answering a call for a minute or more, and then answers again. So after
+ * a hang, the applier waits `pauseMs`, and reads the setting back (`simctl ui <device> <option>`, with a limit of
+ * `readLimitMs`). When the setting reads as the value, the hung call did its work, and the applier goes on. When it
+ * doesn't, it runs the call again. It does this while the apply has time left: it never starts a call or a read
+ * that could end after `answerLimitMs` from the apply's start. Then a call that still hangs fails the setting, with
+ * an error that names the setting, the call, and how many times it hung. So a hang in CI shows as itself, not as a
+ * journey's request that timed out. A call that fails in any other way fails the setting at once.
  *
- * `apply` takes `{ limitMs }`, the limit of each call, which is `limitMs` unless it says otherwise.
+ * `apply` takes `{ limitMs, answerLimitMs }`, which are `limitMs` and `answerLimitMs` unless it says otherwise.
  *
  * It applies one setting at a time: an `apply` that comes while another runs waits for it, also when that one
  * fails. So a journey whose request timed out leaves no call running beside the next journey's.
  *
- * Returns `{ apply(setting, { limitMs }), calls(), retries(), ms() }`: the number of calls that it ran, how many of them hung
- * and were run again, and the time that they took.
+ * `now` and `sleep` are the clock, so a test runs it on its own clock.
+ *
+ * Returns `{ apply(setting, { limitMs, answerLimitMs }), calls(), hangs(), ms() }`: the number of calls that changed
+ * a setting, how many of them hung, and the time that the changes took.
  */
-export function settingsApplier(simulator, { run = simctlWithLimit, limitMs = settingCallLimitMs } = {}) {
+export function settingsApplier(
+  simulator,
+  {
+    run = simctlWithLimit,
+    limitMs = settingCallLimitMs,
+    answerLimitMs = helperAnswerLimitMs,
+    readLimitMs = settingReadLimitMs,
+    pauseMs = settingPauseMs,
+    now = Date.now,
+    sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  } = {},
+) {
   const set = new Map();
   let calls = 0;
-  let retries = 0;
+  let hangs = 0;
   let ms = 0;
   let queue = Promise.resolve();
-  const applyNow = async (setting, callLimitMs) => {
+  const applyNow = async (setting, callLimitMs, applyLimitMs) => {
+    const started = now();
+    const fits = (limit) => now() - started + limit <= applyLimitMs;
+    /** The setting as the simulator reads it, or null when the read fails or hangs. */
+    const readBack = async (command) => {
+      if (!fits(readLimitMs)) return null;
+      try {
+        return (await run(command.slice(0, 3), readLimitMs)).trim();
+      } catch {
+        return null;
+      }
+    };
     for (const command of settingCommands(setting, simulator)) {
       const [, , name, value] = command;
       if (set.get(name) === value) continue;
-      const started = Date.now();
+      const callStarted = now();
       // A call that fails leaves the setting unknown, so the next `apply` runs it again.
       set.delete(name);
+      let hung = 0;
       try {
-        for (let attempt = 1; ; attempt += 1) {
+        for (;;) {
+          if (!fits(callLimitMs)) {
+            if (hung === 0) throw new Error(`wasn't run: the change's earlier calls took its ${duration(applyLimitMs)}`);
+            const times = hung === 1 ? 'once' : hung === 2 ? 'twice' : `${hung} times`;
+            throw new Error(`didn't return within ${duration(callLimitMs)}, ${times} in ${duration(now() - callStarted)}`);
+          }
           calls += 1;
           try {
             await run(command, callLimitMs);
             break;
           } catch (error) {
-            if (!error.timedOut || attempt === 2) throw error;
-            retries += 1;
+            if (!error.timedOut) throw error;
+            hung += 1;
+            hangs += 1;
           }
+          await sleep(Math.min(pauseMs, Math.max(0, applyLimitMs - (now() - started))));
+          if ((await readBack(command)) === value) break;
         }
       } catch (error) {
-        const twice = error.timedOut ? ', twice' : '';
-        throw new Error(`simctl ${command.join(' ')} ${error.message}${twice}, so the simulator isn't in ${setting.label}`);
+        throw new Error(`simctl ${command.join(' ')} ${error.message}, so the simulator isn't in ${setting.label}`);
       } finally {
-        ms += Date.now() - started;
+        ms += now() - callStarted;
       }
       set.set(name, value);
     }
   };
   return {
-    apply(setting, { limitMs: callLimitMs = limitMs } = {}) {
-      const applied = queue.then(() => applyNow(setting, callLimitMs));
+    apply(setting, { limitMs: callLimitMs = limitMs, answerLimitMs: applyLimitMs = answerLimitMs } = {}) {
+      const applied = queue.then(() => applyNow(setting, callLimitMs, applyLimitMs));
       queue = applied.catch(() => {});
       return applied;
     },
     calls: () => calls,
-    retries: () => retries,
+    hangs: () => hangs,
     ms: () => ms,
   };
 }
@@ -366,7 +418,7 @@ export async function prepareSimulator({ say = console.log } = {}) {
   await timed("Booted the gate's simulator", () => simctl(['bootstatus', simulator, '-b'], { stdio: 'ignore' }));
   await timed("Held the simulator's status bar still", () => holdStatusBar(simulator));
   const applier = settingsApplier(simulator);
-  await timed('Put the simulator in the default settings', () => applier.apply(settings[0], { limitMs: readinessCallLimitMs }));
+  await timed('Put the simulator in the default settings', () => applier.apply(settings[0], { limitMs: readinessCallLimitMs, answerLimitMs: readinessAnswerLimitMs }));
   return { simulator, applier };
 }
 
@@ -438,7 +490,7 @@ export async function runSimulatorTier({ root, directory, build = true, say = co
     if (!(await run('The hosted tests', test('HostedTests', bundles.hosted[0].path), { log: 'hosted.log', bundle: bundles.hosted[0].path }))) return false;
 
     const helperCalls = applier.calls();
-    const helperRetries = applier.retries();
+    const helperHangs = applier.hangs();
     const helperMs = applier.ms();
     for (const [index, journeys] of journeyRuns.entries()) {
       await applier.apply(settings[0]);
@@ -453,8 +505,8 @@ export async function runSimulatorTier({ root, directory, build = true, say = co
       const bundle = bundles.ui[index].path;
       const passed = await run(`The journeys in ${journeys.label}`, test('JourneyTests', bundle), { log: `journeys-${journeys.name}.log`, bundle, env });
       if (journeys.helper) {
-        const retried = applier.retries() - helperRetries;
-        const again = retried === 0 ? '' : `, and ran ${retried} that hung once more`;
+        const hung = applier.hangs() - helperHangs;
+        const again = hung === 0 ? '' : `, and ${hung} of them hung (the named flake "a \`simctl ui\` call hangs on a CI runner")`;
         say(`  The settings helper made ${applier.calls() - helperCalls} simctl calls, in ${duration(applier.ms() - helperMs)}${again}.`);
       }
       if (!passed) return false;
