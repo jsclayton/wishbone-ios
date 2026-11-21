@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
-import { slotDirectory, takeSlot } from './slot.mjs';
+import { inSlot, slotDirectory, slotHeldVariable, takeSlot } from './slot.mjs';
 
 function scratch(t) {
   const folder = mkdtempSync(path.join(tmpdir(), 'wishbone-gate-test-'));
@@ -107,4 +107,30 @@ test('a gate that is killed outright holds the slot until its step is stopped', 
   const slot = await takeSlot(folder);
   assert.equal(isAlive(pid), false, 'the step was stopped before the slot was free');
   await slot.release();
+});
+
+test('by itself, a script waits in `inSlot` until the gate that holds the slot lets go', async (t) => {
+  const folder = scratch(t);
+  const events = [];
+  const gate = await takeSlot(folder, { owner: 'the gate in another checkout' });
+  let holder = null;
+  const alone = inSlot(() => events.push('the script runs'), { env: {}, directory: folder, onWait: (line) => (holder = line) });
+  await sleep(700);
+  assert.equal(holder, 'the gate in another checkout');
+  events.push('the gate lets go');
+  await gate.release();
+  await alone;
+  assert.deepEqual(events, ['the gate lets go', 'the script runs']);
+  // The script let go of the slot when it ended, so the next taker gets it at once.
+  const next = await takeSlot(folder);
+  assert.ok(next.waitedMs < 400, `the next taker didn't wait (${next.waitedMs} ms)`);
+  await next.release();
+});
+
+test("under the gate, which holds the slot, a script in `inSlot` runs at once and doesn't take it again", async (t) => {
+  const folder = scratch(t);
+  const gate = await takeSlot(folder, { owner: 'this gate' });
+  t.after(() => gate.release());
+  const result = await inSlot(() => 'ran', { env: { [slotHeldVariable]: '1' }, directory: folder, onWait: () => assert.fail('it waited for the slot') });
+  assert.equal(result, 'ran');
 });

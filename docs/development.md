@@ -70,10 +70,10 @@ An xcconfig file treats `//` as the start of a comment. To write a URL in one, s
 | Recipe | What it does |
 |---|---|
 | `just gate` | Every check that a pull request must pass, in order (see [The gate](#the-gate)) |
-| `just build` | Builds the app and both extensions for the simulator, with zero warnings. Then it adds new strings to the String Catalog, and makes the Acknowledgements (see [What the build writes](#what-the-build-writes)) |
+| `just build` | Builds the app, both extensions and the test bundles for the simulator, with zero warnings. Then it adds new strings to the String Catalog, and makes the Acknowledgements (see [What the build writes](#what-the-build-writes)) |
 | `just server` | Fetches and builds the pinned Wishbone server that the tests run against, or reuses the built one |
 | `just test` | The package tests on macOS, with `swift test`. It runs `just server` first |
-| `just simulator` | The hosted tests and the journeys, on the gate's own simulator (see [The simulator tier](#the-simulator-tier)). It runs `just server` first |
+| `just simulator` | The hosted tests and the journeys, on the gate's own simulator, in the gate slot (see [The simulator tier](#the-simulator-tier)). It runs `just server` first |
 | `just lint` | `swift-format lint --strict`, actionlint and shellcheck, the docs check, and the tests of the gate's own scripts |
 | `just fmt` | Formats the Swift files with swift-format |
 
@@ -199,8 +199,10 @@ To move the pin:
 ### Accessibility checks
 
 - Every journey runs `performAccessibilityAudit` on each screen it reaches, in four settings: the default, the largest accessibility text size, dark mode, and Increase Contrast. Any issue fails. An exception is allowed one at a time, in code, with a reason.
-- The settings are the simulator's own, as a person sets them in the Settings app. A test can't change them from inside the simulator, so `just simulator` sets them with `simctl`, and runs the journeys once in each. A journey that you run in Xcode audits in the settings that your simulator has.
-- A fifth run is in the double-length pseudo-language, in which iOS shows each string of the String Catalog twice. There, the audit finds text that is cut short. A journey finds a control by its words, twice over, so text that is not in the String Catalog fails the journey.
+- The settings are the simulator's own, as a person sets them in the Settings app. A test can set dark mode from inside the simulator, but not the text size or Increase Contrast. So `just simulator` runs a small settings helper on your Mac, an HTTP server on the loopback, and gives its address to the journeys. On each screen, a journey asks the helper for each setting in turn, and the helper sets it with `simctl`. So a journey runs its actions once, and audits in all four settings.
+- Before each audit, the journey waits until the screen shows the setting: two screenshots in a row are the same, and differ from the screen in the default settings. After it, the journey waits until the screen is back to the default. `just simulator` holds the status bar's clock still, so that a still screen gives the same pixels.
+- A journey that you run in Xcode has no helper. It audits once, in the settings that your simulator has.
+- A second run is in the double-length pseudo-language, in which iOS shows each string of the String Catalog twice. There, the audit finds text that is cut short. A journey finds a control by its words, twice over, so text that is not in the String Catalog fails the journey.
 - A unit test checks the accent color and every person color against their backgrounds, in light, dark, and Increase Contrast: 4.5:1 for text, and 3:1 for large text and controls.
 - A test can't show whether VoiceOver and Voice Control make the common tasks possible. A person checks that on a device before each release that claims an accessibility label.
 
@@ -225,13 +227,13 @@ To move the pin:
 1. **Lint:** `swift-format lint --strict`, and the rest of `just lint`.
 2. **Server:** builds the pinned test server, or reuses the built one.
 3. **Package:** `swift test` on macOS, in parallel: the contract test, the fitness tests, the session model, the secrecy suite, and the pure units.
-4. **Build:** the app, the share extension, and the widget for the simulator, with zero warnings. Then the check that the build changed nothing that is in git (see [What the build writes](#what-the-build-writes)).
-5. **Simulator:** `just simulator`: the hosted test bundle, then the journeys once in each setting, one at a time, on the gate's own simulator. The result bundles stay inside the checkout, in `build/gate/run/simulator/`, with the log of each run.
+4. **Build:** the app, the share extension, the widget, and the test bundles for the simulator, with zero warnings. It is the simulator step's build too. Then the check that the build changed nothing that is in git (see [What the build writes](#what-the-build-writes)).
+5. **Simulator:** `just simulator`: the hosted test bundle, then the journeys twice, one at a time, on the gate's own simulator: once with the audit in the four settings, and once in the double-length pseudo-language. It builds with the same arguments as step 4, so its build has nothing to do, and it runs the tests from that build's `.xctestrun` file. The result bundles stay inside the checkout, in `build/gate/run/simulator/`, with the log of each run.
 
 The gate reads its own results:
 
 - It counts the tests from Swift Testing's summary for each test target, from XCTest's summary for each test target with an XCTest test, and from each result bundle. XCTest runs before Swift Testing, so only the XCTest part of the log gives the XCTest count.
-- The journeys' result bundles hold the same tests, once for each setting. So the UI count is the count of one of them, and a bundle that holds other tests than the first fails.
+- The journeys' result bundles hold the same tests, once for each run. So the UI count is the count of one of them, and a bundle that holds other tests than the first fails.
 - It fails on any failure or recorded issue, on a bundle with 0 tests, and on a skip that is not on a short named list.
 - A known issue is a recorded issue, so it fails too: in Swift Testing (`withKnownIssue`) and in XCTest (`XCTExpectFailure`).
 - An issue recorded with the severity `.warning` (`Issue.record(_:severity:)`) is not a failure, so the gate passes it. Swift Testing leaves a warning out of the event stream that the gate reads.
@@ -257,6 +259,7 @@ Time and load:
 - Each run logs its step times to a file that git ignores, `build/gate/times.jsonl`, so a slowdown shows as a trend. The last run's logs are beside it, in `build/gate/run/`.
 - **The budget is 5 minutes**, warm, on the maintainer's laptop. A gate over budget passes with a warning. If it stays over, open an issue to fix it. CI starts cold, so the gate gives no warning there.
 - The build and simulator steps take a machine-wide slot, so that gates from several checkouts don't overload the machine. A gate waits for its turn, and the wait is not part of its time. The slot's lock folder is `WISHBONE_GATE_SLOT_DIR`, which has a default under your user's cache folder: `~/Library/Caches/wishbone-gate`.
+- `just simulator` by itself takes the slot too, so it waits for another checkout's gate, and never breaks it. Under the gate, which holds the slot already, it doesn't take it again: the gate sets `WISHBONE_GATE_SLOT_HELD=1` for each step in the slot.
 
 While you work, run only the suites you touch. Run the full gate once at the end, after your last rebase.
 

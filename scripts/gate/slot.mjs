@@ -17,6 +17,13 @@ import { startKeeper } from './step.mjs';
 
 const keeperFile = fileURLToPath(new URL('./keeper.mjs', import.meta.url));
 
+/**
+ * The variable that the gate sets for a step that runs in the slot. A script that takes the slot by itself, such
+ * as `just simulator`, doesn't take it again when the variable is `1`: the lock is the gate's, so it would wait
+ * for itself.
+ */
+export const slotHeldVariable = 'WISHBONE_GATE_SLOT_HELD';
+
 /** The slot's folder: `WISHBONE_GATE_SLOT_DIR`, or a folder under the user's cache folder. */
 export function slotDirectory(env = process.env) {
   const named = env.WISHBONE_GATE_SLOT_DIR;
@@ -81,4 +88,19 @@ export function takeSlot(directory, { owner = '', onWait, signal, waitNoticeMs =
       });
     });
   });
+}
+
+/**
+ * Runs `work` in the slot: at once when the gate that runs this process holds it (see `slotHeldVariable`), and
+ * otherwise after it takes the slot itself. So `just simulator` by itself waits for another checkout's gate, and
+ * never breaks it. Resolves with what `work` resolves with.
+ */
+export async function inSlot(work, { env = process.env, directory = slotDirectory(env), owner = '', onWait, signal } = {}) {
+  if (env[slotHeldVariable] === '1') return work();
+  const slot = await takeSlot(directory, { owner, onWait, signal });
+  try {
+    return await work();
+  } finally {
+    await slot.release();
+  }
 }

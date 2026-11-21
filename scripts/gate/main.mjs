@@ -75,8 +75,8 @@ const steps = [
   {
     name: 'simulator',
     command: ['just', 'simulator', path.relative(root, simulatorDirectory)],
-    // A first run starts a new simulator, and builds the test bundles. Then come the hosted tests, and the
-    // journeys once in each setting.
+    // A first run starts a new simulator. Step 4 has built the test bundles. Then come the hosted tests, and the
+    // journeys twice: with the audit in the four settings, and in the double-length pseudo-language.
     limitMs: 20 * minute,
     slot: true,
     counts: ['hosted', 'ui'],
