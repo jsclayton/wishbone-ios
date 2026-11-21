@@ -125,6 +125,9 @@
     "No Wishbone found at %@" : {
 
     },
+    "No gifts yet." : {
+
+    },
     "No lists yet." : {
 
     },
@@ -292,9 +295,6 @@
 
     },
     "Year (optional)" : {
-
-    },
-    "You aren't getting anything yet. Open someone on Home and tap I'll get this." : {
 
     },
     "You can't do this any more." : {

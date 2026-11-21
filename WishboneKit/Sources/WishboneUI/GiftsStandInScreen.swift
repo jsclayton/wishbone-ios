@@ -13,11 +13,9 @@ struct GiftsStandInScreen: View {
       }
     }
     .sharedStates(of: session, hasRows: !session.giving.isEmpty) {
-      // The words are a sentence, so they are the view's description, which wraps, and not its title.
+      // The stand-in's own words. The Gifts tab brings the words of its spec for each empty part.
       ContentUnavailableView {
-        EmptyView()
-      } description: {
-        Text("You aren't getting anything yet. Open someone on Home and tap I'll get this.", bundle: #bundle)
+        Text("No gifts yet.", bundle: #bundle)
       }
     }
     .navigationTitle(Text("Gifts", bundle: #bundle))
