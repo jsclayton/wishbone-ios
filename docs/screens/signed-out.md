@@ -46,7 +46,7 @@ Four cases, as the spec lists them. The last has a web link to the server projec
 - **Plain:** no message.
 - **Signing in:** the buttons are disabled, and a progress indicator shows with "Signing in…". The app reads the instance's version, redeems the link, and then reads the user (`GET /users/me`) into the copy. So the next screen is the profile gate when the user's profile isn't confirmed, however slow the first sync is. When the read of the user fails, the sign-in goes on, and the first sync brings the user.
 - **Signed in:** "Signed in as {name}" shows briefly, then the next screen.
-- **Signed out by the server:** the message from [The API's own 401 signs the device out](../spec.md#the-apis-own-401-signs-the-device-out), or "Your account has been deleted."
+- **Signed out by the server:** the message from [The API's own 401 signs the device out](../spec.md#the-apis-own-401-signs-the-device-out).
 - **Signed out with no connection:** the message from [Sign out](../spec.md#sign-out).
 - **The link is used or expired** (401 `login_link_invalid`): a message, and the buttons stay ready.
 - **Not a login link**, for a paste.
@@ -80,7 +80,7 @@ Four cases, as the spec lists them. The last has a web link to the server projec
 
 ## Words
 
-Decided in the spec: "Scan QR code", "I don't have a link", "Signed in as {name}", "That isn't a Wishbone login link", "You were signed out of {address}. Ask for a new login link to sign in again.", "Your account has been deleted.", "No Wishbone found at {address}", and the sign-out message for a failed server call. The paste button's word, "Paste", is the system's, not the app's.
+Decided in the spec: "Scan QR code", "I don't have a link", "Signed in as {name}", "That isn't a Wishbone login link", "You were signed out of {address}. Ask for a new login link to sign in again.", "No Wishbone found at {address}", and the sign-out message for a failed server call. The paste button's word, "Paste", is the system's, not the app's.
 
 **Provisional.** These are drafts:
 
