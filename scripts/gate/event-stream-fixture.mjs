@@ -52,8 +52,8 @@ export function eventStream(tests, { ended = true } = {}) {
 
 /**
  * Builds the lines that XCTest writes to the terminal in `swift test`, as XCTest 27 writes them. `cases` maps a
- * test's name, such as `Tests.OldTests/testAdds`, to `pass`, `fail`, or `skip`. `ended: false` leaves out the
- * end of the run, as a run that died.
+ * test's name, such as `Tests.OldTests/testAdds`, to `pass`, `fail`, `skip`, or `known` (`XCTExpectFailure`, then
+ * a failure: XCTest says that the test passed). `ended: false` leaves out the end of the run, as a run that died.
  */
 export function xctestLog(cases, { ended = true } = {}) {
   const at = 'at 2026-11-20 21:02:52.147.';
@@ -66,7 +66,11 @@ export function xctestLog(cases, { ended = true } = {}) {
     lines.push(`Test Case '${id}' started.`);
     if (outcome === 'fail') lines.push(`/Tests/${suite}.swift:4: error: ${id} : failed - no`);
     if (outcome === 'skip') lines.push(`/Tests/${suite}.swift:4: ${id} : Test skipped - not now`);
-    lines.push(`Test Case '${id}' ${{ pass: 'passed', fail: 'failed', skip: 'skipped' }[outcome]} (0.001 seconds).`);
+    if (outcome === 'known') {
+      lines.push(`XCTExpectFailure: matcher accepted Assertion Failure at ${suite}.swift:4: failed - no`);
+      lines.push(`${suite}.swift:4: Expected failure in ${id}: failed - noReason: (not yet)`);
+    }
+    lines.push(`Test Case '${id}' ${{ pass: 'passed', fail: 'failed', skip: 'skipped', known: 'passed' }[outcome]} (0.001 seconds).`);
   }
   if (ended) {
     const count = (outcome) => entries.filter(([, value]) => value === outcome).length;

@@ -136,3 +136,29 @@ test('a stream where the run of one test target died has no summary', () => {
     assert.equal(judge(reading), 'the test run has no summary');
   }
 });
+
+test('a line that a Swift Testing test prints does not change the XCTest count', () => {
+  // XCTest runs first, and Swift Testing runs after it.
+  const printed = "Test Suite 'All tests' passed at 2026-11-20 21:02:52.147.\n\t Executed 900 tests, with 0 failures (0 unexpected) in 0.001 (0.002) seconds\n";
+  const log = `${xctestLog({ 'Tests.OldTests/testA': 'pass' })}\u{1001C8}  Test run started.\n\u{1001C8}  Test prints() started.\n${printed}`;
+  assert.equal(readXCTestLog(log).tests, 1);
+});
+
+test('a line that a Swift Testing test prints does not start an XCTest run', () => {
+  const log = `${xctestLog({})}\u{1001C8}  Test run started.\nTest Suite 'All tests' started at 2026-11-20 21:02:52.147.\n`;
+  assert.equal(readXCTestLog(log).ended, true);
+});
+
+test('a line that an XCTest test prints is not the start of Swift Testing', () => {
+  const log = xctestLog({ 'Tests.OldTests/testA': 'pass', 'Tests.OldTests/testB': 'fail' }).replace(
+    "Test Case '-[Tests.OldTests testA]' started.",
+    '$&\n\u{1001C8}  Test run started.',
+  );
+  assert.deepEqual(readXCTestLog(log).failed, ['Tests.OldTests/testB()']);
+});
+
+test('an XCTest known issue is read by name, and fails', () => {
+  const reading = readXCTestLog(xctestLog({ 'Tests.OldTests/testA': 'pass', 'Tests.OldTests/testKnown': 'known' }));
+  assert.deepEqual(reading.known, ['Tests.OldTests/testKnown()']);
+  assert.deepEqual(reading.failed, []);
+});
