@@ -81,7 +81,7 @@ final class BlockedStoresTests {
     #expect(row.canDelete)
 
     instance.conditioner.dropEverything()
-    await admin.sync()
+    await admin.syncNow()
     #expect(admin.isInstanceUnreachable)
     #expect(admin.blockedStores.contains(row))
   }
@@ -104,7 +104,7 @@ final class BlockedStoresTests {
     #expect(sent.headers["idempotency-key"] != nil)
 
     // A sync keeps it.
-    await admin.sync()
+    await admin.syncNow()
     #expect(ownStores(of: admin) == [host])
   }
 
@@ -141,7 +141,7 @@ final class BlockedStoresTests {
     hold.release()
     #expect(await unblocking.value == .unblocked)
     await until { !admin.blockedStores.contains(row) }
-    await admin.sync()
+    await admin.syncNow()
     #expect(!admin.blockedStores.contains { $0.id == blocked.id })
   }
 
@@ -170,7 +170,7 @@ final class BlockedStoresTests {
 
     // Nothing waits to be sent: with the network back, a sync changes nothing on the server.
     instance.conditioner.passEverything()
-    await admin.sync()
+    await admin.syncNow()
     let onServer = try await blockedOnServer()
     #expect(onServer.contains(blocked.store))
     #expect(!onServer.contains(store("offline")))
