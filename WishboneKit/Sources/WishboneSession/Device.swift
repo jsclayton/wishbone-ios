@@ -40,8 +40,13 @@ public enum SignInState: Sendable, Equatable {
   /// The address answered, and not as a Wishbone does.
   case noWishbone(InstanceAddress)
 
-  /// The instance is older than the minimum server version. The link is not used.
+  /// The instance is older than the minimum server version. The link is not used. The version block shows over the
+  /// signed-out screen, with Back.
   case instanceTooOld(InstanceAddress, version: String, minimum: String)
+
+  /// The redeem got the API's own 410 `api_version_removed`: this version of the app is too old for the instance.
+  /// The version block shows over the signed-out screen, with Back.
+  case appTooOld(InstanceAddress)
 
   /// The server refused the sign-in with another code.
   case refused(APIError.Refusal)
@@ -204,7 +209,7 @@ public final class Device {
     await signIn(with: keptLink)
   }
 
-  /// Forgets the kept link, and returns to the plain state.
+  /// Forgets the kept link, and returns to the plain state. Back on a version block during sign-in does this too.
   public func cancelSignIn() {
     guard signInState != .signingIn else { return }
     keptLink = nil
@@ -257,7 +262,9 @@ public final class Device {
         signInState = .tooManyTries
       case .refused(let refusal):
         signInState = .refused(refusal)
-      case .unauthorized, .appTooOld, .undecodable:
+      case .appTooOld:
+        signInState = .appTooOld(link.instance)
+      case .unauthorized, .undecodable:
         signInState = .failed
       }
       return

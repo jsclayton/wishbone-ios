@@ -9,6 +9,8 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<key>WishboneAppStoreURL</key>
+	<string>$(WISHBONE_APP_STORE_URL)</string>
 	<key>WishboneAppGroup</key>
 	<string>group.$(WISHBONE_BUNDLE_PREFIX)</string>
 	<key>WishboneKeychainAccessGroup</key>

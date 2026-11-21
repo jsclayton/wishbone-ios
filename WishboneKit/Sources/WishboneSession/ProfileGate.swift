@@ -144,8 +144,11 @@ extension SessionModel {
       // The API's own 401 ends the session, as it does for a sync: every window shows the signed-out screen.
       await endedByServer(self)
       return .failed
-    case .cancelled, .appTooOld, .undecodable:
-      // The API's own 410 has a screen of its own, which is not built yet.
+    case .appTooOld:
+      // The API's own 410: every window shows the block for an app that is too old, in front of the gate.
+      blockAppTooOld()
+      return .failed
+    case .cancelled, .undecodable:
       return .failed
     }
   }

@@ -23,6 +23,9 @@
     "Add a photo" : {
 
     },
+    "Back" : {
+
+    },
     "Birthday" : {
 
     },
@@ -191,6 +194,9 @@
     "The camera is turned off on this device, so Wishbone can't scan. Paste a link." : {
 
     },
+    "This Wishbone needs an update" : {
+
+    },
     "This device doesn't trust the certificate of %@. Ask the person who runs Wishbone." : {
 
     },
@@ -203,10 +209,16 @@
     "This setting is for this device, whoever signs in." : {
 
     },
+    "This version of Wishbone is too old for %@. Update the app." : {
+
+    },
     "Too many tries. Wait a minute, then try again." : {
 
     },
     "Try again" : {
+
+    },
+    "Update Wishbone" : {
 
     },
     "Wishbone" : {

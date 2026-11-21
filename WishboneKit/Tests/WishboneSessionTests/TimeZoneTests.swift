@@ -99,10 +99,14 @@ struct TimeZoneTests {
     let mark = instance.conditioner.requests.count
     await session.cameToForeground()
 
-    // The sync is one request, which the instance answers with a 304. So the record's zone comes from the copy.
+    // After the version check, the sync is one request, which the instance answers with a 304. So the record's zone
+    // comes from the copy.
     let asked = instance.conditioner.requests.dropFirst(mark)
-    #expect(asked.map { "\($0.method) \($0.target)" } == ["GET /api/v2/versions", "PATCH /api/v2/users/me"])
-    #expect(asked.first?.headers["if-none-match"] != nil)
+    #expect(
+      asked.map { "\($0.method) \($0.target)" } == [
+        "GET /api/v2/health", "GET /api/v2/versions", "PATCH /api/v2/users/me",
+      ])
+    #expect(asked.dropFirst().first?.headers["if-none-match"] != nil)
     #expect(try await recordedZone(of: robin) == "Asia/Tokyo")
   }
 

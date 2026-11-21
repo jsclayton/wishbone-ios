@@ -372,7 +372,7 @@ struct PullTests {
     #expect(session.user?.name == robin.name)
   }
 
-  @Test("A 404 for the versions themselves is an instance below the minimum: the sync stops, and changes nothing")
+  @Test("A 404 for the versions themselves stops the sync, changes nothing, and runs the version check")
   func instanceBelowTheMinimum() async throws {
     let robin = try await instance.person(items: ["Kite"])
     let (device, session) = try await signedIn(as: robin, expecting: ["Kite"])
@@ -382,7 +382,9 @@ struct PullTests {
     instance.conditioner.answer(Route("GET", "/versions"), with: try .problem(404, code: "not_found"))
     var mark = self.mark
     await session.sync()
-    #expect(asked(since: mark) == ["GET /versions"])
+    // The version check finds the instance's version passes: the 404 was something else, and nothing blocks.
+    #expect(asked(since: mark) == ["GET /versions", "GET /health"])
+    #expect(session.versionBlock == nil)
     #expect(session.primaryListItems.map(\.title) == ["Kite"])
     // The instance answered, so it is not unreachable, and the session stays.
     #expect(!session.isInstanceUnreachable)

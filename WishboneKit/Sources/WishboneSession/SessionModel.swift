@@ -73,6 +73,10 @@ public final class SessionModel {
   /// saved under the line "Can't reach {address}".
   public private(set) var isInstanceUnreachable = false
 
+  /// The version block that every window shows in place of the profile gate and the tabs. Nil while nothing blocks.
+  /// The session stays while a block shows. See "Version checks" in `docs/spec.md`.
+  public private(set) var versionBlock: VersionBlock?
+
   let client: APIClient
   let database: LocalDatabase
   private let timeZone: TimeZoneSource
@@ -94,6 +98,7 @@ public final class SessionModel {
   /// Stops when the session model goes.
   private var observation: AnyDatabaseCancellable?
   private var syncing: Task<Void, Never>?
+  private var checkingVersion: Task<Void, Never>?
 
   init(
     session: Session,
@@ -229,12 +234,13 @@ public final class SessionModel {
   /// Brings the instance and the copy in step: a sync sends the unsent changes, then pulls. See "When the app
   /// syncs" in `docs/spec.md`.
   ///
-  /// A call during a sync waits for that sync, and starts no second one.
+  /// A call during a sync waits for that sync, and starts no second one. While a version block shows, a sync does
+  /// nothing: the app and the instance can't work together.
   ///
   /// When the instance answers with the API's own 401, the session is over: the sync returns when the device has
   /// forgotten it.
   public func sync() async {
-    guard !hasEnded else { return }
+    guard !hasEnded, versionBlock == nil else { return }
     if let syncing { return await syncing.value }
     let task = Task {
       // Nothing is sent yet: the unsent changes come with their journal.
@@ -279,11 +285,18 @@ public final class SessionModel {
       // The API's own 401: the session was revoked, went a year unused, or its user was deactivated. The server
       // doesn't say which. The device forgets everything.
       return .endedByServer
+    } catch APIError.appTooOld {
+      // The API's own 410: this version of the app is too old for the instance. The session stays.
+      isInstanceUnreachable = false
+      blockAppTooOld()
+    } catch APIError.refused(let refusal) where refusal.status == 404 {
+      // A 404 for the versions is an instance below the minimum server version. The version check says so, and
+      // finds nothing when the 404 was for something else. The copy keeps what the pull wrote before it stopped.
+      isInstanceUnreachable = false
+      await checkVersion()
     } catch let error as APIError {
-      // The instance answered. What the answer asks of the app is not built yet: a 404 for the versions is an
-      // instance below the minimum server version, which the version check tells the person. Another refusal,
-      // a 401 with another code included, keeps the session. The copy keeps what the pull wrote before it
-      // stopped.
+      // The instance answered. Another refusal, a 401 with another code included, keeps the session. The copy
+      // keeps what the pull wrote before it stopped.
       isInstanceUnreachable = false
       if case .undecodable(let answer) = error {
         Log.fault(
@@ -347,17 +360,73 @@ public final class SessionModel {
     occasions = []
     memberships = []
     isInstanceUnreachable = false
+    versionBlock = nil
     database.close()
   }
 
   // MARK: - The app comes to the foreground
 
-  /// What the app does each time it comes to the foreground: it syncs, and then reports the time zone. Only the app
-  /// calls this, never an extension.
+  /// What the app does each time it comes to the foreground: it runs the version check, syncs, and then reports the
+  /// time zone. While a version block shows, it does only the check. Only the app calls this, never an extension.
   public func cameToForeground() async {
     guard !hasEnded else { return }
+    await checkVersion()
+    guard versionBlock == nil else { return }
     await sync()
     await reportTimeZone()
+  }
+
+  // MARK: - Version checks
+
+  /// Try again on the block for an instance that is too old: it runs the version check at once. When the check
+  /// passes, the block goes, and the session syncs.
+  public func tryVersionCheckAgain() async {
+    guard !hasEnded else { return }
+    await checkVersion()
+    guard versionBlock == nil else { return }
+    await sync()
+  }
+
+  /// Reads `GET /health`, and shows or lifts the block for an instance that is too old. See "Version checks" in
+  /// `docs/spec.md`.
+  ///
+  /// A call during a check waits for that check, and starts no second one. An instance that can't be reached, or
+  /// that answers not as the API does, changes nothing: while signed in, both are unreachable, and the sync says
+  /// so. The block for an app that is too old stays: only an update of the app lifts it.
+  ///
+  /// Diagnostics: never. A version block is no fault, and the client has logged the request's outcome.
+  func checkVersion() async {
+    guard !hasEnded, versionBlock != .appTooOld else { return }
+    if let checkingVersion { return await checkingVersion.value }
+    let task = Task {
+      let check: VersionCheck
+      do {
+        check = try await client.checkVersion()
+      } catch {
+        return
+      }
+      guard !hasEnded, versionBlock != .appTooOld else { return }
+      switch check {
+      case .passes:
+        versionBlock = nil
+      case .tooOld(let version, let minimum):
+        versionBlock = .instanceTooOld(version: version, minimum: minimum)
+      case .noWishbone:
+        break
+      }
+    }
+    checkingVersion = task
+    await task.value
+    if checkingVersion == task { checkingVersion = nil }
+  }
+
+  /// Shows the block for an app that is too old, after any request got the API's own 410 `api_version_removed`.
+  /// It stays until the app is updated, which ends this launch.
+  ///
+  /// Diagnostics: never. It is no fault of the app.
+  func blockAppTooOld() {
+    guard !hasEnded else { return }
+    versionBlock = .appTooOld
   }
 
   // MARK: - The time zone
@@ -384,6 +453,8 @@ public final class SessionModel {
     } catch .unauthorized {
       // The API's own 401 ends the session, as it does for a sync. Diagnostics: never.
       await endedByServer(self)
+    } catch .appTooOld {
+      blockAppTooOld()
     } catch {
       // Diagnostics: never. A failed report is not captured, and not a breadcrumb: the next foreground sends it
       // again. It changes nothing, not even whether the instance can be reached: the sync decides that. The client

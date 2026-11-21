@@ -274,6 +274,20 @@ final class ProfileGateTests {
     #expect(instance.keychain.read() == nil)
   }
 
+  @Test("The API's own 410 during Continue gives the block for an app that is too old, in front of the gate")
+  func appTooOld() async throws {
+    let robin = try await instance.person("Robin")
+    let device = try await signedIn(as: robin)
+    let session = try #require(device.session)
+    instance.conditioner.answer(Self.confirm, with: try .problem(410, code: "api_version_removed"))
+
+    #expect(await session.confirmProfile(ProfileDraft(try #require(session.user))) == .failed)
+
+    #expect(session.versionBlock == .appTooOld)
+    #expect(device.session === session)
+    #expect(session.needsProfileGate)
+  }
+
   @Test("Sign out works from the gate")
   func signOutFromTheGate() async throws {
     let robin = try await instance.person("Robin")
