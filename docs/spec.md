@@ -90,7 +90,7 @@ Screens: [signed-out](screens/signed-out.md), [version-block](screens/version-bl
 Two ways in, one way to get help, and nothing to type.
 
 - **Scan QR code** is the main button. It opens the app's own scanner, because the system Camera opens a login link in Safari, and the web page has no "Open in app" button.
-- **Paste link** is the second button. It is the system paste button, so iOS shows no "allow paste" alert.
+- **Paste** is the second button. It is the system paste button: it shows the system's word at the system's size, and takes no words from the app. iOS shows no "allow paste" alert for it.
 - **I don't have a link** opens a short help sheet:
   - Someone in your family runs Wishbone: ask them, or your parent, for a login link.
   - You already use Wishbone in a browser: open your sign-in screen there, which shows a QR code for you.
@@ -1064,7 +1064,7 @@ The first release claims all seven of the App Store's accessibility labels, on i
 - **Nothing by gesture alone:** every swipe action and every drag also has a button or a menu item (Move to…, Reorder).
 - **Contrast:** 4.5:1 for text, and 3:1 for large text and controls, in light, dark, and Increase Contrast. This covers the accent and the person palette.
 - **Reduced Motion and Reduce Transparency:** only the system's motion and glass, which follow both settings. No custom motion.
-- **Tap targets** are at least 44 points.
+- **Tap targets** are at least 44 points. The one exception is a control that the system draws with its own words and at its own size, such as the system paste button. It keeps the system's size.
 
 ### Languages
 

@@ -23,7 +23,7 @@ Gifts stay a surprise on the device too. The widget, reminders, and every other 
 
 You need a login link from your family's Wishbone. Ask whoever runs it, or your parent. If you already use Wishbone in a browser, its sign-in screen shows a QR code for you.
 
-In the app, tap **Scan QR code**, or copy the link and tap **Paste link**. The first setup of a Wishbone server happens in a browser, not in the app (see the server's [README](https://github.com/jsclayton/wishbone#readme)).
+In the app, tap **Scan QR code**, or copy the link and tap **Paste**. The first setup of a Wishbone server happens in a browser, not in the app (see the server's [README](https://github.com/jsclayton/wishbone#readme)).
 
 ## Privacy
 

@@ -21,7 +21,7 @@ From top to bottom:
 1. The app's name and icon.
 2. A message, when there is one (see States).
 3. **Scan QR code**, the main button.
-4. **Paste link**, the system paste button.
+4. **Paste**, the system paste button. It shows the system's word and has the system's size.
 5. **I don't have a link**.
 6. At the foot, the diagnostics notice line (see [The notice and the switch](../spec.md#the-notice-and-the-switch)).
 
@@ -55,7 +55,7 @@ Four cases, as the spec lists them. The last has a web link to the server projec
 - **A certificate the device doesn't trust:** its own message, with no way around it.
 - **No Wishbone at the address**, from the version check.
 - **The instance is too old:** the [version block](version-block.md) shows, and the link is not used.
-- **Camera denied or not available:** Scan QR code says why, and offers Open Settings. Paste link still works.
+- **Camera denied or not available:** Scan QR code says why, and offers Open Settings. Paste still works.
 
 **Provisional.** Plain default: each message is text above the buttons, and Try again is a button under it.
 
@@ -70,7 +70,7 @@ Four cases, as the spec lists them. The last has a web link to the server projec
 | Action | Route | What it does |
 |---|---|---|
 | Scan QR code | The main button | Opens the scanner. A login link signs in |
-| Paste link | The system paste button | Signs in with the link on the clipboard |
+| Paste | The system paste button | Signs in with the link on the clipboard |
 | I don't have a link | A text button | Opens the help sheet |
 | Diagnostics settings | The notice line | Opens Share diagnostics as a sheet |
 | Try again | A button, after "Can't reach" or too many tries | Tries the same link again |
@@ -80,7 +80,7 @@ Four cases, as the spec lists them. The last has a web link to the server projec
 
 ## Words
 
-Decided in the spec: "Scan QR code", "Paste link", "I don't have a link", "Signed in as {name}", "That isn't a Wishbone login link", "You were signed out of {address}. Ask for a new login link to sign in again.", "Your account has been deleted.", "No Wishbone found at {address}", and the sign-out message for a failed server call.
+Decided in the spec: "Scan QR code", "I don't have a link", "Signed in as {name}", "That isn't a Wishbone login link", "You were signed out of {address}. Ask for a new login link to sign in again.", "Your account has been deleted.", "No Wishbone found at {address}", and the sign-out message for a failed server call. The paste button's word, "Paste", is the system's, not the app's.
 
 **Provisional.** These are drafts:
 
@@ -104,7 +104,7 @@ Decided in the spec: "Scan QR code", "Paste link", "I don't have a link", "Signe
 ## Accessibility
 
 - The message is announced when it appears, and so is "Signed in as {name}".
-- The scanner has Cancel as its first element. Paste link does everything the scanner does, so nobody needs the camera.
+- The scanner has Cancel as its first element. Paste does everything the scanner does, so nobody needs the camera.
 - The link in the help sheet reads "Running your own Wishbone, opens in browser".
 - At the largest text sizes the content scrolls, and the notice line stays in the scroll, not pinned.
 
