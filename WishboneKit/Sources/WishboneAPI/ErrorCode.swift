@@ -63,6 +63,12 @@ public enum ErrorCode: Sendable, Hashable {
     "already_blocked": .alreadyBlocked,
   ]
 
+  /// The server's text for the code, such as `login_link_invalid`.
+  public var text: String {
+    if case .unknown(let text) = self { return text }
+    return Self.known.first { $0.value == self }?.key ?? ""
+  }
+
   /// The code for the server's text, such as `login_link_invalid`.
   public init(_ text: String) {
     self = Self.known[text] ?? .unknown(text)

@@ -7,25 +7,31 @@ import WishboneUI
 @main
 struct WishboneApp: App {
   /// The one device of the app. Every window scene reads it from the environment.
-  @State private var device = Device(.app)
+  @State private var device: Device
 
   /// The device's diagnostics. They start here at launch, when the rule allows: the notice was shown at an earlier
   /// launch, the switch is on, and the build has a DSN. See "On by default, for each device, after a notice" in
   /// `docs/spec.md`.
-  @State private var diagnostics: DiagnosticsSettings = {
-    let diagnostics = Diagnostics.app()
-    diagnostics.start()
-    return DiagnosticsSettings(diagnostics)
-  }()
+  @State private var diagnostics: DiagnosticsSettings
 
   /// The phase of the whole app: active while any window is in the foreground.
   @Environment(\.scenePhase) private var scenePhase
+
+  init() {
+    let diagnostics = Diagnostics.app()
+    diagnostics.start()
+    _diagnostics = State(initialValue: DiagnosticsSettings(diagnostics))
+    // The device reports the app's own faults, and each request, to diagnostics.
+    _device = State(initialValue: Device(.app(diagnostics: diagnostics.reporter)))
+  }
 
   var body: some Scene {
     WindowGroup {
       WindowRoot()
         .environment(device)
         .environment(\.diagnostics, diagnostics)
+        .environment(\.diagnosticsReporter, diagnostics.reporter)
+        .modifier(ScenePhaseBreadcrumbs(diagnostics: diagnostics.reporter))
         #if DEBUG
           .task { await Journey.pasteLoginLink(into: device) }
         #endif
@@ -39,6 +45,23 @@ struct WishboneApp: App {
   }
 }
 
+/// Leaves a breadcrumb for each change of the window scene's phase. Each window has its own phase.
+private struct ScenePhaseBreadcrumbs: ViewModifier {
+  let diagnostics: any DiagnosticsReporter
+  @Environment(\.scenePhase) private var scenePhase
+
+  func body(content: Content) -> some View {
+    content.onChange(of: scenePhase) { _, phase in
+      switch phase {
+      case .active: diagnostics.leave(.scenePhase(.active))
+      case .inactive: diagnostics.leave(.scenePhase(.inactive))
+      case .background: diagnostics.leave(.scenePhase(.background))
+      @unknown default: break
+      }
+    }
+  }
+}
+
 /// The diagnostics switch that the screens see. `WishboneUI` can't import `WishboneDiagnostics`, because the share
 /// extension links `WishboneUI`, so the app joins the two.
 final class DiagnosticsSettings: DiagnosticsSwitch {
@@ -46,6 +69,11 @@ final class DiagnosticsSettings: DiagnosticsSwitch {
 
   init(_ diagnostics: Diagnostics) {
     self.diagnostics = diagnostics
+  }
+
+  /// Where the app's own faults and breadcrumbs go.
+  nonisolated var reporter: any DiagnosticsReporter {
+    diagnostics.reporter
   }
 
   var isOn: Bool {
@@ -60,8 +88,8 @@ final class DiagnosticsSettings: DiagnosticsSwitch {
 
 extension Device.Setup {
   /// What the app gives its device: the session keychain in the shared access group, the install marker in the app
-  /// group's shared container, and the database in the app's own Application Support folder.
-  static var app: Device.Setup {
+  /// group's shared container, the database in the app's own Application Support folder, and diagnostics.
+  static func app(diagnostics: any DiagnosticsReporter) -> Device.Setup {
     let info = Bundle.main
     let version = info.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
     let accessGroup = info.object(forInfoDictionaryKey: "WishboneKeychainAccessGroup") as? String ?? ""
@@ -73,7 +101,8 @@ extension Device.Setup {
       userAgent: UserAgent(version: version, isPad: UIDevice.current.userInterfaceIdiom == .pad),
       keychain: SystemSessionKeychain(accessGroup: accessGroup),
       marker: installMarker(appGroup: appGroup),
-      storage: .folder(.applicationSupportDirectory)
+      storage: .folder(.applicationSupportDirectory),
+      diagnostics: diagnostics
     )
   }
 

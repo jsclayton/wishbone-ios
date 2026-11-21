@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import WishboneAPI
 import WishboneSession
 
@@ -122,4 +123,48 @@ extension Page {
     case .people: .people
     }
   }
+}
+
+// MARK: - The place opened, for diagnostics
+
+extension WindowTab {
+  /// The tab's kind of place, for a breadcrumb.
+  var placeKind: PlaceKind {
+    switch self {
+    case .home: .home
+    case .lists: .lists
+    case .gifts: .gifts
+    case .add: .add
+    }
+  }
+}
+
+extension Page {
+  /// The page's kind of place, for a breadcrumb: never what it shows.
+  var placeKind: PlaceKind {
+    switch self {
+    case .list: .listPage
+    case .user: .userPage
+    case .people: .people
+    }
+  }
+}
+
+extension WindowPlace {
+  /// The kind of the place that the window shows: the last page pushed on its tab, or the tab.
+  public var shownKind: PlaceKind {
+    self[pagesOn: tab].last?.placeKind ?? tab.placeKind
+  }
+
+  /// The place that the window opened since `earlier`, by its kind: a new tab, a page pushed, or the page under one
+  /// that went back. Nil when the window shows the same place.
+  public func opened(since earlier: WindowPlace) -> PlaceKind? {
+    guard tab != earlier.tab || self[pagesOn: tab] != earlier[pagesOn: tab] else { return nil }
+    return shownKind
+  }
+}
+
+extension EnvironmentValues {
+  /// Where the window's breadcrumbs go. Only the app gives one: the share extension sends nothing.
+  @Entry public var diagnosticsReporter: any DiagnosticsReporter = NoDiagnostics()
 }

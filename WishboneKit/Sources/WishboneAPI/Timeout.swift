@@ -1,8 +1,10 @@
 /// A piece of work passed its time limit.
 ///
 /// Diagnostics: never. A timeout is one way that an instance is unreachable.
-public struct TimedOut: Error, Sendable, Equatable {
+public struct TimedOut: Diagnosed, Sendable, Equatable {
   public init() {}
+
+  public var diagnosticSide: DiagnosticSide { .never }
 }
 
 /// Runs the work, and throws `TimedOut` when it takes longer than the limit. Every timeout in the app goes

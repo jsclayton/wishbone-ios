@@ -44,14 +44,16 @@ struct Instance {
     storage: SessionStorage = .memory,
     marker: (any InstallMarker)? = nil,
     clock: any Clock<Duration> = ContinuousClock(),
-    timeZone: TimeZoneSource = .fixed("UTC")
+    timeZone: TimeZoneSource = .fixed("UTC"),
+    diagnostics: any DiagnosticsReporter = .none
   ) -> Device {
     Device(
       Device.Setup(
         userAgent: UserAgent(version: "1.0", isPad: false), keychain: keychain, marker: marker ?? self.marker,
         storage: storage,
         clock: clock,
-        timeZone: timeZone))
+        timeZone: timeZone,
+        diagnostics: diagnostics))
   }
 
   /// A user with the items on their primary list, in order.

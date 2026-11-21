@@ -34,11 +34,13 @@ extension LocalDatabase {
   /// Makes the copy's tables. When the database has the copy of another schema number, it first drops every table
   /// of that copy, with the versions and the kept `ETag`. It touches nothing else in the database.
   ///
-  /// Diagnostics: "a migration drops the copy" is captured. Nothing is captured yet: the app has no diagnostics
-  /// until `WishboneDiagnostics` holds them.
-  static func prepareCopy(in writer: any DatabaseWriter) throws {
-    try writer.write { database in
-      guard try Int.fetchOne(database, sql: "PRAGMA user_version") != copySchema else { return }
+  /// It gives the schema number of the copy that it dropped, and nil when it dropped none. Diagnostics: "a migration
+  /// drops the copy" is captured, as the two schema numbers, by the caller.
+  @discardableResult
+  static func prepareCopy(in writer: any DatabaseWriter) throws -> Int? {
+    try writer.write { database -> Int? in
+      let schema = try Int.fetchOne(database, sql: "PRAGMA user_version") ?? 0
+      guard schema != copySchema else { return nil }
       var hadCopy = false
       for table in copyTables where try database.tableExists(table) {
         try database.drop(table: table)
@@ -218,6 +220,7 @@ extension LocalDatabase {
         table.column("etag", .text).notNull()
       }
       try database.execute(sql: "PRAGMA user_version = \(copySchema)")
+      return hadCopy ? schema : nil
     }
   }
 }
