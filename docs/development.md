@@ -153,7 +153,7 @@ To move the pin:
 
 - Each test process shares one server, because each test seeds its own family. A test that needs its own instance (an empty one, sign-in from setup, an LLM fixture, a low rate limit) starts a private server.
 - Every test server gets a free port, and a fresh data folder under the run's own temporary root. Nothing is fixed, so two checkouts and CI never collide.
-- Every test server runs with `TZ=UTC`, a high `WISHBONE_RATE_LIMIT_REDEEM`, `WISHBONE_E2E_HOOKS=true`, and `WISHBONE_EXTRACT_ALLOW_PRIVATE=true`.
+- Every test server runs with `TZ=UTC`, `WISHBONE_LISTEN_ADDRESS=127.0.0.1` so that it is not on the local network, a high `WISHBONE_RATE_LIMIT_REDEEM`, `WISHBONE_E2E_HOOKS=true`, and `WISHBONE_EXTRACT_ALLOW_PRIVATE=true`.
 - The package tests run in parallel. The simulator tests run one at a time.
 
 ### Temporary folders: ScratchDirectory

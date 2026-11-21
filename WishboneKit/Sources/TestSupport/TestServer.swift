@@ -99,6 +99,8 @@ public final class TestServer: Sendable {
         // The zone of a user who has no timezone.
         "TZ": "UTC",
         "WISHBONE_PORT": "\(port)",
+        // Only this machine can reach a test server.
+        "WISHBONE_LISTEN_ADDRESS": "127.0.0.1",
         // A name, not an IP address: the server refuses an IP address here, for passkeys.
         "WISHBONE_PUBLIC_URL": "http://localhost:\(port)",
         "WISHBONE_DATA_DIR": dataFolder(in: folder).path(percentEncoded: false),
@@ -172,7 +174,8 @@ public final class TestServer: Sendable {
     throw DidNotStart(reason: "it did not answer its health check in 30 seconds", log: log(at: logFile))
   }
 
-  /// A port that nothing listens on, right now. The server listens on every address, so the probe does too.
+  /// A port that nothing listens on, at any address, right now. The server listens on 127.0.0.1 only, but its
+  /// address is `localhost`, which can also mean `::1`. So the port must be free there too.
   private static func freePort() throws -> Int {
     let probe = socket(AF_INET6, SOCK_STREAM, 0)
     guard probe >= 0 else { throw POSIXError(.init(rawValue: errno) ?? .EIO) }
