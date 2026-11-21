@@ -80,8 +80,8 @@ export function startKeeper(pids = [], { command = [process.execPath, keeperModu
  * Runs `command` until it exits, passes `limitMs`, or `signal` aborts. Then it stops every process that the step
  * left.
  *
- * The step's output goes to `echo` as it comes, and to the file at `logPath` a whole line at a time. `onStart` is called with the
- * step's process ID when it starts.
+ * The step's output goes to `echo` as it comes, and to the file at `logPath` a whole line at a time. `onStart`
+ * is called with the step's process ID when it starts.
  * Resolves with `{ exit, timedOut, interrupted, ms, pid }`. `exit` is the exit code, or null when the step was
  * stopped or died from a signal.
  */
