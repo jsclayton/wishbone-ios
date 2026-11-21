@@ -45,6 +45,13 @@ public final class SessionModel {
   /// ones to the lists that the user is a recipient of.
   public private(set) var invitations: [InvitationRow] = []
 
+  /// Every gift that the copy holds, the soonest reveal first: the ones that the session's user gives, and the
+  /// given gifts for them or their children. See `giving`, `given`, `received` and `received(by:)`.
+  public private(set) var gifts: [GiftRow] = []
+
+  /// Every blocked store that the copy holds, by store. Only the admin's copy has any.
+  public private(set) var blockedStores: [BlockedStoreRow] = []
+
   /// Every user that the copy holds, by name: the ones that the session's user sees in full, and the ones that
   /// the user gets only as a summary inside another resource.
   public private(set) var users: [UserRow] = []
@@ -118,6 +125,8 @@ public final class SessionModel {
     storeLinksByItem = snapshot.storeLinks
     recipientsByList = snapshot.recipients
     invitations = snapshot.invitations
+    gifts = snapshot.gifts
+    blockedStores = snapshot.blockedStores
     let own = snapshot.lists.filter { $0.recipientIDs.contains(session.userID) }
     yourLists = own.filter(\.isPrimary) + own.filter { !$0.isPrimary }
   }
@@ -147,6 +156,49 @@ public final class SessionModel {
   /// copy.
   public func recipients(ofList id: String) -> [RecipientRow] {
     recipientsByList[id] ?? []
+  }
+
+  // MARK: - Gifts
+
+  /// Giving: the session's user's open gifts, the soonest reveal first. The server's `?giver_id=me&state=open`.
+  public var giving: [GiftRow] {
+    gifts.filter { $0.giverID == session.userID && $0.state == .open }
+  }
+
+  /// Given: the gifts that the session's user gave, the newest first. The server's
+  /// `?giver_id=me&state=given&sort=-given_at`.
+  public var given: [GiftRow] {
+    Self.newestFirst(gifts.filter { $0.giverID == session.userID && $0.state == .given })
+  }
+
+  /// Received: the gifts given to the session's user, the newest first. The server's
+  /// `?recipient_id=me&sort=-given_at`.
+  public var received: [GiftRow] {
+    received(by: session.userID)
+  }
+
+  /// The gifts given to the user, the newest first: for a parent, a child's Received. The server's
+  /// `?recipient_id={id}&sort=-given_at`. A gift whose recipients are hidden from the session's user is in no
+  /// one's.
+  public func received(by userID: String) -> [GiftRow] {
+    Self.newestFirst(gifts.filter { $0.state == .given && $0.recipientIDs.value?.contains(userID) == true })
+  }
+
+  /// How many of the session's user's gifts need their attention. The server's `?needs_attention=true`.
+  public var giftsNeedingAttention: Int {
+    gifts.count { $0.needsAttention.value == true }
+  }
+
+  /// The gift in the copy with the ID. Nil for a gift that is not in the copy.
+  public func gift(id: String) -> GiftRow? {
+    gifts.first { $0.id == id }
+  }
+
+  private static func newestFirst(_ gifts: [GiftRow]) -> [GiftRow] {
+    gifts.sorted { first, second in
+      let dates = (first.givenAt ?? .distantPast, second.givenAt ?? .distantPast)
+      return dates.0 != dates.1 ? dates.0 > dates.1 : first.id < second.id
+    }
   }
 
   /// The user in the copy with the ID, in full or as a summary. Nil for a user who is not in the copy.
@@ -252,6 +304,8 @@ public final class SessionModel {
     storeLinksByItem = [:]
     recipientsByList = [:]
     invitations = []
+    gifts = []
+    blockedStores = []
     users = []
     usersByID = [:]
     groups = []

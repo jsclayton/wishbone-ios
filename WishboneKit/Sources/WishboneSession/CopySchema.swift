@@ -14,7 +14,7 @@ extension LocalDatabase {
   /// tables. Without that, the kept `ETag` could answer a pull with a 304 for a copy that never held the new kind.
   ///
   /// The number is SQLite's `user_version`. The first version of the copy had none, which is 0.
-  static let copySchema = 3
+  static let copySchema = 4
 
   /// One row at most: the `ETag` of the last answer of `GET /versions` that the copy agreed with.
   static let keptETagTable = "keptETag"
@@ -23,7 +23,8 @@ extension LocalDatabase {
   private static let copyTables = [
     UserRow.databaseTableName, GroupRow.databaseTableName, OccasionRow.databaseTableName,
     MembershipRow.databaseTableName, ListRow.databaseTableName, RecipientRow.databaseTableName,
-    ItemRow.databaseTableName, StoreLinkRow.databaseTableName, InvitationRow.databaseTableName, keptETagTable,
+    ItemRow.databaseTableName, StoreLinkRow.databaseTableName, InvitationRow.databaseTableName,
+    GiftRow.databaseTableName, BlockedStoreRow.databaseTableName, keptETagTable,
   ]
 
   /// Makes the copy's tables. When the database has the copy of another schema number, it first drops every table
@@ -159,6 +160,53 @@ extension LocalDatabase {
         table.column("invitedByID", .text)
         table.column("createdAt", .datetime).notNull()
         table.column("canAccept", .boolean).notNull()
+        table.column("canDelete", .boolean).notNull()
+        table.column("version", .text).notNull()
+      }
+      try database.create(table: GiftRow.databaseTableName) { table in
+        table.primaryKey("id", .text)
+        table.column("state", .text).notNull()
+        table.column("quantity", .integer).notNull()
+        table.column("itemID", .text).notNull()
+        table.column("itemTitle", .text).notNull()
+        // An image summary, as JSON.
+        table.column("itemPrimaryImage", .text)
+        table.column("listID", .text).notNull()
+        table.column("listName", .text).notNull()
+        table.column("title", .text).notNull()
+        table.column("image", .text)
+        table.column("priceMinor", .integer)
+        table.column("topPriceMinor", .integer)
+        table.column("currency", .text)
+        // The IDs of the recipients in the server's order, hidden or shown, as JSON.
+        table.column("recipientIDs", .text).notNull()
+        table.column("giverID", .text)
+        table.column("giverName", .text).notNull()
+        table.column("fromLabel", .text)
+        // An occasion summary, as JSON.
+        table.column("occasion", .text)
+        table.column("occasionName", .text)
+        table.column("occasionDate", .text).notNull()
+        table.column("revealAt", .datetime).notNull()
+        table.column("givenAt", .datetime)
+        // The giver's own fields: hidden, or shown with a value or with none, as JSON.
+        table.column("isBought", .text).notNull()
+        table.column("note", .text).notNull()
+        table.column("flags", .text).notNull()
+        table.column("needsAttention", .text).notNull()
+        table.column("createdAt", .text).notNull()
+        table.column("canEdit", .boolean).notNull()
+        table.column("canDelete", .boolean).notNull()
+        table.column("canRaiseQuantity", .boolean).notNull()
+        table.column("canAcknowledge", .boolean).notNull()
+        table.column("canRestore", .boolean).notNull()
+        table.column("canAddAgain", .boolean).notNull()
+        table.column("version", .text).notNull()
+      }
+      try database.create(table: BlockedStoreRow.databaseTableName) { table in
+        table.primaryKey("id", .text)
+        table.column("store", .text).notNull()
+        table.column("createdAt", .datetime).notNull()
         table.column("canDelete", .boolean).notNull()
         table.column("version", .text).notNull()
       }

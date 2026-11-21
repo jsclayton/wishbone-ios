@@ -126,5 +126,5 @@ These tests hold the rules above. They run in `just gate`.
 - The app icon is the layered icon in the app target, with a light and a dark fill.
 - No `Text(verbatim:)`, `String(format:)`, or text joined into UI strings outside a short allow list. The String Catalog has no stale entry and no key without English.
 - The app's privacy manifest against the diagnostics vocabulary.
-- Every write to the local database goes through one function, which drops the kept `ETag` of `GET /versions` in the same change.
+- Every write to the local database goes through one function, which drops the kept `ETag` of `GET /versions` in the same change. A write only of the blocked stores keeps it, because `GET /versions` doesn't cover them.
 - The local copy's schema number against what the copy keeps: its tables, its rows, and the values in them. A change to any of them fails until the number rises.

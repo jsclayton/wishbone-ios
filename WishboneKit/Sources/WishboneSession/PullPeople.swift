@@ -36,9 +36,9 @@ extension Pull {
   ///
   /// - A body of the copy contains it: that body is fetched again, from its own address, or from the list's
   ///   recipients for a recipient row. This happens only after a body arrived newer than the answer named it.
-  /// - No body of the copy contains it: only a kind that the copy doesn't hold contains it, such as a gift. It is
-  ///   ignored, as that kind is, and a row that the copy has for it goes. That row is older than the answer, and
-  ///   the answer's `ETag` is kept, so nothing would ever bring the new summary.
+  /// - No body of the copy contains it: only a body that the copy doesn't hold contains it, such as one of a kind
+  ///   that the app doesn't know. It is ignored, as that body is, and a row that the copy has for it goes. That
+  ///   row is older than the answer, and the answer's `ETag` is kept, so nothing would ever bring the new summary.
   func pullSummaries(_ named: Named, agrees: inout Bool) async throws {
     let rows = try await database.userVersions()
     let left = Set(named.summaries.filter { rows.summaries[$0.key] != $0.value && rows.full[$0.key] == nil }.keys)
@@ -63,6 +63,7 @@ extension Pull {
     case recipients(ofList: String)
     case item(String)
     case invitation(String)
+    case gift(String)
 
     /// A key that sorts the bodies, so that the requests go in one order.
     var key: String {
@@ -73,6 +74,7 @@ extension Pull {
       case .recipients(let listID): "recipients \(listID)"
       case .item(let id): "item \(id)"
       case .invitation(let id): "invitation \(id)"
+      case .gift(let id): "gift \(id)"
       }
     }
   }
@@ -120,6 +122,13 @@ extension Pull {
       }
       if invitation.version != named.invitations[id] { agrees = false }
       try await database.save([invitation], summaries: summaries)
+    case .gift(let id):
+      guard let gift = try await ifNotGone({ () async throws(APIError) in try await client.gift(id) }) else {
+        agrees = false
+        return try await database.save([Versioned<Gift>](), removingGifts: [id])
+      }
+      if gift.version != named.gifts[id] { agrees = false }
+      try await database.save([gift], summaries: summaries)
     }
   }
 

@@ -485,8 +485,9 @@ struct PeopleTests {
       try #require(session.occasions.first { $0.kind == .birthday && $0.userID == person.id })
     }
 
-    // A renamed user. The relative is nobody's parent or child, so only four bodies hold the name: the user's, the
-    // birthday's, the primary list's, and its recipient row. The primary list has the user's name too.
+    // A renamed user. The relative is nobody's parent or child, so only five bodies hold the name: the user's, the
+    // birthday's, the gift that they gave the deactivated child, the primary list's, and its recipient row. The
+    // primary list has the user's name too. The gift is Home's data, so it comes before the list.
     let relativesList = try #require(try user(family.relative, in: session).record?.primaryListID)
     let renamed = builder.name("Jordy")
     try await family.relative.signedIn().send("PATCH", "/users/me", json: ["name": .string(renamed)]).expecting(200)
@@ -498,7 +499,8 @@ struct PeopleTests {
     #expect(
       parent.asked(since: mark) == [
         "GET /versions", "GET /users/\(family.relative.id)", "GET /occasions/\(try birthday(of: family.relative).id)",
-        "GET /lists/\(relativesList)/recipients?limit=200", "GET /lists/\(relativesList)",
+        "GET /gifts/\(family.givenGift.id)", "GET /lists/\(relativesList)/recipients?limit=200",
+        "GET /lists/\(relativesList)",
       ])
 
     // A user added to a group. The parent now sees the outsider, with their birthday and their primary list, in

@@ -25,6 +25,14 @@ public enum Hideable<Value: Sendable>: Sendable {
   public var isHidden: Bool {
     if case .hidden = self { true } else { false }
   }
+
+  /// The same field with its value changed: hidden stays hidden, and no value stays none.
+  public func map<Other>(_ transform: (Value) -> Other) -> Hideable<Other> {
+    switch self {
+    case .hidden: .hidden
+    case .shown(let value): .shown(value.map(transform))
+    }
+  }
 }
 
 extension Hideable: Equatable where Value: Equatable {}
@@ -238,6 +246,239 @@ public struct OccasionRule: Model, Codable, Equatable {
     case year
     case weekday
     case n
+  }
+
+  public static let fields = WishboneAPI.fields(of: CodingKeys.self)
+}
+
+/// A list by its name, inside another resource.
+public struct ListSummary: Model, Codable, Equatable {
+  public let id: String
+  public let name: String
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case id
+    case name
+  }
+
+  public static let fields = WishboneAPI.fields(of: CodingKeys.self)
+}
+
+/// An occasion by its kind and name, inside another resource.
+public struct OccasionSummary: Model, Codable, Equatable {
+  public let id: String
+  public let kind: OccasionKind
+  public let name: String
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case id
+    case kind
+    case name
+  }
+
+  public static let fields = WishboneAPI.fields(of: CodingKeys.self)
+}
+
+/// Where a gift is in its life. The enum is open: a state that the app doesn't know is `unknown`.
+public enum GiftState: Sendable, Hashable, Codable, RawRepresentable {
+  /// Claimed, and not given yet. Only its giver sees it.
+  case open
+
+  /// Given at its reveal. Its giver, its recipients, and their parents see it.
+  case given
+  case unknown(String)
+
+  /// The state for the server's text, such as `open`.
+  public init(rawValue: String) {
+    switch rawValue {
+    case "open": self = .open
+    case "given": self = .given
+    default: self = .unknown(rawValue)
+    }
+  }
+
+  public var rawValue: String {
+    switch self {
+    case .open: "open"
+    case .given: "given"
+    case .unknown(let text): text
+    }
+  }
+}
+
+/// One line of a gift's `changed` flag: an item field that changed since the giver picked the gift, or since they
+/// last answered the flag. See "Gift fields" in the server's route table.
+///
+/// The copy keeps it in the API's own shape, so it is read the same way from an answer and from the copy.
+public struct GiftChange: Model, Codable, Equatable {
+  public let field: Field
+
+  /// The store link's address, for `storeLinkPrice` and `storeLinkRemoved`. Nil for the other fields.
+  public let url: String?
+
+  /// The value when the giver picked the gift, or last answered the flag. Hidden for a field that has no value in
+  /// a line, such as `primaryImage`. `shown(nil)` is no value, such as no notes or no price.
+  public let old: Hideable<Value>
+
+  /// The value now, as `old` is.
+  public let new: Hideable<Value>
+
+  public init(field: Field, url: String? = nil, old: Hideable<Value> = .hidden, new: Hideable<Value> = .hidden) {
+    self.field = field
+    self.url = url
+    self.old = old
+    self.new = new
+  }
+
+  /// The item field that changed. The enum is open: a field that the app doesn't know is `unknown`.
+  public enum Field: Sendable, Hashable, Codable, RawRepresentable {
+    case title
+    case notes
+    case quantity
+    case isUnlimited
+
+    /// The item price: `price_minor`, `top_price_minor` and `currency` together.
+    case price
+
+    /// The primary image. The line says only that it changed.
+    case primaryImage
+
+    /// A store link's price. `url` names the store link.
+    case storeLinkPrice
+
+    /// A store link that was removed. `url` names it.
+    case storeLinkRemoved
+    case unknown(String)
+
+    /// The field for the server's text, such as `is_unlimited`.
+    public init(rawValue: String) {
+      switch rawValue {
+      case "title": self = .title
+      case "notes": self = .notes
+      case "quantity": self = .quantity
+      case "is_unlimited": self = .isUnlimited
+      case "price": self = .price
+      case "primary_image": self = .primaryImage
+      case "store_link_price": self = .storeLinkPrice
+      case "store_link_removed": self = .storeLinkRemoved
+      default: self = .unknown(rawValue)
+      }
+    }
+
+    public var rawValue: String {
+      switch self {
+      case .title: "title"
+      case .notes: "notes"
+      case .quantity: "quantity"
+      case .isUnlimited: "is_unlimited"
+      case .price: "price"
+      case .primaryImage: "primary_image"
+      case .storeLinkPrice: "store_link_price"
+      case .storeLinkRemoved: "store_link_removed"
+      case .unknown(let text): text
+      }
+    }
+  }
+
+  /// A value of a line: a string, a number, a boolean, or a price.
+  public enum Value: Sendable, Equatable, Codable {
+    /// The title or the notes.
+    case text(String)
+
+    /// The quantity.
+    case number(Int)
+
+    /// The unlimited setting.
+    case boolean(Bool)
+
+    /// The item price, or a store link's.
+    case price(Price)
+
+    /// A value of a shape that the app doesn't know. The copy keeps that there was one, and not the value.
+    case unknown
+
+    public init(from decoder: any Decoder) throws {
+      let container = try decoder.singleValueContainer()
+      if let value = try? container.decode(Bool.self) {
+        self = .boolean(value)
+      } else if let value = try? container.decode(Int.self) {
+        self = .number(value)
+      } else if let value = try? container.decode(String.self) {
+        self = .text(value)
+      } else if let value = try? container.decode(Price.self) {
+        self = .price(value)
+      } else {
+        self = .unknown
+      }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var container = encoder.singleValueContainer()
+      switch self {
+      case .text(let value): try container.encode(value)
+      case .number(let value): try container.encode(value)
+      case .boolean(let value): try container.encode(value)
+      case .price(let value): try container.encode(value)
+      // An object that is no price reads back as unknown.
+      case .unknown: try container.encode([String: String]())
+      }
+    }
+  }
+
+  /// A price as one value: the price in the currency's minor unit, the top of a range, and an ISO 4217 code.
+  public struct Price: Sendable, Equatable, Codable {
+    public let priceMinor: Int
+    public let topPriceMinor: Int?
+    public let currency: String
+
+    public init(priceMinor: Int, topPriceMinor: Int? = nil, currency: String) {
+      self.priceMinor = priceMinor
+      self.topPriceMinor = topPriceMinor
+      self.currency = currency
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case priceMinor = "price_minor"
+      case topPriceMinor = "top_price_minor"
+      case currency
+    }
+
+    /// The API's own shape: no top of a range is `null`.
+    public func encode(to encoder: any Encoder) throws {
+      var container = encoder.container(keyedBy: CodingKeys.self)
+      try container.encode(priceMinor, forKey: .priceMinor)
+      try container.encode(topPriceMinor, forKey: .topPriceMinor)
+      try container.encode(currency, forKey: .currency)
+    }
+  }
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case field
+    case url
+    case old
+    case new
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    field = try container.decode(Field.self, forKey: .field)
+    url = try container.decodeIfPresent(String.self, forKey: .url)
+    old = try container.hideable(Value.self, forKey: .old)
+    new = try container.hideable(Value.self, forKey: .new)
+  }
+
+  /// The API's own shape: a hidden value has no key, and no value is `null`.
+  public func encode(to encoder: any Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(field, forKey: .field)
+    try container.encodeIfPresent(url, forKey: .url)
+    for (value, key) in [(old, CodingKeys.old), (new, .new)] {
+      switch value {
+      case .hidden: break
+      case .shown(nil): try container.encodeNil(forKey: key)
+      case .shown(let value?): try container.encode(value, forKey: key)
+      }
+    }
   }
 
   public static let fields = WishboneAPI.fields(of: CodingKeys.self)

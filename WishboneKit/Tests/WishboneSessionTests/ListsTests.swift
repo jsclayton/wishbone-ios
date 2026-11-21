@@ -708,6 +708,53 @@ struct ListsTests {
     #expect(session.invitations.isEmpty)
   }
 
+  @Test(
+    """
+    A list that goes while its recipient rows are on their way is removed with its items, and the pull goes on to \
+    the other lists
+    """
+  )
+  func listGoesWhileItsRecipientsAreOnTheirWay() async throws {
+    let family = try await builder.standardFamily()
+    // The child shares the parent's extra list, which has an item.
+    try await builder.accept(try await builder.invite(family.child, to: family.parentList, as: family.parent))
+    let chair = try await builder.item("Chair", on: family.parentList, as: family.parent)
+    let parent = try await signedIn(as: family.parent)
+    try await inStep(parent)
+    let session = parent.session
+    #expect(session.item(id: chair.id) != nil)
+
+    // The child leaves, so the list's recipient rows change, and the pull reads them. Everyone else's lists come
+    // after the parent's own: the child's list gains an item.
+    try await family.child.signedIn().send(
+      "DELETE", "/lists/\(family.parentList.id)/recipients/\(family.child.id)"
+    ).expecting(204)
+    let robinsList = try await builder.primaryList(of: family.child)
+    _ = try await builder.item("Kite", on: robinsList, as: family.child)
+
+    let hold = parent.instance.conditioner.hold(Route("GET", "/lists/{id}/recipients"), at: .request)
+    async let syncing: Void = session.sync()
+    await hold.waitUntilHeld()
+    #expect(
+      parent.instance.conditioner.requests.last?.target.contains("/lists/\(family.parentList.id)/recipients") == true)
+    try await family.parent.signedIn().send("DELETE", "/lists/\(family.parentList.id)").expecting(204)
+    hold.release()
+    await syncing
+
+    // The list's recipients answered 404. The list went with its item, and the pull went on to the child's list.
+    await until { session.items(onList: robinsList.id).map(\.title) == ["Kite"] }
+    #expect(!session.isInstanceUnreachable)
+    #expect(session.list(id: family.parentList.id) == nil)
+    #expect(session.item(id: chair.id) == nil)
+    #expect(session.recipients(ofList: family.parentList.id).isEmpty)
+
+    // The pull didn't agree with its answer, so it kept no ETag. The next one compares, and the copy is in step.
+    let mark = parent.mark
+    await session.sync()
+    #expect(parent.instance.conditioner.requests.dropFirst(mark).first?.headers["if-none-match"] == nil)
+    try await inStep(parent)
+  }
+
   // MARK: - 8. Invitations
 
   @Test("An invitation accepted elsewhere goes, and the user is among the list's recipients, and in your lists")
@@ -783,11 +830,14 @@ struct ListsTests {
     let session = relative.session
     #expect(session.user(id: family.deactivatedChild.id)?.isSummary == true)
 
-    // The instance's own answer, with the shared list gone, and another version for the deactivated child's
-    // summary: the summary is now only in a kind that the copy doesn't hold.
+    // The instance's own answer, with the shared list and the gift to the deactivated child gone, and another
+    // version for the deactivated child's summary: no body of the copy holds the summary now.
     let shared = family.sharedList.id
     var entries = try #require(try await family.relative.signedIn().get("/versions")["data"].array)
-    entries.removeAll { $0["id"].string == shared || $0["list_id"].string == shared }
+    entries.removeAll {
+      $0["id"].string == shared || $0["list_id"].string == shared
+        || ($0["kind"] == "gift" && $0["id"].string == family.givenGift.id)
+    }
     entries = entries.map { entry in
       guard entry["kind"] == "user_summary", entry["id"].string == family.deactivatedChild.id else { return entry }
       return ["kind": "user_summary", "id": entry["id"], "version": "\"renamed\"", "list_id": nil, "item_id": nil]
