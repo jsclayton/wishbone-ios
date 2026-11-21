@@ -49,6 +49,7 @@ let package = Package(
     ),
     .target(
       name: "WishboneUI",
+      dependencies: ["WishboneAPI", "WishboneSession"],
       resources: [.process("Resources")],
       swiftSettings: moduleSettings + [.defaultIsolation(MainActor.self)]
     ),

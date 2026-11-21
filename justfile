@@ -4,7 +4,7 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 
 derived_data := "build/DerivedData"
 catalog := "WishboneKit/Sources/WishboneUI/Resources/Localizable.xcstrings"
-swift_dirs := "Wishbone ShareExtension WidgetExtension WishboneKit/Package.swift WishboneKit/Sources WishboneKit/Tests"
+swift_dirs := "Wishbone ShareExtension WidgetExtension HostedTests JourneyTests WishboneKit/Package.swift WishboneKit/Sources WishboneKit/Tests"
 
 # List recipes
 default:
