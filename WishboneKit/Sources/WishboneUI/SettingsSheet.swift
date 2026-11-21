@@ -27,6 +27,7 @@ struct SettingsSheet: View {
           case .signedIn: signedIn
           case .signInAndDevices: signInAndDevices
           case .shareDiagnostics: shareDiagnostics
+          case .forTheAdmin: forTheAdmin
           case .about: about
           }
         }
@@ -73,6 +74,35 @@ struct SettingsSheet: View {
         ShareDiagnosticsScreen(place: .pushed)
       } label: {
         Text("Share diagnostics", bundle: #bundle)
+      }
+    }
+  }
+
+  /// For the admin: Blocked stores, and the footer on the jobs that the person who runs Wishbone does on the server,
+  /// with its link to the server's docs. Only the admin sees it. See "Blocked stores" in `docs/spec.md`.
+  private var forTheAdmin: some View {
+    Section {
+      NavigationLink {
+        BlockedStoresScreen(session: session)
+      } label: {
+        Text("Blocked stores", bundle: #bundle)
+      }
+    } header: {
+      // The label color itself, as in the footers.
+      Text("For the admin", bundle: #bundle)
+        .foregroundStyle(Color.primary)
+    } footer: {
+      VStack(alignment: .leading, spacing: 8) {
+        // The label color itself, as in the footer of Sign-in and devices.
+        Text(
+          "Moving the admin role, backups and server settings are done by the person who runs Wishbone, on the server.",
+          bundle: #bundle
+        )
+        .foregroundStyle(Color.primary)
+        if let docs = AppAbout.current.operatorDocs {
+          WebLinkRow(title: String(localized: "Running Wishbone", bundle: #bundle), destination: docs)
+            .frame(minHeight: 44)
+        }
       }
     }
   }

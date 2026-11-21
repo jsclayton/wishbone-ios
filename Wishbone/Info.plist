@@ -15,6 +15,8 @@
 	<string>group.$(WISHBONE_BUNDLE_PREFIX)</string>
 	<key>WishboneKeychainAccessGroup</key>
 	<string>$(AppIdentifierPrefix)$(WISHBONE_BUNDLE_PREFIX)</string>
+	<key>WishboneOperatorDocsURL</key>
+	<string>$(WISHBONE_OPERATOR_DOCS_URL)</string>
 	<key>WishbonePrivacyURL</key>
 	<string>$(WISHBONE_PRIVACY_URL)</string>
 	<key>WishboneSentryDSN</key>

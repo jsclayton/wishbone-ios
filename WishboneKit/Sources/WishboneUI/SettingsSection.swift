@@ -3,8 +3,8 @@ import Foundation
 /// A section of Settings. See "Content" in `docs/screens/settings.md`.
 ///
 /// The cases are in the order that Settings shows them. A section joins with the screen of its first row: Your
-/// profile, Reminders, Delete account, For the admin, and Support Wishbone are not built yet, and each takes its
-/// place in this order when it comes.
+/// profile, Reminders, Delete account, and Support Wishbone are not built yet, and each takes its place in this
+/// order when it comes.
 public enum SettingsSection: Hashable, Sendable, CaseIterable {
   /// The user's name, the instance address, and Sign out.
   case signedIn
@@ -16,22 +16,30 @@ public enum SettingsSection: Hashable, Sendable, CaseIterable {
   /// Share diagnostics.
   case shareDiagnostics
 
+  /// For the admin: Blocked stores, with the footer on the jobs that are done on the server. Only the admin sees it.
+  case forTheAdmin
+
   /// Source code, Acknowledgements, and the app's version and build.
   case about
 
   /// The sections that Settings shows, in order, to a user who is the admin or not, and who has parents or not: the
-  /// server's meaning of a child. Every user sees the same sections, until For the admin, which only the admin sees,
-  /// and Support Wishbone, which a child never sees, are built.
+  /// server's meaning of a child. Only the admin sees For the admin. Support Wishbone, which a child never sees, is
+  /// not built yet.
   public static func shown(isAdmin: Bool, hasParents: Bool) -> [SettingsSection] {
-    allCases
+    allCases.filter { $0 != .forTheAdmin || isAdmin }
   }
 }
 
-/// What the About section shows: the app's own address, version, and build, from the app's `Info.plist`.
+/// What the About section shows, the app's own address, version, and build, and the For the admin footer's link,
+/// from the app's `Info.plist`.
 public struct AppAbout: Equatable, Sendable {
   /// The app's repository, from the build's `WISHBONE_SOURCE_URL`. `nil` when the build has none, and then there is
   /// no Source code row.
   public let sourceCode: URL?
+
+  /// The server's docs on running an instance, from the build's `WISHBONE_OPERATOR_DOCS_URL`. The For the admin
+  /// footer links to it. `nil` when the build has none, and then the footer has no link.
+  public let operatorDocs: URL?
 
   /// The app's version, such as "1.0".
   public let version: String
@@ -42,6 +50,7 @@ public struct AppAbout: Equatable, Sendable {
   /// The values of an `Info.plist`.
   public init(info: [String: Any]) {
     sourceCode = Self.webAddress(info["WishboneSourceURL"])
+    operatorDocs = Self.webAddress(info["WishboneOperatorDocsURL"])
     version = info["CFBundleShortVersionString"] as? String ?? ""
     build = info["CFBundleVersion"] as? String ?? ""
   }

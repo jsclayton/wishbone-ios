@@ -49,9 +49,11 @@ enum LocalCopyRules {
 
   // MARK: - The one change that keeps the ETag
 
-  /// The one function that may keep the `ETag` through a change: the blocked stores, which `GET /versions` doesn't
-  /// cover. Any other change to the copy must drop it.
-  static let outsideTheVersions = [Writer(path: "\(module)/LocalDatabase.swift", function: "replaceBlockedStores")]
+  /// The functions that may keep the `ETag` through a change: the ones of the blocked stores, which
+  /// `GET /versions` doesn't cover. Any other change to the copy must drop it.
+  static let outsideTheVersions = ["replaceBlockedStores", "saveBlockedStore", "removeBlockedStore"].map {
+    Writer(path: "\(module)/LocalDatabase.swift", function: $0)
+  }
 
   /// An argument that may keep the `ETag`: `isOutsideTheVersions:` with any value but `false`. The parameter's own
   /// declaration, `isOutsideTheVersions: Bool`, is not one.

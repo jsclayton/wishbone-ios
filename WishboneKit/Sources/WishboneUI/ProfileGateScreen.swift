@@ -458,7 +458,7 @@ private struct MenuRow<Options: View>: View {
 }
 
 /// The mark on a field that is not valid: what to do, under the field.
-private struct FieldMark: View {
+struct FieldMark: View {
   let words: Text
 
   var body: some View {

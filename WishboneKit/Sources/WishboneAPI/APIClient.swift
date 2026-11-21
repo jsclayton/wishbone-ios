@@ -235,6 +235,17 @@ public struct APIClient: Sendable {
     try await rows { cursor in .page(of: .blockedStores, cursor: cursor) }
   }
 
+  /// `POST /blocked-stores`: blocks the store that a host name or a web address names. Gives back the blocked
+  /// store, with the version that the answer carried. A store that is blocked already is a 409 `already_blocked`.
+  public func blockStore(_ store: String) async throws(APIError) -> Versioned<BlockedStore> {
+    try await versioned(.blockStore(store))
+  }
+
+  /// `DELETE /blocked-stores/{id}`: takes the store off the blocked list.
+  public func unblockStore(_ id: String) async throws(APIError) {
+    _ = try await load(.unblockStore(id))
+  }
+
   /// `DELETE /users/me/sessions/current`: signs out. The server revokes the session, and the token works no more.
   public func revokeCurrentSession() async throws(APIError) {
     _ = try await load(.revokeCurrentSession)

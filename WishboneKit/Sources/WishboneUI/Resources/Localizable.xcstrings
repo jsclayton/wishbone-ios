@@ -35,6 +35,9 @@
     "Birthday" : {
 
     },
+    "Blocked stores" : {
+
+    },
     "Can't reach %@" : {
 
     },
@@ -71,10 +74,16 @@
     "Done" : {
 
     },
+    "Enter a store's address, such as example.com." : {
+
+    },
     "Enter your name." : {
 
     },
     "Finish your profile" : {
+
+    },
+    "For the admin" : {
 
     },
     "Getting a login link" : {
@@ -98,16 +107,25 @@
     "Last name" : {
 
     },
+    "Links from these stores and their subdomains can't be added or searched. Items that already have them keep them." : {
+
+    },
     "Lists" : {
 
     },
     "Month" : {
 
     },
+    "Moving the admin role, backups and server settings are done by the person who runs Wishbone, on the server." : {
+
+    },
     "Name" : {
 
     },
     "No Wishbone found at %@" : {
+
+    },
+    "No stores are blocked." : {
 
     },
     "No year" : {
@@ -144,6 +162,9 @@
 
     },
     "Remove photo" : {
+
+    },
+    "Running Wishbone" : {
 
     },
     "Running your own Wishbone" : {
@@ -183,6 +204,9 @@
 
     },
     "Source code" : {
+
+    },
+    "Store to block" : {
 
     },
     "Take a photo" : {
@@ -228,6 +252,9 @@
 
     },
     "Try again" : {
+
+    },
+    "Unblock" : {
 
     },
     "Update Wishbone" : {
@@ -280,6 +307,9 @@
 
     },
     "Your lists" : {
+
+    },
+    "example.com, or paste a link" : {
 
     },
     "opens in browser" : {
