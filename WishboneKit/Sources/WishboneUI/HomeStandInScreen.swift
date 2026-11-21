@@ -9,46 +9,15 @@ struct HomeStandInScreen: View {
 
   var body: some View {
     List {
-      if session.isInstanceUnreachable, session.primaryList != nil {
-        // The line blocks nothing: what is saved shows under it.
-        cantReach
-      }
       ForEach(session.primaryListItems) { item in
         Text(item.title)
       }
     }
-    .overlay {
-      if session.primaryList == nil {
-        if session.isInstanceUnreachable { unreachable } else { ProgressView() }
-      } else if session.primaryListItems.isEmpty {
-        ContentUnavailableView {
-          Text("Nothing on this list yet.", bundle: #bundle)
-        }
+    .sharedStates(of: session, hasRows: !session.primaryListItems.isEmpty) {
+      ContentUnavailableView {
+        Text("Nothing on this list yet.", bundle: #bundle)
       }
     }
     .navigationTitle(Text(session.primaryList?.name ?? session.user?.name ?? ""))
-  }
-
-  private var cantReach: some View {
-    Text("Can't reach \(session.session.instance.text)", bundle: #bundle)
-      .foregroundStyle(.secondary)
-  }
-
-  /// A screen with no rows yet shows the unreachable state with Try again, never an empty state.
-  private var unreachable: some View {
-    ContentUnavailableView {
-      Label {
-        Text("Can't reach \(session.session.instance.text)", bundle: #bundle)
-      } icon: {
-        Image(systemName: "wifi.slash")
-      }
-    } actions: {
-      Button {
-        Task { await session.syncNow() }
-      } label: {
-        Text("Try again", bundle: #bundle)
-          .frame(minHeight: 44)
-      }
-    }
   }
 }

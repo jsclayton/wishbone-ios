@@ -192,5 +192,75 @@ nonisolated final class SignInJourney: XCTestCase {
     XCTAssertFalse(app.keyboards.firstMatch.exists, "The keyboard came back with the app.")
     try await Audit.run(on: app, showing: "the Add screen", in: self)
     app.terminate()
+
+    try await instanceGoesAway()
+  }
+
+  /// The instance goes away while the app runs: what is saved still shows, under the line "Can't reach {address}".
+  /// After a relaunch, a tab with nothing saved shows the unreachable view, with Try again. The instance is a
+  /// server of the journey's own, so the shared one stays. See "What every screen shares" in
+  /// `docs/screens/README.md`.
+  @MainActor
+  private func instanceGoesAway() async throws {
+    let server = try await TestServer.start()
+    let builder = try await FixtureBuilder(server: server)
+    let sky = try await builder.person("Sky")
+    try await builder.confirmProfile(of: sky)
+    _ = try await builder.item("Lantern", on: try await builder.primaryList(of: sky), as: sky)
+    let link = try await builder.loginLink(for: sky)
+    let parts = try XCTUnwrap(URLComponents(url: link, resolvingAgainstBaseURL: false))
+    let address = "\(parts.scheme ?? "")://\(parts.host ?? "")\(parts.port.map { ":\($0)" } ?? "")"
+    let line = Audit.words("Can't reach \(address)")
+
+    let app = Audit.app()
+    app.launchEnvironment["WISHBONE_JOURNEY_START_SIGNED_OUT"] = "1"
+    app.launchEnvironment["WISHBONE_JOURNEY_LOGIN_LINK"] = link.absoluteString
+    app.launch()
+    XCTAssertTrue(app.staticTexts["Lantern"].waitForExistence(timeout: 60), "Home didn't show after the sign-in.")
+    XCTAssertFalse(app.staticTexts[line].exists)
+
+    // The instance goes away. A window that comes to the foreground syncs, and finds it gone. The journey never
+    // pulls to refresh, which is a swipe.
+    server.stop()
+    try sendHomeAndBack(app)
+    XCTAssertTrue(app.staticTexts[line].waitForExistence(timeout: 60), "The line didn't show on Home.")
+    XCTAssertTrue(app.staticTexts["Lantern"].exists, "What is saved went with the instance.")
+    try await Audit.run(on: app, showing: "Home, with the line", in: self)
+    app.terminate()
+
+    // A relaunch with the instance still gone. Gifts has nothing saved, and no sync has reached the instance in this
+    // launch: the unreachable view with Try again, never an empty state.
+    let relaunched = Audit.app()
+    relaunched.launch()
+    XCTAssertTrue(relaunched.staticTexts["Lantern"].waitForExistence(timeout: 60), "The relaunch didn't show Home.")
+    XCTAssertTrue(
+      relaunched.staticTexts[line].waitForExistence(timeout: 60), "The line didn't show after the relaunch.")
+    let tabs = relaunched.tabBars.firstMatch
+    tabs.buttons[Audit.words("Gifts")].tap()
+    let tryAgain = relaunched.buttons[Audit.words("Try again")]
+    XCTAssertTrue(tryAgain.waitForExistence(timeout: 10), "Gifts didn't show the unreachable view.")
+    XCTAssertTrue(relaunched.staticTexts[line].exists, "The unreachable view doesn't name the instance.")
+    XCTAssertFalse(
+      relaunched.staticTexts[
+        Audit.words("You aren't getting anything yet. Open someone on Home and tap I'll get this.")
+      ]
+      .exists, "Gifts claims to be empty.")
+    try await Audit.run(on: relaunched, showing: "the unreachable view", in: self)
+
+    // Try again syncs. The instance is still gone, so the view stays, and the app goes on.
+    tryAgain.tap()
+    XCTAssertTrue(tryAgain.waitForExistence(timeout: 30), "The unreachable view went with the instance still gone.")
+    relaunched.terminate()
+  }
+
+  /// Sends the app to the Home Screen and back, so its window leaves the foreground and comes back to it.
+  @MainActor
+  private func sendHomeAndBack(_ app: XCUIApplication) throws {
+    XCUIDevice.shared.press(.home)
+    let left = XCTNSPredicateExpectation(
+      predicate: NSPredicate { _, _ in app.state != .runningForeground }, object: nil)
+    XCTAssertEqual(XCTWaiter.wait(for: [left], timeout: 10), .completed, "The app didn't leave the foreground.")
+    app.activate()
+    XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10), "The app didn't come back.")
   }
 }

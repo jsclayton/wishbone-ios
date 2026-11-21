@@ -20,6 +20,7 @@ struct PageScreen: View {
   /// A plain page with only the thing's name. The real page replaces it.
   private func standIn(named name: Text) -> some View {
     List {}
+      .cantReachLine(of: session)
       .navigationTitle(name)
   }
 }

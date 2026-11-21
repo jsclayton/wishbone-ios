@@ -1,9 +1,22 @@
 import SwiftUI
+import WishboneSession
 
-/// An empty screen that stands in for the Gifts tab until it is built. See `docs/screens/gifts.md`.
+/// A plain screen that stands in for the Gifts tab until it is built: the titles of the gifts in Giving, read from
+/// the local copy. Its states are the ones that every screen shares. See `docs/screens/gifts.md`.
 struct GiftsStandInScreen: View {
+  let session: SessionModel
+
   var body: some View {
-    List {}
-      .navigationTitle(Text("Gifts", bundle: #bundle))
+    List {
+      ForEach(session.giving) { gift in
+        Text(gift.title)
+      }
+    }
+    .sharedStates(of: session, hasRows: !session.giving.isEmpty) {
+      ContentUnavailableView {
+        Text("You aren't getting anything yet. Open someone on Home and tap I'll get this.", bundle: #bundle)
+      }
+    }
+    .navigationTitle(Text("Gifts", bundle: #bundle))
   }
 }
