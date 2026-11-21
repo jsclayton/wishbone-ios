@@ -35,6 +35,8 @@
           Text(reason)
             .font(.footnote)
             .multilineTextAlignment(.center)
+            // The words wrap to as many lines as they need, so none is cut short.
+            .fixedSize(horizontal: false, vertical: true)
         }
         if camera.offersSettings {
           Button {
@@ -85,6 +87,7 @@
           .safeAreaInset(edge: .bottom) {
             Text("Point the camera at the QR code of your login link.", bundle: #bundle)
               .multilineTextAlignment(.center)
+              .fixedSize(horizontal: false, vertical: true)
               .padding()
               .frame(maxWidth: .infinity)
               .background(.regularMaterial)
