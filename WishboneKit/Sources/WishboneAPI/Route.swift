@@ -16,15 +16,19 @@ public enum Route: String, Sendable, CaseIterable {
   case occasions
   case occasion
   case occasionGroups
+  case lists
   case list
+  case listRecipients
   case listItems
   case item
+  case invitations
+  case invitation
   case revokeCurrentSession
 
   public var method: String {
     switch self {
     case .health, .versions, .users, .user, .groups, .group, .groupUsers, .groupGroups, .occasions, .occasion,
-      .occasionGroups, .list, .listItems, .item:
+      .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation:
       "GET"
     case .redeemLoginLink: "POST"
     case .updateMe: "PATCH"
@@ -48,9 +52,13 @@ public enum Route: String, Sendable, CaseIterable {
     case .occasions: "/occasions"
     case .occasion: "/occasions/{id}"
     case .occasionGroups: "/occasions/{id}/groups"
+    case .lists: "/lists"
     case .list: "/lists/{id}"
+    case .listRecipients: "/lists/{id}/recipients"
     case .listItems: "/lists/{id}/items"
     case .item: "/items/{id}"
+    case .invitations: "/invitations"
+    case .invitation: "/invitations/{id}"
     case .revokeCurrentSession: "/users/me/sessions/current"
     }
   }
@@ -61,7 +69,8 @@ public enum Route: String, Sendable, CaseIterable {
     switch self {
     case .health, .redeemLoginLink: true
     case .versions, .updateMe, .users, .user, .groups, .group, .groupUsers, .groupGroups, .occasions, .occasion,
-      .occasionGroups, .list, .listItems, .item, .revokeCurrentSession:
+      .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation,
+      .revokeCurrentSession:
       false
     }
   }
@@ -74,8 +83,11 @@ public enum Route: String, Sendable, CaseIterable {
     switch self {
     // The two filters give the memberships: the users in a group with nesting, and the users of an occasion.
     case .users: Self.paging + ["group_id", "occasion_id"]
-    case .groups, .groupUsers, .groupGroups, .occasions, .occasionGroups, .listItems: Self.paging
-    case .health, .redeemLoginLink, .versions, .updateMe, .user, .group, .occasion, .list, .item,
+    // The filter gives the lists that the session's user is a recipient of.
+    case .lists: Self.paging + ["recipient_id"]
+    case .groups, .groupUsers, .groupGroups, .occasions, .occasionGroups, .listRecipients, .listItems, .invitations:
+      Self.paging
+    case .health, .redeemLoginLink, .versions, .updateMe, .user, .group, .occasion, .list, .item, .invitation,
       .revokeCurrentSession:
       []
     }
@@ -90,7 +102,8 @@ public enum Route: String, Sendable, CaseIterable {
     case .redeemLoginLink: fields(of: RedeemBody.CodingKeys.self)
     case .updateMe: fields(of: UserChanges.CodingKeys.self)
     case .health, .versions, .users, .user, .groups, .group, .groupUsers, .groupGroups, .occasions, .occasion,
-      .occasionGroups, .list, .listItems, .item, .revokeCurrentSession:
+      .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation,
+      .revokeCurrentSession:
       []
     }
   }
@@ -110,9 +123,13 @@ public enum Route: String, Sendable, CaseIterable {
     case .occasion: Occasion.fields
     // A membership is read for its IDs only.
     case .groupUsers, .groupGroups, .occasionGroups: Page<Member>.fields
+    case .lists: Page<VersionedRow<ListResource>>.fields
     case .list: ListResource.fields
+    case .listRecipients: Page<VersionedRow<Recipient>>.fields
     case .listItems: Page<VersionedRow<Item>>.fields
     case .item: Item.fields
+    case .invitations: Page<VersionedRow<Invitation>>.fields
+    case .invitation: Invitation.fields
     case .revokeCurrentSession: NoContent.fields
     }
   }
@@ -211,6 +228,12 @@ extension Endpoint where Response == ListResource {
 extension Endpoint where Response == Item {
   static func item(_ id: String) -> Endpoint {
     Endpoint(route: .item, parameters: ["id": id])
+  }
+}
+
+extension Endpoint where Response == Invitation {
+  static func invitation(_ id: String) -> Endpoint {
+    Endpoint(route: .invitation, parameters: ["id": id])
   }
 }
 

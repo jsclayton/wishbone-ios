@@ -55,6 +55,18 @@ struct ClientContractTests {
     }
   }
 
+  @Test(
+    "A route whose answer has pages declares limit and cursor, so the client asks for each page",
+    arguments: Route.allCases)
+  func collectionsDeclarePaging(route: Route) throws {
+    let answer = try operation(of: route)["responses"]["200"]["content"]["application/json"]["schema"]
+    guard schema(at: "next_cursor", in: answer) != nil else { return }
+    // The client drops a query parameter that its route doesn't declare. Without these two, it would read the
+    // first page only, and a default size of page.
+    #expect(route.queryParameters.contains("limit"), "\(route.method) \(route.template) declares no limit")
+    #expect(route.queryParameters.contains("cursor"), "\(route.method) \(route.template) declares no cursor")
+  }
+
   @Test("GET /versions is in the copy with its 304 and its If-None-Match, and the client's request has no query")
   func versions() throws {
     let operation = try operation(of: .versions)

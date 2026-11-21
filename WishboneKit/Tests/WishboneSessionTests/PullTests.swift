@@ -116,7 +116,7 @@ struct PullTests {
     await until { session.primaryListItems.map(\.title) == ["Tent", "Kite", "Puzzle"] }
   }
 
-  @Test("An item deleted elsewhere goes from the copy, and so does one moved off the primary list")
+  @Test("An item deleted elsewhere goes from the copy, and one moved off the primary list goes to its new list")
   func deletedAndMoved() async throws {
     let robin = try await instance.person(items: ["Kite", "Puzzle", "Tent"])
     let (_, session) = try await signedIn(as: robin, expecting: ["Kite", "Puzzle", "Tent"])
@@ -127,8 +127,8 @@ struct PullTests {
     try await own.send("DELETE", "/items/\(try item("Puzzle", in: session).id)").expecting(204)
 
     await session.sync()
-    // Only the primary list is held for now, so the moved item is gone from the copy too.
     await until { session.primaryListItems.map(\.title) == ["Kite"] }
+    #expect(session.items(onList: camping.id).map(\.title) == ["Tent"])
     #expect(!session.isInstanceUnreachable)
   }
 

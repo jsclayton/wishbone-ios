@@ -134,11 +134,28 @@ public struct APIClient: Sendable {
     try await members { cursor in .page(of: .occasionGroups, id: id, cursor: cursor) }
   }
 
-  // MARK: - Lists and items
+  // MARK: - Lists, items and invitations
+
+  /// `GET /lists`: every list that the session's user can see, with the admin's access not counted, each with its
+  /// version.
+  public func lists() async throws(APIError) -> FetchedCollection<Versioned<ListResource>> {
+    try await rows { cursor in .page(of: .lists, cursor: cursor) }
+  }
+
+  /// `GET /lists?recipient_id=`: the lists that have the user among their recipients, each with its version.
+  public func lists(ofRecipient userID: String) async throws(APIError) -> FetchedCollection<Versioned<ListResource>> {
+    try await rows { cursor in .page(of: .lists, filters: ["recipient_id": userID], cursor: cursor) }
+  }
 
   /// `GET /lists/{id}`: one list.
   public func list(_ id: String) async throws(APIError) -> Versioned<ListResource> {
     try await versioned(.list(id))
+  }
+
+  /// `GET /lists/{id}/recipients`: the list's recipients, in the order they became recipients, each with its
+  /// version. A recipient has no address of its own.
+  public func recipients(ofList id: String) async throws(APIError) -> FetchedCollection<Versioned<Recipient>> {
+    try await rows { cursor in .page(of: .listRecipients, id: id, cursor: cursor) }
   }
 
   /// `GET /lists/{id}/items`: every item on the list, in the list's order, each with its version.
@@ -146,9 +163,19 @@ public struct APIClient: Sendable {
     try await rows { cursor in .page(of: .listItems, id: id, cursor: cursor) }
   }
 
-  /// `GET /items/{id}`: one item.
+  /// `GET /items/{id}`: one item, with its store links.
   public func item(_ id: String) async throws(APIError) -> Versioned<Item> {
     try await versioned(.item(id))
+  }
+
+  /// `GET /invitations`: every pending invitation that the session's user can see, each with its version.
+  public func invitations() async throws(APIError) -> FetchedCollection<Versioned<Invitation>> {
+    try await rows { cursor in .page(of: .invitations, cursor: cursor) }
+  }
+
+  /// `GET /invitations/{id}`: one invitation.
+  public func invitation(_ id: String) async throws(APIError) -> Versioned<Invitation> {
+    try await versioned(.invitation(id))
   }
 
   /// `DELETE /users/me/sessions/current`: signs out. The server revokes the session, and the token works no more.

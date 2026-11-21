@@ -4,22 +4,25 @@ import WishboneAPI
 /// app syncs" in `docs/spec.md`, and "Versions of everything a caller sees" in the server's spec.
 ///
 /// 1. It asks `GET /versions`, with the kept `ETag`. A 304 ends the pull: nothing changed.
-/// 2. It compares the answer with the copy. An entry that is new, or that has another version, is fetched. A row
-///    with no entry is removed: the thing was deleted, or moved out of view, or hidden, which look the same.
+/// 2. It compares the answer with the copy. A row with no entry is removed first, whatever its kind: the thing was
+///    deleted, or moved out of view, or hidden, which look the same. An entry that is new, or that has another
+///    version, is fetched.
 /// 3. A thing is fetched from its own address, or from its collection when that takes fewer requests.
 /// 4. Each row is saved with the version that its own answer carried, and never with the one that the entry named.
 /// 5. The answer's `ETag` is kept only when every fetch gave the version that its entry named. Otherwise none is
 ///    kept, and the next pull compares again.
 ///
-/// **What the copy holds for now:** every user, group and occasion that the session's user can see, the
-/// memberships that the user can read, the user's primary list, and the items on that list. Every other entry is
-/// ignored. When the copy starts to hold another kind, `LocalDatabase.copySchema` rises.
+/// **What the copy holds:** every user, group, occasion, list, list recipient, item, store link and invitation
+/// that the session's user can see, and the memberships that the user can read. Every other entry is ignored.
+/// When the copy starts to hold another kind, `LocalDatabase.copySchema` rises.
 ///
-/// **The order** is Home's data first: the users, the groups, the occasions, and the memberships. Then the items of
-/// the primary list, and the list. So on the first sync, Home's rows are in the copy before any list is asked for.
+/// **The order** is Home's data first: the users, the groups, the occasions, and the memberships. Then the lists
+/// that the user is a recipient of, and then everyone else's (see `PullLists.swift`). Then the invitations. So on
+/// the first sync, Home's rows are in the copy before any list is asked for, and the user's own lists before
+/// anyone else's.
 ///
-/// **A summary and a membership have no answer that carries a version,** so step 4 can't hold for them. Each is
-/// saved with the version that its entry named (see `PullPeople.swift`).
+/// **A summary, a membership and a store link have no answer that carries a version,** so step 4 can't hold for
+/// them. Each is saved with the version that its entry named (see `PullPeople.swift`, and `PullLists.swift`).
 ///
 /// A pull writes each thing when its answer arrives. A pull that stops in the middle keeps what it wrote, and the
 /// next pull fetches the rest.
@@ -45,20 +48,24 @@ struct Pull: Sendable {
     let named = Named(versions.entries)
     var agrees = true
 
+    try await database.removeWhatIsAbsent(from: named)
+
     try await pullUsers(named, agrees: &agrees)
     try await pullGroups(named, agrees: &agrees)
     try await pullOccasions(named, agrees: &agrees)
-    try await pullSummaries(named, agrees: &agrees)
     try await pullMemberships(named, agrees: &agrees)
 
-    let user = try await database.user(userID)
-    let listID = user?.record?.primaryListID
-    // A list's own answer counts its items. So the items come first, and the list's answer is as new as theirs.
-    try await pullItems(ofList: listID, named, agrees: &agrees)
-    try await pullList(listID, named, agrees: &agrees)
+    let primaryListID = try await database.user(userID)?.record?.primaryListID
+    try await pullLists(named, primaryListID: primaryListID, agrees: &agrees)
+    try await pullInvitations(named, agrees: &agrees)
+
+    // A store link and a summary are saved from the bodies that contain them. These two steps are for the ones
+    // that are left.
+    try await pullStoreLinks(named, agrees: &agrees)
+    try await pullSummaries(named, agrees: &agrees)
 
     try await database.keep(etag: agrees ? versions.etag : nil)
-    return user
+    return try await database.user(userID)
   }
 
   /// What one answer of `GET /versions` names, for each kind that the copy holds: the version of each thing, by
@@ -74,8 +81,19 @@ struct Pull: Sendable {
     var memberships: [MembershipRow.Key: String] = [:]
     var lists: [String: String] = [:]
 
+    /// The recipient rows, by their list, and then by their user.
+    var recipients: [String: [String: String]] = [:]
+
     /// The items, by their list.
     var items: [String: [String: String]] = [:]
+
+    /// The items of every list, by the item's ID.
+    var itemsByID: [String: String] = [:]
+    var storeLinks: [String: String] = [:]
+
+    /// The item of each store link, by the store link's ID.
+    var storeLinkItems: [String: String] = [:]
+    var invitations: [String: String] = [:]
 
     init(_ entries: [ResourceVersion]) {
       for entry in entries {
@@ -85,7 +103,19 @@ struct Pull: Sendable {
         case .group: groups[entry.id] = entry.version
         case .occasion: occasions[entry.id] = entry.version
         case .list: lists[entry.id] = entry.version
-        case .item: if let listID = entry.listID { items[listID, default: [:]][entry.id] = entry.version }
+        case .listRecipient:
+          if let listID = entry.listID { recipients[listID, default: [:]][entry.id] = entry.version }
+        case .item:
+          if let listID = entry.listID {
+            items[listID, default: [:]][entry.id] = entry.version
+            itemsByID[entry.id] = entry.version
+          }
+        case .storeLink:
+          if let itemID = entry.itemID {
+            storeLinks[entry.id] = entry.version
+            storeLinkItems[entry.id] = itemID
+          }
+        case .invitation: invitations[entry.id] = entry.version
         case .groupUsers: memberships[.init(kind: .groupUsers, ownerID: entry.id)] = entry.version
         case .usersInGroup: memberships[.init(kind: .usersInGroup, ownerID: entry.id)] = entry.version
         case .usersOfOccasion: memberships[.init(kind: .usersOfOccasion, ownerID: entry.id)] = entry.version
@@ -106,8 +136,6 @@ struct Pull: Sendable {
   /// - `named` and `rows` give the version of each resource, by its ID: as the answer names it, and as the copy
   ///   has it.
   /// - `all` reads the kind's collection, and `one` reads a resource from its own address.
-  /// - `isHere` says whether a resource from its own address is still of this collection. For example, an item
-  ///   that moved to another list is not.
   /// - `save` gets the rows to save, and the IDs of the rows to remove.
   ///
   /// The collection gives every resource of the kind, in as many requests as it has pages. A resource's own
@@ -116,7 +144,6 @@ struct Pull: Sendable {
     _ named: [String: String],
     not rows: [String: String],
     id: (Resource) -> String,
-    isHere: (Resource) -> Bool = { _ in true },
     all: () async throws(APIError) -> FetchedCollection<Versioned<Resource>>,
     one: (String) async throws(APIError) -> Versioned<Resource>,
     agrees: inout Bool,
@@ -129,9 +156,7 @@ struct Pull: Sendable {
     guard changed.count > pages else {
       for id in changed {
         // A resource that left the collection between the two requests is gone from it.
-        guard let resource = try await ifNotGone({ () async throws(APIError) in try await one(id) }),
-          isHere(resource.resource)
-        else {
+        guard let resource = try await ifNotGone({ () async throws(APIError) in try await one(id) }) else {
           agrees = false
           if rows[id] != nil { try await save([], [id]) }
           continue
@@ -157,9 +182,7 @@ struct Pull: Sendable {
       if collection.isOnePage {
         // One page is one answer of the instance, so a resource that is not on it is gone.
         gone.append(id)
-      } else if let resource = try await ifNotGone({ () async throws(APIError) in try await one(id) }),
-        isHere(resource.resource)
-      {
+      } else if let resource = try await ifNotGone({ () async throws(APIError) in try await one(id) }) {
         // Between two pages, a resource can change its place in the collection's order, and be on neither. So
         // "named, and not in the collection" is no proof that it is gone. Its own address says.
         if rows[id] != resource.version { fetched.append(resource) }
@@ -168,46 +191,6 @@ struct Pull: Sendable {
       }
     }
     try await save(fetched, gone.filter { rows[$0] != nil })
-  }
-
-  // MARK: - The primary list
-
-  /// Brings the items of the list up to date. With no list, the copy holds no item.
-  private func pullItems(ofList listID: String?, _ named: Named, agrees: inout Bool) async throws {
-    let items = listID.flatMap { named.items[$0] } ?? [:]
-    let rows = try await database.itemVersions()
-    let absent = rows.keys.filter { items[$0] == nil }
-    if !absent.isEmpty { try await database.removeItems(absent) }
-    guard let listID else { return }
-
-    try await fetch(
-      // A row that was just removed is no row: an item that is back when the fetch arrives is saved again.
-      items, not: rows.filter { items[$0.key] != nil }, id: \.id,
-      // An item that moved to another list between the two requests is gone from this one.
-      isHere: { $0.listID == listID },
-      all: { () async throws(APIError) in try await client.items(ofList: listID) },
-      one: client.item,
-      agrees: &agrees
-    ) { items, gone in
-      try await database.save(items, removingItems: gone)
-    }
-  }
-
-  /// Brings the list up to date. The copy holds no other list.
-  private func pullList(_ listID: String?, _ named: Named, agrees: inout Bool) async throws {
-    let version = listID.flatMap { named.lists[$0] }
-    let rows = try await database.listVersions()
-    let absent = rows.keys.filter { $0 != listID || version == nil }
-    if !absent.isEmpty { try await database.removeLists(absent) }
-
-    guard let listID, let version, rows[listID] != version else { return }
-    guard let list = try await ifNotGone({ () async throws(APIError) in try await client.list(listID) }) else {
-      agrees = false
-      if rows[listID] != nil { try await database.removeLists([listID]) }
-      return
-    }
-    if list.version != version { agrees = false }
-    try await database.save(list)
   }
 
   // MARK: - Things that went between two requests

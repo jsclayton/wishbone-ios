@@ -21,14 +21,29 @@ public final class SessionModel {
   /// The items on the primary list, in the list's order. Empty while `primaryList` is nil: the two change together.
   public private(set) var primaryListItems: [ItemRow] = []
 
-  /// The lists in the copy that the session's user is a recipient of, the primary list first. The copy holds only
-  /// the primary list until the pull brings the user's other lists.
-  public var yourLists: [ListRow] {
-    primaryList.map { [$0] } ?? []
-  }
+  /// The lists in the copy that the session's user is a recipient of: the primary list first, and then the extra
+  /// lists, by name.
+  public private(set) var yourLists: [ListRow] = []
 
-  /// Every list in the copy, by ID.
-  private var lists: [String: ListRow] = [:]
+  /// Every list in the copy, by name: every list that the session's user can see, with the admin's access not
+  /// counted.
+  public private(set) var lists: [ListRow] = []
+
+  /// The same lists, by ID.
+  private var listsByID: [String: ListRow] = [:]
+
+  /// The items of each list, by the list's ID, in the list's order.
+  private var itemsByList: [String: [ItemRow]] = [:]
+
+  /// The store links of each item, by the item's ID.
+  private var storeLinksByItem: [String: [StoreLinkRow]] = [:]
+
+  /// The recipient rows of each list, by the list's ID.
+  private var recipientsByList: [String: [RecipientRow]] = [:]
+
+  /// Every pending invitation that the copy holds, the oldest first: the user's own, their children's, and the
+  /// ones to the lists that the user is a recipient of.
+  public private(set) var invitations: [InvitationRow] = []
 
   /// Every user that the copy holds, by name: the ones that the session's user sees in full, and the ones that
   /// the user gets only as a summary inside another resource.
@@ -85,7 +100,7 @@ public final class SessionModel {
         self?.user = snapshot.user
         self?.primaryList = snapshot.primaryList
         self?.primaryListItems = snapshot.primaryListItems
-        self?.lists = snapshot.lists
+        self?.publish(snapshot)
         self?.users = snapshot.users
         self?.usersByID = Dictionary(snapshot.users.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
         self?.groups = snapshot.groups
@@ -95,10 +110,43 @@ public final class SessionModel {
     )
   }
 
+  /// Publishes the lists of a snapshot, with their items, store links and recipients, and the invitations.
+  private func publish(_ snapshot: LocalDatabase.Snapshot) {
+    lists = snapshot.lists
+    listsByID = Dictionary(snapshot.lists.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+    itemsByList = snapshot.items
+    storeLinksByItem = snapshot.storeLinks
+    recipientsByList = snapshot.recipients
+    invitations = snapshot.invitations
+    let own = snapshot.lists.filter { $0.recipientIDs.contains(session.userID) }
+    yourLists = own.filter(\.isPrimary) + own.filter { !$0.isPrimary }
+  }
+
   /// The list in the copy with the ID. Nil for a list that is not in the copy: a missing list and a hidden list
   /// are the same here, as they are on the server.
   public func list(id: String) -> ListRow? {
-    lists[id]
+    listsByID[id]
+  }
+
+  /// The items on the list, in the list's order. Empty for a list that is not in the copy.
+  public func items(onList id: String) -> [ItemRow] {
+    itemsByList[id] ?? []
+  }
+
+  /// The item in the copy with the ID, on a list that the copy holds. Nil for an item that is not in the copy.
+  public func item(id: String) -> ItemRow? {
+    itemsByList.values.lazy.flatMap { $0 }.first { $0.id == id }
+  }
+
+  /// The store links of the item, in the order that the server gives the session's user.
+  public func storeLinks(ofItem id: String) -> [StoreLinkRow] {
+    storeLinksByItem[id] ?? []
+  }
+
+  /// The recipient rows of the list, in the order they became recipients. Empty for a list that is not in the
+  /// copy.
+  public func recipients(ofList id: String) -> [RecipientRow] {
+    recipientsByList[id] ?? []
   }
 
   /// The user in the copy with the ID, in full or as a summary. Nil for a user who is not in the copy.
@@ -197,7 +245,13 @@ public final class SessionModel {
     user = nil
     primaryList = nil
     primaryListItems = []
-    lists = [:]
+    yourLists = []
+    lists = []
+    listsByID = [:]
+    itemsByList = [:]
+    storeLinksByItem = [:]
+    recipientsByList = [:]
+    invitations = []
     users = []
     usersByID = [:]
     groups = []
