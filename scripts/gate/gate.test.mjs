@@ -168,6 +168,13 @@ test('a failing XCTest test fails, by name', async (t) => {
   assert.equal(result.line, 'GATE FAIL step 1 (package): 1 failed: Tests.OldTests/testB()');
 });
 
+test('an XCTest test with a known issue fails, by name', async (t) => {
+  const { root, options } = gateIn(t);
+  const step = testStep(root, twoPassing, { xctest: { 'Tests.OldTests/testA': 'pass', 'Tests.OldTests/testKnown': 'known' } });
+  const result = await runGate({ ...options, steps: [step] });
+  assert.equal(result.line, 'GATE FAIL step 1 (package): 1 with a known issue: Tests.OldTests/testKnown()');
+});
+
 test('a step past its limit fails the gate, and the next step does not run', async (t) => {
   const { root, options } = gateIn(t);
   const later = path.join(root, 'later-ran');

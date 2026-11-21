@@ -5,7 +5,7 @@
 //
 // XCTest writes nothing but that text in `swift test` (its xUnit file, with `--parallel`, leaves out skips). So
 // the package's XCTest tests are read from XCTest's own lines in the step's log. Each is a whole line in a fixed
-// shape, and the count comes from the last end of the run, which XCTest writes after every test has ended.
+// shape, and the count comes from the end of XCTest's run, which XCTest writes after every test has ended.
 
 import { readFileSync } from 'node:fs';
 
@@ -94,41 +94,76 @@ export function readEventStream(text) {
   };
 }
 
-const xctestCase = /^Test Case '-\[(\S+) (\S+)\]' (passed|failed|skipped) \(/;
+const xctestCaseStarted = /^Test Case '-\[(\S+) (\S+)\]' started\.$/;
+const xctestCaseEnded = /^Test Case '-\[(\S+) (\S+)\]' (passed|failed|skipped) \(/;
+const xctestKnownIssue = /: Expected failure in -\[(\S+) (\S+)\]: /;
 const xctestRunStarted = /^Test Suite 'All tests' started at /;
 const xctestRunEnded = /^Test Suite 'All tests' (?:passed|failed) at /;
 const xctestExecuted = /^\s*Executed (\d+) tests?, with /;
+const swiftTestingStarted = /^\S*\s*Test run started\.$/;
 
 /**
  * Reads XCTest's lines in the text of a `swift test` run.
  *
- * Returns `{ tests, ended, failed, skipped }`. A test's name is `Module.Class/method()`. `ended` is false when
- * the run started and didn't end. A text with no XCTest run reads as 0 tests, ended.
+ * Returns `{ tests, ended, failed, known, skipped }`. A test's name is `Module.Class/method()`. `ended` is false
+ * when a run started and didn't end. A text with no XCTest run reads as 0 tests, ended.
+ *
+ * `swift test` writes one XCTest run for each test target, and then Swift Testing's runs. So the reading stops
+ * where Swift Testing's first run starts, and `tests` is the sum of the XCTest runs. A run's count comes from its
+ * last end, before the next run starts. Between a test's start and its end, only that test's own lines count, so
+ * what an XCTest test prints can't end the run or start Swift Testing's. A test's last end line says how it
+ * ended, so a test that prints its own end line is still read. A known issue (`XCTExpectFailure`, then a
+ * failure) ends with `passed`, after a line that says `Expected failure in`.
  */
 export function readXCTestLog(text) {
   const failed = new Set();
+  const known = new Set();
   const skipped = new Set();
-  let tests = 0;
+  const name = (match) => `${match[1]}/${match[2]}()`;
+  let finishedTests = 0; // The sum of the runs before this one.
+  let runTests = 0;
   let ended = true;
   let ending = false;
+  let last = null; // The test that started last.
+  let running = false; // Whether `last` hasn't ended yet.
   for (const line of text.split('\n')) {
-    const testCase = line.match(xctestCase);
-    if (testCase) {
-      const name = `${testCase[1]}/${testCase[2]}()`;
-      if (testCase[3] === 'failed') failed.add(name);
-      if (testCase[3] === 'skipped') skipped.add(name);
+    const testEnded = line.match(xctestCaseEnded);
+    if (testEnded && last !== null && name(testEnded) === last) {
+      failed.delete(last);
+      skipped.delete(last);
+      if (testEnded[3] === 'failed') failed.add(last);
+      if (testEnded[3] === 'skipped') skipped.add(last);
+      running = false;
+      ending = false;
+      continue;
+    }
+    const knownIssue = line.match(xctestKnownIssue);
+    if (knownIssue && last !== null && name(knownIssue) === last) {
+      known.add(last);
+      continue;
+    }
+    if (running) continue;
+    const testStarted = line.match(xctestCaseStarted);
+    if (testStarted) {
+      last = name(testStarted);
+      running = true;
     } else if (xctestRunStarted.test(line)) {
+      finishedTests += runTests;
+      runTests = 0;
       ended = false;
     } else if (xctestRunEnded.test(line)) {
       ending = true;
       continue;
     } else if (ending && xctestExecuted.test(line)) {
-      tests = Number(line.match(xctestExecuted)[1]);
+      runTests = Number(line.match(xctestExecuted)[1]);
       ended = true;
+    } else if (swiftTestingStarted.test(line)) {
+      break;
     }
     ending = false;
   }
-  return { tests, ended, failed: [...failed].sort(), skipped: [...skipped].sort() };
+  const sorted = (names) => [...names].sort();
+  return { tests: finishedTests + runTests, ended, failed: sorted(failed), known: sorted(known), skipped: sorted(skipped) };
 }
 
 /** Reads the event stream at `path`. A file that is missing reads as a run with no summary. */
@@ -181,6 +216,7 @@ export function checkEventStream(file, { exit, countName, allowedSkips = [], xct
     if (!xctest.ended) return { fail: exit === 0 ? 'the XCTest run has no summary' : undefined };
     reading.tests += xctest.tests;
     reading.failed = [...new Set([...reading.failed, ...xctest.failed])].sort();
+    reading.known = [...new Set([...reading.known, ...xctest.known])].sort();
     reading.skipped = [...new Set([...reading.skipped, ...xctest.skipped])].sort();
   }
   return { fail: judge(reading, allowedSkips) ?? undefined, counts: { [countName]: reading.tests } };
