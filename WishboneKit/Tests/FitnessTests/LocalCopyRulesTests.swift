@@ -50,12 +50,34 @@ enum LocalCopyRules {
     "\(module)/CopySchema.swift", "\(module)/Rows.swift", Repo.module("WishboneAPI") + "/Values.swift",
   ]
 
+  /// The parts of other files that say what the copy keeps: the kinds of the answer that the pull keeps, and how a
+  /// row is made from the API's model. Each is the code from its first line up to its last, or to the end of the
+  /// file. A part that can't be found fails the test, so a rename can't drop it from the digest.
+  static let schemaParts = [
+    Part(path: "\(module)/Pull.swift", from: "  struct Named: Sendable {", to: "  // MARK: - One kind of resource"),
+    Part(path: "\(module)/LocalDatabase.swift", from: "// MARK: - A row from the API's model", to: nil),
+  ]
+
+  struct Part {
+    let path: String
+    let from: String
+    let to: String?
+
+    /// The part of the source. Nil when its first or its last line is not there.
+    func code(in source: String) -> String? {
+      guard let start = source.range(of: from) else { return nil }
+      guard let to else { return String(source[start.lowerBound...]) }
+      guard let end = source.range(of: to, range: start.upperBound..<source.endIndex) else { return nil }
+      return String(source[start.lowerBound..<end.lowerBound])
+    }
+  }
+
   /// The copy's schema number, and the digest of the code that it stands for.
   ///
   /// **When this fails, what the copy keeps has changed.** Raise `LocalDatabase.copySchema`, so that every device
   /// drops the old copy. Then record the new number here, with the digest that the failure gives. If only the
   /// code's own shape changed, and nothing that a database holds, record the digest alone.
-  static let recorded = (schema: 2, digest: "74e0ad0c72744ad7")
+  static let recorded = (schema: 3, digest: "d4b13ff395e7f5bf")
 
   /// The digest of the sources: their code, with no comment line and no white space.
   static func digest(of sources: [String]) -> String {
@@ -120,7 +142,11 @@ struct LocalCopyRulesTests {
 
   @Test("The copy's schema number rises with every change to what the copy keeps")
   func schemaNumberRisesWithTheCopy() throws {
-    let sources = try LocalCopyRules.schemaFiles.map { try String(contentsOf: Repo.url($0), encoding: .utf8) }
+    var sources = try LocalCopyRules.schemaFiles.map { try String(contentsOf: Repo.url($0), encoding: .utf8) }
+    for part in LocalCopyRules.schemaParts {
+      let source = try String(contentsOf: Repo.url(part.path), encoding: .utf8)
+      sources.append(try #require(part.code(in: source), "\(part.path) has no part from \"\(part.from)\""))
+    }
     let schema = try #require(LocalCopyRules.schema(in: sources[0]))
     let digest = LocalCopyRules.digest(of: sources)
     let recorded = LocalCopyRules.recorded

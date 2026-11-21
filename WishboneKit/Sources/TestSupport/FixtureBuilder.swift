@@ -237,8 +237,24 @@ public struct FixtureBuilder: Sendable {
   }
 
   /// Adds an item to the list, as a user who can edit the list.
-  public func item(_ title: String, on list: Fixture.List, as editor: Fixture.Person) async throws -> Fixture.Item {
-    let made = try await editor.signedIn().post("/lists/\(list.id)/items", ["title": .string(title)])
+  ///
+  /// The item can come with store links, in the order given, each with an address and a price in cents or none.
+  /// The server reads no store's page for them.
+  public func item(
+    _ title: String,
+    on list: Fixture.List,
+    as editor: Fixture.Person,
+    storeLinks: [(url: String, priceMinor: Int?)] = []
+  ) async throws -> Fixture.Item {
+    var body: [String: JSON] = ["title": .string(title)]
+    if !storeLinks.isEmpty {
+      body["store_links"] = .array(
+        storeLinks.map { link -> JSON in
+          guard let price = link.priceMinor else { return ["url": .string(link.url)] }
+          return ["url": .string(link.url), "price_minor": .number(Double(price)), "currency": "USD"]
+        })
+    }
+    let made = try await editor.signedIn().post("/lists/\(list.id)/items", .object(body))
     return Fixture.Item(id: try id(of: made), title: title, list: list)
   }
 

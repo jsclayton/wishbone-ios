@@ -138,16 +138,34 @@ struct LocalDatabase: Sendable {
     }
   }
 
-  /// For each of the users, a user of the copy whose record names them as a parent or a child: a body that
-  /// contains the user's summary. A user that no record names is not in the answer.
-  func usersNaming(_ ids: Set<String>) async throws -> [String: String] {
+  /// For each of the users, a body of the copy that contains their summary. A user whom no body of the copy names
+  /// is not in the answer.
+  func bodiesNaming(_ ids: Set<String>) async throws -> [String: Pull.Body] {
     try await writer.read { database in
-      var naming: [String: String] = [:]
+      var naming: [String: Pull.Body] = [:]
+      func named(_ id: String?, by body: Pull.Body) {
+        guard let id, ids.contains(id), naming[id] == nil else { return }
+        naming[id] = body
+      }
       for row in try UserRow.order(Column("id")).fetchAll(database) {
         guard let record = row.record else { continue }
-        for id in record.parentIDs + record.childIDs where ids.contains(id) && naming[id] == nil {
-          naming[id] = row.id
-        }
+        for id in record.parentIDs + record.childIDs { named(id, by: .user(row.id)) }
+      }
+      for row in try OccasionRow.order(Column("id")).fetchAll(database) {
+        named(row.userID, by: .occasion(row.id))
+      }
+      for row in try ListRow.order(Column("id")).fetchAll(database) {
+        for id in row.recipientIDs { named(id, by: .list(row.id)) }
+      }
+      for row in try RecipientRow.order(Column("listID"), Column("userID")).fetchAll(database) {
+        named(row.userID, by: .recipients(ofList: row.listID))
+      }
+      for row in try ItemRow.order(Column("id")).fetchAll(database) {
+        named(row.addedByID, by: .item(row.id))
+      }
+      for row in try InvitationRow.order(Column("id")).fetchAll(database) {
+        named(row.userID, by: .invitation(row.id))
+        named(row.invitedByID, by: .invitation(row.id))
       }
       return naming
     }
@@ -195,6 +213,27 @@ struct LocalDatabase: Sendable {
   /// The version of each item in the copy, by the item's ID.
   func itemVersions() async throws -> [String: String] {
     try await versions(of: ItemRow.self)
+  }
+
+  /// The version of each store link in the copy, by the store link's ID.
+  func storeLinkVersions() async throws -> [String: String] {
+    try await versions(of: StoreLinkRow.self)
+  }
+
+  /// The version of each invitation in the copy, by the invitation's ID.
+  func invitationVersions() async throws -> [String: String] {
+    try await versions(of: InvitationRow.self)
+  }
+
+  /// The version of each recipient row in the copy, by its list, and then by its user.
+  func recipientVersions() async throws -> [String: [String: String]] {
+    try await writer.read { database in
+      var versions: [String: [String: String]] = [:]
+      for row in try RecipientRow.fetchAll(database) {
+        versions[row.listID, default: [:]][row.userID] = row.version
+      }
+      return versions
+    }
   }
 
   private func versions<Record: TableRecord>(of record: Record.Type) async throws -> [String: String] {
@@ -268,19 +307,6 @@ struct LocalDatabase: Sendable {
     }
   }
 
-  /// Makes each of the users a summary, with the version that `GET /versions` named for the summary: the name and
-  /// the avatar stay, and the rest of the record goes. It also removes the users with the IDs, in the same change.
-  func keepAsSummaries(_ users: [String: String], removingUsers gone: [String]) async throws {
-    try await change { database in
-      try UserRow.deleteAll(database, keys: gone)
-      for (id, version) in users {
-        try database.execute(
-          sql: "UPDATE \(Self.quoted(UserRow.self)) SET record = NULL, version = ? WHERE id = ?",
-          arguments: [version, id])
-      }
-    }
-  }
-
   /// Saves the groups, each with the version that its own answer carried, and removes the groups with the IDs, in
   /// one change.
   func save(_ groups: [Versioned<Group>], removingGroups gone: [String] = []) async throws {
@@ -325,36 +351,174 @@ struct LocalDatabase: Sendable {
     }
   }
 
-  /// Saves a list, with the version that the list's own answer carried.
-  func save(_ list: Versioned<ListResource>) async throws {
-    let row = ListRow(id: list.resource.id, name: list.resource.name, version: list.version)
-    try await change { database in try row.save(database) }
-  }
-
-  /// Saves the items, each with the version that its own answer carried, and removes the items with the IDs, in
-  /// one change.
-  func save(_ items: [Versioned<Item>], removingItems gone: [String] = []) async throws {
-    let rows = items.map { item in
-      ItemRow(
-        id: item.resource.id, listID: item.resource.listID, title: item.resource.title,
-        position: item.resource.position, version: item.version)
-    }
+  /// Saves the lists, each with the version that its own answer carried, and removes the lists with the IDs, in
+  /// one change. A list's recipients are summaries, saved as the summaries of a user's body are. A removed list
+  /// takes its items, their store links, and its recipient rows with it.
+  func save(
+    _ lists: [Versioned<ListResource>],
+    summaries: [String: String] = [:],
+    removingLists gone: [String] = []
+  ) async throws {
+    let rows = lists.map { ListRow($0) }
+    let inBodies = Self.summaryRows(of: lists.flatMap(\.resource.recipients), named: summaries)
     try await change { database in
-      try ItemRow.deleteAll(database, keys: gone)
+      try Self.removeLists(gone, in: database)
+      for row in inBodies {
+        try row.save(database)
+      }
       for row in rows {
         try row.save(database)
       }
     }
   }
 
-  /// Removes the lists from the copy.
-  func removeLists(_ ids: [String]) async throws {
-    try await change { database in _ = try ListRow.deleteAll(database, keys: ids) }
+  /// Saves rows of a list's recipients, each with the version that its row carried, and removes the rows of the
+  /// users with the IDs, in one change. Each recipient is a summary, saved as the summaries of a user's body are.
+  func save(
+    _ recipients: [Versioned<Recipient>],
+    ofList listID: String,
+    summaries: [String: String] = [:],
+    removingRecipients gone: [String] = []
+  ) async throws {
+    let rows = recipients.map { RecipientRow($0, ofList: listID) }
+    let inBodies = Self.summaryRows(of: recipients.map(\.resource.user), named: summaries)
+    try await change { database in
+      for userID in gone {
+        try RecipientRow.deleteOne(database, key: ["listID": listID, "userID": userID])
+      }
+      for row in inBodies {
+        try row.save(database)
+      }
+      for row in rows {
+        try row.save(database)
+      }
+    }
   }
 
-  /// Removes the items from the copy.
-  func removeItems(_ ids: [String]) async throws {
-    try await save([Versioned<Item>](), removingItems: ids)
+  /// Saves the items, each with the version that its own answer carried, and removes the items with the IDs, in
+  /// one change.
+  ///
+  /// An item's body has its store links, in the server's order for the session's user. They take the place of the
+  /// item's store links in the copy, each with the version that `GET /versions` named for it in `storeLinks`: no
+  /// body carries one. A store link that it doesn't name has no version, so the next pull compares it again. The
+  /// user who added the item is a summary, saved as the summaries of a user's body are. A removed item takes its
+  /// store links with it.
+  func save(
+    _ items: [Versioned<Item>],
+    storeLinks versions: [String: String] = [:],
+    summaries: [String: String] = [:],
+    removingItems gone: [String] = []
+  ) async throws {
+    let rows = items.map { ItemRow($0) }
+    let links = items.flatMap { item in
+      item.resource.storeLinks.enumerated().map { position, link in
+        StoreLinkRow(link, ofItem: item.resource.id, at: position, version: versions[link.id] ?? "")
+      }
+    }
+    let inBodies = Self.summaryRows(of: items.compactMap(\.resource.addedBy), named: summaries)
+    try await change { database in
+      try Self.removeItems(gone + items.map(\.resource.id), in: database)
+      for row in inBodies {
+        try row.save(database)
+      }
+      for row in rows {
+        try row.save(database)
+      }
+      for row in links {
+        try row.save(database)
+      }
+    }
+  }
+
+  /// Saves the invitations, each with the version that its own answer carried, and removes the invitations with
+  /// the IDs, in one change. An invitation's users are summaries, saved as the summaries of a user's body are.
+  func save(
+    _ invitations: [Versioned<Invitation>],
+    summaries: [String: String] = [:],
+    removingInvitations gone: [String] = []
+  ) async throws {
+    let rows = invitations.map { InvitationRow($0) }
+    let users = invitations.flatMap { [$0.resource.user] + ($0.resource.invitedBy.map { [$0] } ?? []) }
+    let inBodies = Self.summaryRows(of: users, named: summaries)
+    try await change { database in
+      try InvitationRow.deleteAll(database, keys: gone)
+      for row in inBodies {
+        try row.save(database)
+      }
+      for row in rows {
+        try row.save(database)
+      }
+    }
+  }
+
+  /// Removes every row that the answer of `GET /versions` doesn't name, in one change: what was deleted, moved
+  /// out of view, or hidden. A user who is no longer named in full, and is named as a summary, becomes a summary
+  /// with the version that the answer named for it: the name and the avatar stay, and the rest goes.
+  func removeWhatIsAbsent(from named: Pull.Named) async throws {
+    try await change { database in
+      let users = try Row.fetchAll(
+        database, sql: "SELECT id, record IS NULL AS isSummary FROM \(Self.quoted(UserRow.self))")
+      for row in users {
+        let id: String = row["id"]
+        let isSummary: Bool = row["isSummary"]
+        if named.users[id] != nil { continue }
+        if let version = named.summaries[id] {
+          guard !isSummary else { continue }
+          try database.execute(
+            sql: "UPDATE \(Self.quoted(UserRow.self)) SET record = NULL, version = ? WHERE id = ?",
+            arguments: [version, id])
+        } else {
+          _ = try UserRow.deleteOne(database, key: id)
+        }
+      }
+      func absent<Record: TableRecord>(_ record: Record.Type, from named: [String: String]) throws -> [String] {
+        try String.fetchAll(database, sql: "SELECT id FROM \(Self.quoted(record))").filter { named[$0] == nil }
+      }
+      try GroupRow.deleteAll(database, keys: try absent(GroupRow.self, from: named.groups))
+      try OccasionRow.deleteAll(database, keys: try absent(OccasionRow.self, from: named.occasions))
+      try InvitationRow.deleteAll(database, keys: try absent(InvitationRow.self, from: named.invitations))
+      try Self.removeLists(try absent(ListRow.self, from: named.lists), in: database)
+      try Self.removeItems(try absent(ItemRow.self, from: named.itemsByID), in: database)
+      try StoreLinkRow.deleteAll(database, keys: try absent(StoreLinkRow.self, from: named.storeLinks))
+      for row in try MembershipRow.fetchAll(database) where named.memberships[row.key] == nil {
+        try row.delete(database)
+      }
+      for row in try RecipientRow.fetchAll(database) where named.recipients[row.listID]?[row.userID] == nil {
+        try row.delete(database)
+      }
+    }
+  }
+
+  /// Removes the list, with its items, their store links, and its recipient rows: the list went between two
+  /// requests.
+  func removeList(_ id: String) async throws {
+    try await change { database in try Self.removeLists([id], in: database) }
+  }
+
+  /// Removes the summaries of the users with the IDs. A user held in full stays.
+  func removeSummaries(_ ids: [String]) async throws {
+    try await change { database in
+      for id in ids {
+        try database.execute(
+          sql: "DELETE FROM \(Self.quoted(UserRow.self)) WHERE id = ? AND record IS NULL", arguments: [id])
+      }
+    }
+  }
+
+  /// Removes the lists, with their items, the items' store links, and the lists' recipient rows.
+  private static func removeLists(_ ids: [String], in database: Database) throws {
+    guard !ids.isEmpty else { return }
+    try ListRow.deleteAll(database, keys: ids)
+    try RecipientRow.filter(ids.contains(Column("listID"))).deleteAll(database)
+    let items = try String.fetchAll(database, ItemRow.select(Column("id")).filter(ids.contains(Column("listID"))))
+    try removeItems(items, in: database)
+  }
+
+  /// Removes the items, with their store links.
+  private static func removeItems(_ ids: [String], in database: Database) throws {
+    guard !ids.isEmpty else { return }
+    try ItemRow.deleteAll(database, keys: ids)
+    try StoreLinkRow.filter(ids.contains(Column("itemID"))).deleteAll(database)
   }
 
   // MARK: - What the session model publishes
@@ -368,8 +532,23 @@ struct LocalDatabase: Sendable {
     /// The items on the primary list, in the list's order.
     var primaryListItems: [ItemRow] = []
 
-    /// Every list of the copy, by ID.
-    var lists: [String: ListRow] = [:]
+    /// Every list of the copy, by name.
+    var lists: [ListRow] = []
+
+    /// The items of each list of the copy, by the list's ID, in the list's order. A list that is not in the copy
+    /// has none here: the pull saves a list's items before the list, in another write, so the list and its items
+    /// show in the same change.
+    var items: [String: [ItemRow]] = [:]
+
+    /// The store links of each item, by the item's ID, in the order of the item's body.
+    var storeLinks: [String: [StoreLinkRow]] = [:]
+
+    /// The recipient rows of each list of the copy, by the list's ID, in the order of the list's recipients. A row
+    /// that the list doesn't name yet comes last.
+    var recipients: [String: [RecipientRow]] = [:]
+
+    /// Every pending invitation of the copy, the oldest first.
+    var invitations: [InvitationRow] = []
 
     /// Every user of the copy, in full and as a summary, by name.
     var users: [UserRow] = []
@@ -388,7 +567,27 @@ struct LocalDatabase: Sendable {
   > {
     ValueObservation.tracking { database in
       var snapshot = Snapshot()
-      for list in try ListRow.fetchAll(database) { snapshot.lists[list.id] = list }
+      snapshot.lists = try ListRow.order(Column("name"), Column("id")).fetchAll(database)
+      let listIDs = Set(snapshot.lists.map(\.id))
+      for item in try ItemRow.order(Column("listID"), Column("position"), Column("id")).fetchAll(database)
+      where listIDs.contains(item.listID) {
+        snapshot.items[item.listID, default: []].append(item)
+      }
+      for link in try StoreLinkRow.order(Column("itemID"), Column("position"), Column("id")).fetchAll(database) {
+        snapshot.storeLinks[link.itemID, default: []].append(link)
+      }
+      // The rows of a list go in the order of the list's own recipients: the order they became recipients, as the
+      // server gives it. Two can have the same time.
+      var rows: [String: [RecipientRow]] = [:]
+      for row in try RecipientRow.order(Column("createdAt"), Column("userID")).fetchAll(database) {
+        rows[row.listID, default: []].append(row)
+      }
+      for list in snapshot.lists {
+        guard let unordered = rows[list.id] else { continue }
+        let named = list.recipientIDs.compactMap { id in unordered.first { $0.userID == id } }
+        snapshot.recipients[list.id] = named + unordered.filter { !list.recipientIDs.contains($0.userID) }
+      }
+      snapshot.invitations = try InvitationRow.order(Column("createdAt"), Column("id")).fetchAll(database)
       snapshot.users = try UserRow.order(Column("name"), Column("id")).fetchAll(database)
       snapshot.groups = try GroupRow.order(Column("name"), Column("id")).fetchAll(database)
       snapshot.occasions = try OccasionRow.order(
@@ -396,14 +595,9 @@ struct LocalDatabase: Sendable {
       ).fetchAll(database)
       snapshot.memberships = try MembershipRow.order(Column("kind"), Column("ownerID")).fetchAll(database)
       snapshot.user = snapshot.users.first { $0.id == id && !$0.isSummary }
-      // The pull saves the items before their list, in another write. Items whose list is not in the copy yet
-      // are not published, so the list and its items show in the same change.
-      guard let listID = snapshot.user?.record?.primaryListID,
-        let list = try ListRow.fetchOne(database, key: listID)
-      else { return snapshot }
-      snapshot.primaryList = list
-      snapshot.primaryListItems = try ItemRow.filter(Column("listID") == listID)
-        .order(Column("position"), Column("id")).fetchAll(database)
+      guard let listID = snapshot.user?.record?.primaryListID else { return snapshot }
+      snapshot.primaryList = snapshot.lists.first { $0.id == listID }
+      snapshot.primaryListItems = snapshot.items[listID] ?? []
       return snapshot
     }.removeDuplicates()
   }
@@ -471,5 +665,58 @@ extension MembershipRow {
 
   var key: Key {
     Key(kind: kind, ownerID: ownerID)
+  }
+}
+
+extension ListRow {
+  init(_ list: Versioned<ListResource>) {
+    let resource = list.resource
+    self.init(
+      id: resource.id, name: resource.name, description: resource.description, isPrimary: resource.isPrimary,
+      recipientIDs: resource.recipients.map(\.id), itemCount: resource.itemCount, createdAt: resource.createdAt,
+      canEdit: resource.canEdit, canDelete: resource.canDelete, canInvite: resource.canInvite,
+      canLeave: resource.canLeave, version: list.version)
+  }
+}
+
+extension RecipientRow {
+  init(_ recipient: Versioned<Recipient>, ofList listID: String) {
+    let resource = recipient.resource
+    self.init(
+      listID: listID, userID: resource.user.id, createdAt: resource.createdAt,
+      seesListAfterLeaving: resource.seesListAfterLeaving, canDelete: resource.canDelete, version: recipient.version)
+  }
+}
+
+extension ItemRow {
+  init(_ item: Versioned<Item>) {
+    let resource = item.resource
+    self.init(
+      id: resource.id, listID: resource.listID, title: resource.title, notes: resource.notes,
+      priceMinor: resource.priceMinor, topPriceMinor: resource.topPriceMinor, currency: resource.currency,
+      quantity: resource.quantity, isUnlimited: resource.isUnlimited, position: resource.position,
+      addedByID: resource.addedBy?.id, createdAt: resource.createdAt, images: resource.images,
+      primaryImage: resource.primaryImage, stillWanted: resource.stillWanted,
+      myClaimedQuantity: resource.myClaimedQuantity, canEdit: resource.canEdit, canDelete: resource.canDelete,
+      canClaim: resource.canClaim, canRefreshPrices: resource.canRefreshPrices, version: item.version)
+  }
+}
+
+extension StoreLinkRow {
+  init(_ link: StoreLink, ofItem itemID: String, at position: Int, version: String) {
+    self.init(
+      id: link.id, itemID: itemID, position: position, url: link.url, store: link.store,
+      priceMinor: link.priceMinor, currency: link.currency, capturedAt: link.capturedAt, imageURL: link.imageURL,
+      createdAt: link.createdAt, canEdit: link.canEdit, canDelete: link.canDelete, version: version)
+  }
+}
+
+extension InvitationRow {
+  init(_ invitation: Versioned<Invitation>) {
+    let resource = invitation.resource
+    self.init(
+      id: resource.id, listID: resource.list.id, listName: resource.list.name, userID: resource.user.id,
+      invitedByID: resource.invitedBy?.id, createdAt: resource.createdAt, canAccept: resource.canAccept,
+      canDelete: resource.canDelete, version: invitation.version)
   }
 }

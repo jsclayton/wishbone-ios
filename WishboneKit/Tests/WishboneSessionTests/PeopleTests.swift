@@ -356,38 +356,6 @@ struct PeopleTests {
     #expect(relative.instance.conditioner.requests.last?.headers["if-none-match"] != nil)
   }
 
-  @Test(
-    """
-    A summary that only a list holds is not in the copy yet: the copy holds no list's recipients. The sync still \
-    ends in step, and the next one is one request
-    """
-  )
-  func summaryThatOnlyAListHolds() async throws {
-    let family = try await builder.standardFamily()
-    // The relative sees the child, and so the list that the child shares with the deactivated child. With the
-    // parent out of the relative's groups, no user that the relative sees names the deactivated child.
-    try await family.admin.signedIn().send(
-      "DELETE", "/groups/\(family.household.id)/users/\(family.parent.id)"
-    ).expecting(204)
-    let recipients = try await family.relative.signedIn().all("/lists/\(family.sharedList.id)/recipients")
-    #expect(recipients.contains { $0["user"]["id"].string == family.deactivatedChild.id })
-
-    let relative = try await signedIn(as: family.relative)
-    let named = try await entries(namedFor: family.relative)
-    let onlyOnAList = try #require(named.first { $0.hasPrefix("user_summary \(family.deactivatedChild.id) ") })
-    await until { entries(of: relative.session) == named.subtracting([onlyOnAList]) }
-    // The parent's summary is in the child's body, so the copy has it.
-    #expect(try user(family.parent, in: relative.session).isSummary)
-    #expect(!relative.session.users.contains { $0.id == family.deactivatedChild.id })
-    #expect(!relative.asked().contains { $0.hasPrefix("GET /users/") })
-
-    // The copy agrees with the answer in everything that it holds, so the answer's ETag is kept.
-    let mark = relative.mark
-    await relative.session.sync()
-    #expect(relative.asked(since: mark) == ["GET /versions"])
-    #expect(relative.instance.conditioner.requests.last?.headers["if-none-match"] != nil)
-  }
-
   // MARK: - 4. Groups
 
   @Test(
@@ -517,21 +485,25 @@ struct PeopleTests {
       try #require(session.occasions.first { $0.kind == .birthday && $0.userID == person.id })
     }
 
-    // A renamed user. The relative is nobody's parent or child, so only two bodies hold the name: the user's, and
-    // the birthday's.
+    // A renamed user. The relative is nobody's parent or child, so only four bodies hold the name: the user's, the
+    // birthday's, the primary list's, and its recipient row. The primary list has the user's name too.
+    let relativesList = try #require(try user(family.relative, in: session).record?.primaryListID)
     let renamed = builder.name("Jordy")
     try await family.relative.signedIn().send("PATCH", "/users/me", json: ["name": .string(renamed)]).expecting(200)
     var mark = parent.mark
     await session.sync()
     try await inStep(parent)
     #expect(try user(family.relative, in: session).name == renamed)
+    #expect(session.list(id: relativesList)?.name == renamed)
     #expect(
       parent.asked(since: mark) == [
         "GET /versions", "GET /users/\(family.relative.id)", "GET /occasions/\(try birthday(of: family.relative).id)",
+        "GET /lists/\(relativesList)/recipients?limit=200", "GET /lists/\(relativesList)",
       ])
 
-    // A user added to a group. The parent now sees the outsider, with their birthday, in the household, in the
-    // family that the household is nested in, and in the two shared occasions.
+    // A user added to a group. The parent now sees the outsider, with their birthday and their primary list, in
+    // the household, in the family that the household is nested in, and in the two shared occasions. The list has
+    // no items.
     try await family.admin.signedIn().post(
       "/groups/\(family.household.id)/users", ["user_id": .string(family.outsider.id)])
     mark = parent.mark
@@ -542,6 +514,8 @@ struct PeopleTests {
     #expect(session.members(.usersInGroup, of: family.family.id)?.contains(family.outsider.id) == true)
     #expect(session.members(.usersOfOccasion, of: family.groupOccasion.id)?.contains(family.outsider.id) == true)
     #expect(session.members(.usersOfOccasion, of: try birthday(of: family.outsider).id) == [family.outsider.id])
+    let outsidersList = try #require(try user(family.outsider, in: session).record?.primaryListID)
+    #expect(session.list(id: outsidersList)?.recipientIDs == [family.outsider.id])
     #expect(
       parent.asked(since: mark) == [
         "GET /versions",
@@ -552,6 +526,8 @@ struct PeopleTests {
         "GET /users?group_id=\(family.family.id)&limit=200",
         "GET /users?occasion_id=\(family.groupOccasion.id)&limit=200",
         "GET /users?occasion_id=\(family.everyoneOccasion.id)&limit=200",
+        "GET /lists/\(outsidersList)/recipients?limit=200",
+        "GET /lists/\(outsidersList)",
       ])
 
     // A deleted custom occasion. Nothing is fetched: the versions say that it went, with its users.

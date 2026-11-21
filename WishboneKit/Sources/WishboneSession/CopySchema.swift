@@ -14,7 +14,7 @@ extension LocalDatabase {
   /// tables. Without that, the kept `ETag` could answer a pull with a 304 for a copy that never held the new kind.
   ///
   /// The number is SQLite's `user_version`. The first version of the copy had none, which is 0.
-  static let copySchema = 2
+  static let copySchema = 3
 
   /// One row at most: the `ETag` of the last answer of `GET /versions` that the copy agreed with.
   static let keptETagTable = "keptETag"
@@ -22,7 +22,8 @@ extension LocalDatabase {
   /// The copy's tables: the rows that screens read, and the `ETag` that the pull keeps.
   private static let copyTables = [
     UserRow.databaseTableName, GroupRow.databaseTableName, OccasionRow.databaseTableName,
-    MembershipRow.databaseTableName, ListRow.databaseTableName, ItemRow.databaseTableName, keptETagTable,
+    MembershipRow.databaseTableName, ListRow.databaseTableName, RecipientRow.databaseTableName,
+    ItemRow.databaseTableName, StoreLinkRow.databaseTableName, InvitationRow.databaseTableName, keptETagTable,
   ]
 
   /// Makes the copy's tables. When the database has the copy of another schema number, it first drops every table
@@ -87,13 +88,78 @@ extension LocalDatabase {
       try database.create(table: ListRow.databaseTableName) { table in
         table.primaryKey("id", .text)
         table.column("name", .text).notNull()
+        table.column("description", .text)
+        table.column("isPrimary", .boolean).notNull()
+        // The IDs of the recipients in the server's order, as a JSON list.
+        table.column("recipientIDs", .text).notNull()
+        table.column("itemCount", .integer).notNull()
+        table.column("createdAt", .datetime).notNull()
+        table.column("canEdit", .boolean).notNull()
+        table.column("canDelete", .boolean).notNull()
+        table.column("canInvite", .boolean).notNull()
+        table.column("canLeave", .boolean).notNull()
+        table.column("version", .text).notNull()
+      }
+      try database.create(table: RecipientRow.databaseTableName) { table in
+        table.primaryKey {
+          table.column("listID", .text)
+          table.column("userID", .text)
+        }
+        table.column("createdAt", .datetime).notNull()
+        // Hidden, or shown with a value or with none, as JSON.
+        table.column("seesListAfterLeaving", .text).notNull()
+        table.column("canDelete", .boolean).notNull()
         table.column("version", .text).notNull()
       }
       try database.create(table: ItemRow.databaseTableName) { table in
         table.primaryKey("id", .text)
         table.column("listID", .text).notNull().indexed()
         table.column("title", .text).notNull()
+        table.column("notes", .text)
+        table.column("priceMinor", .integer)
+        table.column("topPriceMinor", .integer)
+        table.column("currency", .text)
+        table.column("quantity", .integer).notNull()
+        table.column("isUnlimited", .boolean).notNull()
         table.column("position", .integer).notNull()
+        table.column("addedByID", .text)
+        table.column("createdAt", .datetime).notNull()
+        // The image summaries, as JSON.
+        table.column("images", .text).notNull()
+        table.column("primaryImage", .text)
+        // The claim state: hidden, or shown with a value or with none, as JSON.
+        table.column("stillWanted", .text).notNull()
+        table.column("myClaimedQuantity", .text).notNull()
+        table.column("canEdit", .boolean).notNull()
+        table.column("canDelete", .boolean).notNull()
+        table.column("canClaim", .boolean).notNull()
+        table.column("canRefreshPrices", .boolean).notNull()
+        table.column("version", .text).notNull()
+      }
+      try database.create(table: StoreLinkRow.databaseTableName) { table in
+        table.primaryKey("id", .text)
+        table.column("itemID", .text).notNull().indexed()
+        table.column("position", .integer).notNull()
+        table.column("url", .text).notNull()
+        table.column("store", .text).notNull()
+        table.column("priceMinor", .integer)
+        table.column("currency", .text)
+        table.column("capturedAt", .datetime)
+        table.column("imageURL", .text)
+        table.column("createdAt", .datetime).notNull()
+        table.column("canEdit", .boolean).notNull()
+        table.column("canDelete", .boolean).notNull()
+        table.column("version", .text).notNull()
+      }
+      try database.create(table: InvitationRow.databaseTableName) { table in
+        table.primaryKey("id", .text)
+        table.column("listID", .text).notNull()
+        table.column("listName", .text).notNull()
+        table.column("userID", .text).notNull()
+        table.column("invitedByID", .text)
+        table.column("createdAt", .datetime).notNull()
+        table.column("canAccept", .boolean).notNull()
+        table.column("canDelete", .boolean).notNull()
         table.column("version", .text).notNull()
       }
       try database.create(table: keptETagTable) { table in

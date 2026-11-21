@@ -293,33 +293,299 @@ public struct ListSummary: Model, Equatable {
   public static let fields = WishboneAPI.fields(of: CodingKeys.self)
 }
 
-/// A list, as `GET /lists/{id}` gives it. Its name is not `List`, which is SwiftUI's.
+/// A list, as `GET /lists/{id}` gives it, and as a row of `GET /lists`. Its name is not `List`, which is SwiftUI's.
+/// See "List fields" in the server's route table.
 public struct ListResource: Model, Equatable {
   public let id: String
+
+  /// A primary list's name is its user's name, until someone who can edit the list renames it.
   public let name: String
+
+  /// Markdown about the list.
+  public let description: String?
+
+  /// Whether this is the list that every user has from the start, with that user as its only recipient.
+  public let isPrimary: Bool
+
+  /// The users the gifts are for, as summaries, in the order they became recipients.
+  public let recipients: [UserSummary]
+
+  /// How many items on the list this caller can see. A giver doesn't see a fully claimed item.
+  public let itemCount: Int
+  public let createdAt: Date
+
+  public let canEdit: Bool
+  public let canDelete: Bool
+  public let canInvite: Bool
+  public let canLeave: Bool
 
   enum CodingKeys: String, CodingKey, CaseIterable {
     case id
     case name
+    case description
+    case isPrimary = "is_primary"
+    case recipients
+    case itemCount = "item_count"
+    case createdAt = "created_at"
+    case canEdit = "can_edit"
+    case canDelete = "can_delete"
+    case canInvite = "can_invite"
+    case canLeave = "can_leave"
   }
 
-  public static let fields = WishboneAPI.fields(of: CodingKeys.self)
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    id = try container.decode(String.self, forKey: .id)
+    name = try container.decode(String.self, forKey: .name)
+    description = try container.decodeIfPresent(String.self, forKey: .description)
+    isPrimary = try container.decode(Bool.self, forKey: .isPrimary)
+    recipients = try container.decode([UserSummary].self, forKey: .recipients)
+    itemCount = try container.decode(Int.self, forKey: .itemCount)
+    createdAt = try container.timestamp(forKey: .createdAt)
+    canEdit = try container.decode(Bool.self, forKey: .canEdit)
+    canDelete = try container.decode(Bool.self, forKey: .canDelete)
+    canInvite = try container.decode(Bool.self, forKey: .canInvite)
+    canLeave = try container.decode(Bool.self, forKey: .canLeave)
+  }
+
+  public static let fields = WishboneAPI.fields(of: CodingKeys.self, lists: ["recipients": UserSummary.fields])
 }
 
-/// An item, as `GET /items/{id}` gives it, and as a row of `GET /lists/{id}/items`.
+/// A recipient of a list, as a row of `GET /lists/{id}/recipients`. It has no `GET` of its own.
+public struct Recipient: Model, Equatable {
+  public let user: UserSummary
+
+  /// When the user became a recipient.
+  public let createdAt: Date
+
+  /// Whether the user could still see the list after they leave it. Only that user and their parents get it:
+  /// for anyone else the key is absent.
+  public let seesListAfterLeaving: Hideable<Bool>
+
+  /// Whether this caller can make the user leave the list: the user, or their parent while the user is active.
+  public let canDelete: Bool
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case user
+    case createdAt = "created_at"
+    case seesListAfterLeaving = "sees_list_after_leaving"
+    case canDelete = "can_delete"
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    user = try container.decode(UserSummary.self, forKey: .user)
+    createdAt = try container.timestamp(forKey: .createdAt)
+    seesListAfterLeaving = try container.hideable(Bool.self, forKey: .seesListAfterLeaving)
+    canDelete = try container.decode(Bool.self, forKey: .canDelete)
+  }
+
+  public static let fields = WishboneAPI.fields(of: CodingKeys.self, nested: ["user": UserSummary.fields])
+}
+
+/// A pending invitation to an extra list, as `GET /invitations/{id}` gives it, and as a row of
+/// `GET /invitations`. Accepting or declining it removes it.
+public struct Invitation: Model, Equatable {
+  public let id: String
+
+  /// The list, by its name. The summary doesn't make the list visible: the invited user can't see it yet.
+  public let list: ListSummary
+
+  /// The invited user.
+  public let user: UserSummary
+
+  /// The recipient who invited them. Nil once that user is deleted.
+  public let invitedBy: UserSummary?
+  public let createdAt: Date
+
+  public let canAccept: Bool
+  public let canDelete: Bool
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case id
+    case list
+    case user
+    case invitedBy = "invited_by"
+    case createdAt = "created_at"
+    case canAccept = "can_accept"
+    case canDelete = "can_delete"
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    id = try container.decode(String.self, forKey: .id)
+    list = try container.decode(ListSummary.self, forKey: .list)
+    user = try container.decode(UserSummary.self, forKey: .user)
+    invitedBy = try container.decodeIfPresent(UserSummary.self, forKey: .invitedBy)
+    createdAt = try container.timestamp(forKey: .createdAt)
+    canAccept = try container.decode(Bool.self, forKey: .canAccept)
+    canDelete = try container.decode(Bool.self, forKey: .canDelete)
+  }
+
+  public static let fields = WishboneAPI.fields(
+    of: CodingKeys.self,
+    nested: ["list": ListSummary.fields, "user": UserSummary.fields, "invited_by": UserSummary.fields])
+}
+
+/// An item, as `GET /items/{id}` gives it, and as a row of `GET /lists/{id}/items`. See "Item fields" in the
+/// server's route table.
 public struct Item: Model, Equatable {
   public let id: String
   public let listID: String
   public let title: String
+  public let notes: String?
+
+  /// The price in the currency's minor unit. A range starts here.
+  public let priceMinor: Int?
+
+  /// The top of a price range.
+  public let topPriceMinor: Int?
+
+  /// An ISO 4217 code. Nil exactly when there is no price.
+  public let currency: String?
+  public let quantity: Int
+  public let isUnlimited: Bool
 
   /// The item's place on its list, from 0.
   public let position: Int
+
+  /// The user who added the item, as a summary. Nil once that user is deleted.
+  public let addedBy: UserSummary?
+  public let createdAt: Date
+
+  /// At most 10, in the order that the server gives this caller: the order added for a caller who can edit the
+  /// list, and by price for everyone else.
+  public let storeLinks: [StoreLink]
+
+  /// At most 5, in the order they were added.
+  public let images: [ImageSummary]
+
+  /// One of `images`. Nil when there are none.
+  public let primaryImage: ImageSummary?
+
+  /// **Claim state.** How many other givers can still claim: `shown(nil)` for an unlimited item. Hidden for a
+  /// recipient, who never gets the key. Hidden is never zero.
+  public let stillWanted: Hideable<Int>
+
+  /// **Claim state.** The sum of this caller's own open gifts on the item. Hidden for a recipient.
+  public let myClaimedQuantity: Hideable<Int>
+
+  public let canEdit: Bool
+  public let canDelete: Bool
+  public let canClaim: Bool
+  public let canRefreshPrices: Bool
 
   enum CodingKeys: String, CodingKey, CaseIterable {
     case id
     case listID = "list_id"
     case title
+    case notes
+    case priceMinor = "price_minor"
+    case topPriceMinor = "top_price_minor"
+    case currency
+    case quantity
+    case isUnlimited = "is_unlimited"
     case position
+    case addedBy = "added_by"
+    case createdAt = "created_at"
+    case storeLinks = "store_links"
+    case images
+    case primaryImage = "primary_image"
+    case stillWanted = "still_wanted"
+    case myClaimedQuantity = "my_claimed_quantity"
+    case canEdit = "can_edit"
+    case canDelete = "can_delete"
+    case canClaim = "can_claim"
+    case canRefreshPrices = "can_refresh_prices"
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    id = try container.decode(String.self, forKey: .id)
+    listID = try container.decode(String.self, forKey: .listID)
+    title = try container.decode(String.self, forKey: .title)
+    notes = try container.decodeIfPresent(String.self, forKey: .notes)
+    priceMinor = try container.decodeIfPresent(Int.self, forKey: .priceMinor)
+    topPriceMinor = try container.decodeIfPresent(Int.self, forKey: .topPriceMinor)
+    currency = try container.decodeIfPresent(String.self, forKey: .currency)
+    quantity = try container.decode(Int.self, forKey: .quantity)
+    isUnlimited = try container.decode(Bool.self, forKey: .isUnlimited)
+    position = try container.decode(Int.self, forKey: .position)
+    addedBy = try container.decodeIfPresent(UserSummary.self, forKey: .addedBy)
+    createdAt = try container.timestamp(forKey: .createdAt)
+    storeLinks = try container.decode([StoreLink].self, forKey: .storeLinks)
+    images = try container.decode([ImageSummary].self, forKey: .images)
+    primaryImage = try container.decodeIfPresent(ImageSummary.self, forKey: .primaryImage)
+    stillWanted = try container.hideable(Int.self, forKey: .stillWanted)
+    myClaimedQuantity = try container.hideable(Int.self, forKey: .myClaimedQuantity)
+    canEdit = try container.decode(Bool.self, forKey: .canEdit)
+    canDelete = try container.decode(Bool.self, forKey: .canDelete)
+    canClaim = try container.decode(Bool.self, forKey: .canClaim)
+    canRefreshPrices = try container.decode(Bool.self, forKey: .canRefreshPrices)
+  }
+
+  public static let fields = WishboneAPI.fields(
+    of: CodingKeys.self,
+    nested: [
+      "added_by": UserSummary.fields, "primary_image": ImageSummary.fields,
+    ],
+    lists: ["store_links": StoreLink.fields, "images": ImageSummary.fields])
+}
+
+/// A store link, inside its item: an address at a store, with the store's price. The app reads store links only
+/// from their item's body. A change to a store link changes its item's version.
+public struct StoreLink: Model, Equatable {
+  public let id: String
+
+  /// The normalized address.
+  public let url: String
+
+  /// The host of the address, with no `www.`.
+  public let store: String
+
+  /// The store's price in the currency's minor unit.
+  public let priceMinor: Int?
+
+  /// An ISO 4217 code. Nil exactly when there is no price.
+  public let currency: String?
+
+  /// When the price was captured. Nil when there is no price.
+  public let capturedAt: Date?
+
+  /// The store's own address of its picture, outside Wishbone. It loads with no token.
+  public let imageURL: String?
+  public let createdAt: Date
+
+  public let canEdit: Bool
+  public let canDelete: Bool
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case id
+    case url
+    case store
+    case priceMinor = "price_minor"
+    case currency
+    case capturedAt = "captured_at"
+    case imageURL = "image_url"
+    case createdAt = "created_at"
+    case canEdit = "can_edit"
+    case canDelete = "can_delete"
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    id = try container.decode(String.self, forKey: .id)
+    url = try container.decode(String.self, forKey: .url)
+    store = try container.decode(String.self, forKey: .store)
+    priceMinor = try container.decodeIfPresent(Int.self, forKey: .priceMinor)
+    currency = try container.decodeIfPresent(String.self, forKey: .currency)
+    capturedAt = try container.decodeIfPresent(String.self, forKey: .capturedAt).map { text in
+      try Timestamp.date(text, at: container.codingPath + [CodingKeys.capturedAt])
+    }
+    imageURL = try container.decodeIfPresent(String.self, forKey: .imageURL)
+    createdAt = try container.timestamp(forKey: .createdAt)
+    canEdit = try container.decode(Bool.self, forKey: .canEdit)
+    canDelete = try container.decode(Bool.self, forKey: .canDelete)
   }
 
   public static let fields = WishboneAPI.fields(of: CodingKeys.self)
@@ -363,8 +629,11 @@ public struct ResourceVersion: Model, Equatable {
   /// The same value as the `ETag` of the resource's own `GET`, and as its `version` in a collection.
   public let version: String
 
-  /// The list of an item. Nil for a kind that is on no list.
+  /// The list of an item, and of a list recipient. Nil for a kind that is on no list.
   public let listID: String?
+
+  /// The item of a store link. Nil for every other kind.
+  public let itemID: String?
 
   /// What an entry is. The enum is open: a kind that the app doesn't know is `unknown`, and the app ignores its
   /// entries. The server has more kinds than these. A kind joins the list when the copy starts to hold it.
@@ -376,9 +645,20 @@ public struct ResourceVersion: Model, Equatable {
     /// summary: a summary has no address.
     case userSummary
     case list
+
+    /// A recipient of a list. Its ID is its user's, and its `listID` is the list's: the two together name it. It
+    /// has no `GET` of its own, so its version is that of its row in `GET /lists/{id}/recipients`.
+    case listRecipient
     case item
+
+    /// A store link. Its `itemID` is its item's. Its version is the `ETag` of the store link's own `GET`, which
+    /// the app never calls: no item body carries it.
+    case storeLink
     case occasion
     case group
+
+    /// A pending invitation.
+    case invitation
 
     /// The memberships. Each entry is one collection of IDs, with the ID of its group or its occasion. Its
     /// version is a hash of the IDs that the collection gives this caller, in the collection's order.
@@ -401,8 +681,9 @@ public struct ResourceVersion: Model, Equatable {
     case unknown(String)
 
     private static let known: [String: Kind] = [
-      "user": .user, "user_summary": .userSummary, "list": .list, "item": .item, "occasion": .occasion,
-      "group": .group, "group_users": .groupUsers, "group_groups": .groupGroups,
+      "user": .user, "user_summary": .userSummary, "list": .list, "list_recipient": .listRecipient, "item": .item,
+      "store_link": .storeLink, "occasion": .occasion, "group": .group, "invitation": .invitation,
+      "group_users": .groupUsers, "group_groups": .groupGroups,
       "occasion_groups": .occasionGroups, "users_in_group": .usersInGroup, "users_of_occasion": .usersOfOccasion,
     ]
 
@@ -421,6 +702,7 @@ public struct ResourceVersion: Model, Equatable {
     case id
     case version
     case listID = "list_id"
+    case itemID = "item_id"
   }
 
   public static let fields = WishboneAPI.fields(of: CodingKeys.self)
@@ -479,6 +761,11 @@ public struct FetchedCollection<Row: Sendable>: Sendable {
   /// not in `rows` not in the collection. Between two pages, a thing can change its place in the collection's
   /// order, and be on neither page.
   public let isOnePage: Bool
+
+  public init(rows: [Row], isOnePage: Bool) {
+    self.rows = rows
+    self.isOnePage = isOnePage
+  }
 }
 
 /// An error of the API, as `application/problem+json`.
