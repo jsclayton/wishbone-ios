@@ -26,9 +26,13 @@ build:
         -destination 'generic/platform=iOS Simulator' \
         -derivedDataPath {{derived_data}} \
         ARCHS=arm64 \
-        > build/xcodebuild.log 2>&1 || { tail -n 40 build/xcodebuild.log; exit 1; }
-    # The build has zero warnings. Xcode's App Intents step logs "warning: Metadata extraction skipped" for a
-    # target with no App Intents. That line is the step's own log, not a warning about the code.
+        SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
+        > build/xcodebuild.log 2>&1 || { grep -E '(error|warning): ' build/xcodebuild.log || tail -n 40 build/xcodebuild.log; exit 1; }
+    # The build has zero warnings. A warning from the compiler is an error, in the targets and in the package, so
+    # it fails every build until it is fixed. The check below is for what the compiler doesn't own: the linker,
+    # the asset catalogs, and the project. xcodebuild prints those only when it runs the step again.
+    # Xcode's App Intents step logs "warning: Metadata extraction skipped" for a target with no App Intents. That
+    # line is the step's own log, not a warning about the code.
     warnings="$(grep -E 'warning: ' build/xcodebuild.log | grep -v 'appintentsmetadataprocessor.*Metadata extraction skipped' || true)"
     if [ -n "$warnings" ]; then
         echo "$warnings"
