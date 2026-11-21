@@ -185,8 +185,14 @@ export function settingCommands(setting, simulator) {
   ];
 }
 
-/** How long one `simctl` call that changes a setting may take, before it counts as hung. */
-export const settingCallLimitMs = 20_000;
+/** How long one `simctl` call that changes a setting for a journey may take, before it counts as hung. */
+export const settingCallLimitMs = 30_000;
+
+/**
+ * How long a `simctl` call may take at the step's start. Just after a new simulator's first boot, its calls wait
+ * minutes for the simulator to be ready, so they are not hung until much later than a journey's.
+ */
+export const readinessCallLimitMs = 5 * 60_000;
 
 /**
  * Runs `xcrun simctl <args>`, and stops it when it passes `limitMs`. Resolves when it ends well. Rejects when it
@@ -215,7 +221,9 @@ export function simctlWithLimit(args, limitMs = settingCallLimitMs, { file = 'xc
  * A call that passes its limit is hung. It is run once more, and a second hang fails the setting, with an error
  * that names the setting and the call. So a hang in CI shows as itself, not as a journey's request that timed out.
  *
- * Returns `{ apply(setting), calls(), retries(), ms() }`: the number of calls that it ran, how many of them hung
+ * `apply` takes `{ limitMs }`, the limit of each call, which is `limitMs` unless it says otherwise.
+ *
+ * Returns `{ apply(setting, { limitMs }), calls(), retries(), ms() }`: the number of calls that it ran, how many of them hung
  * and were run again, and the time that they took.
  */
 export function settingsApplier(simulator, { run = simctlWithLimit, limitMs = settingCallLimitMs } = {}) {
@@ -224,7 +232,7 @@ export function settingsApplier(simulator, { run = simctlWithLimit, limitMs = se
   let retries = 0;
   let ms = 0;
   return {
-    async apply(setting) {
+    async apply(setting, { limitMs: callLimitMs = limitMs } = {}) {
       for (const command of settingCommands(setting, simulator)) {
         const [, , name, value] = command;
         if (set.get(name) === value) continue;
@@ -235,7 +243,7 @@ export function settingsApplier(simulator, { run = simctlWithLimit, limitMs = se
           for (let attempt = 1; ; attempt += 1) {
             calls += 1;
             try {
-              await run(command, limitMs);
+              await run(command, callLimitMs);
               break;
             } catch (error) {
               if (!error.timedOut || attempt === 2) throw error;
@@ -315,7 +323,7 @@ export async function prepareSimulator({ say = console.log } = {}) {
   await timed("Booted the gate's simulator", () => simctl(['bootstatus', simulator, '-b'], { stdio: 'ignore' }));
   await timed("Held the simulator's status bar still", () => holdStatusBar(simulator));
   const applier = settingsApplier(simulator);
-  await timed('Put the simulator in the default settings', () => applier.apply(settings[0]));
+  await timed('Put the simulator in the default settings', () => applier.apply(settings[0], { limitMs: readinessCallLimitMs }));
   return { simulator, applier };
 }
 

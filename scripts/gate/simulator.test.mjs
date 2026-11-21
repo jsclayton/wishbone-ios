@@ -203,13 +203,13 @@ test('a simctl call that fails leaves its setting unknown, so the next apply run
 });
 
 /** An error like the one that `simctlWithLimit` gives for a call that passed its limit. */
-const hung = () => Object.assign(new Error("didn't return within 20s"), { timedOut: true });
+const hung = () => Object.assign(new Error("didn't return within 30s"), { timedOut: true });
 
 test('a simctl call that hangs is run once more, and the applier counts it', async () => {
   const ran = [];
   const applier = settingsApplier('SIM', {
     run: async (command, limitMs) => {
-      assert.equal(limitMs, 20_000);
+      assert.equal(limitMs, 30_000);
       ran.push(command[3]);
       if (command[3] === 'dark' && ran.filter((value) => value === 'dark').length === 1) throw hung();
     },
@@ -221,6 +221,14 @@ test('a simctl call that hangs is run once more, and the applier counts it', asy
   assert.equal(applier.retries(), 1);
 });
 
+test("an apply can give its calls a longer limit, as the step's start does while the simulator gets ready", async () => {
+  const limits = [];
+  const applier = settingsApplier('SIM', { run: async (command, limitMs) => limits.push(limitMs) });
+  await applier.apply(settings[0], { limitMs: 300_000 });
+  await applier.apply(settings[1]);
+  assert.deepEqual(limits, [300_000, 300_000, 300_000, 30_000]);
+});
+
 test('a simctl call that hangs twice fails the setting, with the setting and the call in the error', async () => {
   const applier = settingsApplier('SIM', {
     run: async (command) => {
@@ -229,7 +237,7 @@ test('a simctl call that hangs twice fails the setting, with the setting and the
   });
   await applier.apply(settings[0]);
   await assert.rejects(applier.apply(settings[1]), {
-    message: "simctl ui SIM content_size accessibility-extra-extra-extra-large didn't return within 20s, twice, so the simulator isn't in the largest text size",
+    message: "simctl ui SIM content_size accessibility-extra-extra-extra-large didn't return within 30s, twice, so the simulator isn't in the largest text size",
   });
   assert.equal(applier.retries(), 1);
 });
@@ -248,5 +256,5 @@ test('the settings helper answers 500, with the reason, when a hung call fails a
   t.after(() => helper.close());
   const response = await fetch(`${helper.address}/settings/default`, { method: 'POST' });
   assert.equal(response.status, 500);
-  assert.equal(await response.text(), "simctl ui SIM appearance light didn't return within 20s, twice, so the simulator isn't in the default settings");
+  assert.equal(await response.text(), "simctl ui SIM appearance light didn't return within 30s, twice, so the simulator isn't in the default settings");
 });

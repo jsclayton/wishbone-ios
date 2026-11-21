@@ -91,7 +91,7 @@ enum Audit {
     }
   }
 
-  /// How long the settings helper may take to answer. It gives each `simctl` call 20 seconds, and runs a call that
+  /// How long the settings helper may take to answer. It gives each `simctl` call 30 seconds, and runs a call that
   /// hangs once more, so it answers within this time, with an error that names the call when the call hangs twice.
   private static let helperTimeout: TimeInterval = 90
 
