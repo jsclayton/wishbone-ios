@@ -152,6 +152,7 @@ To move the pin:
 ### Servers in parallel
 
 - Each test process shares one server, because each test seeds its own family. A test that needs its own instance (an empty one, sign-in from setup, an LLM fixture, a low rate limit) starts a private server.
+- A test that checks which requests a sync makes, or that compares the whole local copy with the instance, starts a private server too. On the shared one, a row for the whole instance that another test makes is one more thing for a sync to fetch.
 - Every test server gets a free port, and a fresh data folder under the run's own temporary root. Nothing is fixed, so two checkouts and CI never collide.
 - Every test server runs with `TZ=UTC`, `WISHBONE_LISTEN_ADDRESS=127.0.0.1` so that it is not on the local network, a high `WISHBONE_RATE_LIMIT_REDEEM`, `WISHBONE_E2E_HOOKS=true`, and `WISHBONE_EXTRACT_ALLOW_PRIVATE=true`.
 - The package tests run in parallel. The simulator tests run one at a time.

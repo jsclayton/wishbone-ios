@@ -1,27 +1,167 @@
+import Foundation
 import GRDB
+import WishboneAPI
 
 // The rows that screens read. Each is a row of the local copy, which the API feeds and the session model
 // publishes. A row is not the API's model of the same thing: it holds what the copy keeps.
 //
 // Each row keeps its version: the one that its own answer carried when the row was saved. A pull compares it with
-// the version that `GET /versions` names. See "No If-Match" in `docs/spec.md`.
+// the version that `GET /versions` names. See "No If-Match" in `docs/spec.md`. A summary and a membership have no
+// answer of their own, so each keeps the version that `GET /versions` named for it.
+//
+// A summary inside a body is kept as the ID of what it names: a user's parents and children, the group that a
+// group is reached through, the user of an occasion, and a user's primary list. Each of those has a row of its own.
+//
+// **A change to what a row keeps is a change to the copy.** So `LocalDatabase.copySchema` rises with it, and a
+// fitness test holds this file to that number.
 
-/// A user in the local copy.
+/// A user in the local copy: one whom the session's user sees in full, or only as a summary.
 public struct UserRow: Codable, Sendable, Equatable, Identifiable, FetchableRecord, PersistableRecord {
   public static let databaseTableName = "user"
 
   public let id: String
   public let name: String
+  public let avatar: ImageSummary?
 
-  /// The user's primary list. Nil when the session's user can't see it.
-  public let primaryListID: String?
+  /// The rest of the user's record: every field that the session's user gets. Nil for a user whom the session's
+  /// user gets only as a summary inside another resource. Such a user has a name and an avatar, and no page.
+  public let record: Record?
 
-  /// The user's IANA time zone, such as `Europe/Paris`. Nil when none is set, and when the session's user can't
-  /// see it.
-  public let timezone: String?
-
-  /// The version of the user as the session's user sees them.
+  /// The version of the user as the session's user sees them. For a summary, it is the version of the summary.
   public let version: String
+
+  /// Whether the session's user gets this user only as a summary.
+  public var isSummary: Bool {
+    record == nil
+  }
+
+  /// What a full user has, beyond the summary.
+  public struct Record: Codable, Sendable, Equatable {
+    public let lastName: String?
+
+    /// Every user has one. Its year can be nil.
+    public let birthday: PartialDate
+
+    /// One markdown field that givers can see.
+    public let goodToKnow: String?
+    public let isAdmin: Bool
+
+    /// The user's parents and children, in the server's order. Each has a row of their own, in full or as a
+    /// summary.
+    public let parentIDs: [String]
+    public let childIDs: [String]
+
+    /// The user's primary list. Nil when the session's user can't see the list: the admin's access shows none.
+    public let primaryListID: String?
+
+    /// The user's IANA time zone, such as `Europe/Paris`. Hidden from everyone but the user, their parents, and
+    /// the admin.
+    public let timezone: Hideable<String>
+
+    /// When the user confirmed their profile. Hidden as the time zone is.
+    public let profileConfirmedAt: Hideable<Date>
+
+    /// When the admin deactivated the user. Hidden as the time zone is: anyone else who sees the user sees an
+    /// active one.
+    public let deactivatedAt: Hideable<Date>
+    public let createdAt: Date
+
+    public let canEdit: Bool
+    public let canEditParents: Bool
+    public let canMakeLoginLink: Bool
+    public let canManageSessions: Bool
+    public let canDeactivate: Bool
+    public let canReactivate: Bool
+    public let canConfirmProfile: Bool
+    public let canAddOccasion: Bool
+  }
+}
+
+/// A group in the local copy.
+public struct GroupRow: Codable, Sendable, Equatable, Identifiable, FetchableRecord, PersistableRecord {
+  public static let databaseTableName = "group"
+
+  public let id: String
+  public let name: String
+  public let createdAt: Date
+
+  /// The group that the session's user is directly in, and that this group contains by nesting. Nil when the user
+  /// is directly in this group, or is not in it.
+  public let throughGroupID: String?
+
+  public let canEdit: Bool
+  public let canDelete: Bool
+  public let canAddUser: Bool
+  public let canAddGroup: Bool
+
+  /// The version of the group as the session's user sees it.
+  public let version: String
+}
+
+/// An occasion in the local copy.
+public struct OccasionRow: Codable, Sendable, Equatable, Identifiable, FetchableRecord, PersistableRecord {
+  public static let databaseTableName = "occasion"
+
+  public let id: String
+  public let kind: OccasionKind
+  public let name: String
+  public let rule: OccasionRule
+
+  /// The user that the occasion is for. Nil for a shared occasion.
+  public let userID: String?
+
+  /// For a shared occasion: whether it applies to every user. Nil for the other kinds.
+  public let isEveryone: Bool?
+
+  /// The first date of the occasion that is today or later, as `YYYY-MM-DD`. Nil when none is left.
+  public let nextDate: String?
+
+  public let canEdit: Bool
+  public let canDelete: Bool
+  public let canAttachGroup: Bool
+
+  /// The version of the occasion as the session's user sees it.
+  public let version: String
+}
+
+/// A membership in the local copy: the members of one group, or of one occasion, as one collection of the server
+/// gives them to the session's user.
+///
+/// **The copy has a row only for a membership that the session's user can read.** No row says nothing about the
+/// members. It never says that there are none: a row with no members says that. For example, only the admin
+/// reads the groups in a group, so anyone else has no such row.
+public struct MembershipRow: Codable, Sendable, Equatable, FetchableRecord, PersistableRecord {
+  public static let databaseTableName = "membership"
+
+  public let kind: Kind
+
+  /// The group or the occasion that the members are of.
+  public let ownerID: String
+
+  /// The IDs of the members, in the server's order.
+  public let memberIDs: [String]
+
+  /// The version that `GET /versions` named for the membership: a hash of the IDs. A membership has no answer
+  /// that carries a version.
+  public let version: String
+
+  /// Which members of what. Each kind is one collection of the server, and has the server's name for it.
+  public enum Kind: String, Codable, Sendable, CaseIterable {
+    /// The users directly in a group.
+    case groupUsers = "group_users"
+
+    /// The users in a group, directly or through nesting.
+    case usersInGroup = "users_in_group"
+
+    /// The users that an occasion applies to.
+    case usersOfOccasion = "users_of_occasion"
+
+    /// The groups directly in a group. Only the admin reads it.
+    case groupGroups = "group_groups"
+
+    /// The groups that a shared occasion is attached to. Only the admin reads it.
+    case occasionGroups = "occasion_groups"
+  }
 }
 
 /// A list in the local copy.

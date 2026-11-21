@@ -33,9 +33,17 @@ struct TimeZoneTests {
     let device = instance.device(timeZone: .fixed("Europe/Paris"))
     await device.signIn(pasting: try await instance.loginLink(for: robin))
 
-    #expect(device.session != nil)
+    let session = try #require(device.session)
     #expect(try await recordedZone(of: robin) == "Europe/Paris")
     #expect(instance.conditioner.requests.filter { $0.isOn(Self.patchMe) }.count == 1)
+
+    // The report's answer is the user's record, and it is in the copy. So the next sync fetches no user.
+    await until { session.user?.record?.timezone == .shown("Europe/Paris") }
+    let mark = instance.conditioner.requests.count
+    await session.sync()
+    let fetched = instance.conditioner.requests.dropFirst(mark).map(\.target)
+    #expect(fetched.first == "/api/v2/versions")
+    #expect(!fetched.contains { $0 == "/api/v2/users/\(robin.id)" || $0.hasPrefix("/api/v2/users?limit=") })
   }
 
   @Test("With the same zone, no report is sent")

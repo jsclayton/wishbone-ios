@@ -63,41 +63,128 @@ public struct APIClient: Sendable {
     return .changed(Versions(entries: answer.body.data, etag: answer.etag))
   }
 
-  /// `GET /users/me`: the session's user. It is the answer of `GET /users/{id}` for that user, with the same
-  /// `ETag`.
-  public func me() async throws(APIError) -> Versioned<User> {
-    try await versioned(.me)
+  /// `PATCH /users/me` with the time zone: sets the IANA zone on the session's own user, and gives back the user,
+  /// with the version that the answer carried.
+  public func reportTimeZone(_ identifier: String) async throws(APIError) -> Versioned<User> {
+    try await versioned(.reportTimeZone(identifier))
   }
 
-  /// `PATCH /users/me` with the time zone: sets the IANA zone on the session's own user, and gives back the user.
-  public func reportTimeZone(_ identifier: String) async throws(APIError) -> User {
-    try await load(.reportTimeZone(identifier))
+  // MARK: - Users, groups and occasions
+
+  /// `GET /users`: every user that the session's user can see, each with its version.
+  public func users() async throws(APIError) -> FetchedCollection<Versioned<User>> {
+    try await rows { cursor in .page(of: .users, cursor: cursor) }
   }
+
+  /// `GET /users/{id}`: one user. A 404 for a user whom the session's user sees only as a summary.
+  public func user(_ id: String) async throws(APIError) -> Versioned<User> {
+    try await versioned(.user(id))
+  }
+
+  /// `GET /groups`: the groups that the session's user is in, directly or through nesting. The admin gets every
+  /// group.
+  public func groups() async throws(APIError) -> FetchedCollection<Versioned<Group>> {
+    try await rows { cursor in .page(of: .groups, cursor: cursor) }
+  }
+
+  /// `GET /groups/{id}`: one group.
+  public func group(_ id: String) async throws(APIError) -> Versioned<Group> {
+    try await versioned(.group(id))
+  }
+
+  /// `GET /occasions`: every occasion that the session's user can see.
+  public func occasions() async throws(APIError) -> FetchedCollection<Versioned<Occasion>> {
+    try await rows { cursor in .page(of: .occasions, cursor: cursor) }
+  }
+
+  /// `GET /occasions/{id}`: one occasion.
+  public func occasion(_ id: String) async throws(APIError) -> Versioned<Occasion> {
+    try await versioned(.occasion(id))
+  }
+
+  // MARK: - Memberships
+
+  // Each membership is the IDs that its collection gives the session's user, in the collection's order. These are
+  // the IDs that `GET /versions` hashes for the membership's entry.
+
+  /// `GET /groups/{id}/users`: the users directly in the group.
+  public func userIDs(directlyInGroup id: String) async throws(APIError) -> [String] {
+    try await members { cursor in .page(of: .groupUsers, id: id, cursor: cursor) }
+  }
+
+  /// `GET /users?group_id=`: the users in the group, directly or through nesting, whom the session's user can see.
+  /// A group that is gone, or hidden, gives none.
+  public func userIDs(inGroup id: String) async throws(APIError) -> [String] {
+    try await members { cursor in .page(of: .users, filters: ["group_id": id], cursor: cursor) }
+  }
+
+  /// `GET /users?occasion_id=`: the users that the occasion applies to, whom the session's user can see. An
+  /// occasion that is gone, or hidden, gives none.
+  public func userIDs(ofOccasion id: String) async throws(APIError) -> [String] {
+    try await members { cursor in .page(of: .users, filters: ["occasion_id": id], cursor: cursor) }
+  }
+
+  /// `GET /groups/{id}/groups`: the groups directly in the group. Only the admin can read it.
+  public func groupIDs(directlyInGroup id: String) async throws(APIError) -> [String] {
+    try await members { cursor in .page(of: .groupGroups, id: id, cursor: cursor) }
+  }
+
+  /// `GET /occasions/{id}/groups`: the groups that the shared occasion is attached to. Only the admin can read it.
+  public func groupIDs(ofOccasion id: String) async throws(APIError) -> [String] {
+    try await members { cursor in .page(of: .occasionGroups, id: id, cursor: cursor) }
+  }
+
+  // MARK: - Lists and items
 
   /// `GET /lists/{id}`: one list.
   public func list(_ id: String) async throws(APIError) -> Versioned<ListResource> {
     try await versioned(.list(id))
   }
 
-  /// `GET /lists/{id}/items`: every item on the list, in the list's order, each with its version. It follows
-  /// `next_cursor` to the last page.
-  public func items(ofList id: String) async throws(APIError) -> [Versioned<Item>] {
-    var items: [Versioned<Item>] = []
-    var cursor: String?
-    repeat {
-      let page = try await load(.items(ofList: id, cursor: cursor))
-      items += page.data.map(\.row)
-      cursor = page.nextCursor
-    } while cursor != nil
-    return items
+  /// `GET /lists/{id}/items`: every item on the list, in the list's order, each with its version.
+  public func items(ofList id: String) async throws(APIError) -> FetchedCollection<Versioned<Item>> {
+    try await rows { cursor in .page(of: .listItems, id: id, cursor: cursor) }
   }
-
-  /// How many rows a page of a collection has, when the request names no other size.
-  public static let pageSize = 100
 
   /// `GET /items/{id}`: one item.
   public func item(_ id: String) async throws(APIError) -> Versioned<Item> {
     try await versioned(.item(id))
+  }
+
+  // MARK: - Collections
+
+  /// How many rows the client asks for in a page of a collection. It is the most that the server gives.
+  public static let pageSize = 200
+
+  /// Every page of a collection. It follows `next_cursor` to the last page.
+  private func collection<Row>(
+    _ page: (_ cursor: String?) -> Endpoint<Page<Row>>
+  ) async throws(APIError) -> FetchedCollection<Row> {
+    var rows: [Row] = []
+    var pages = 0
+    var cursor: String?
+    repeat {
+      let answer = try await load(page(cursor))
+      rows += answer.data
+      pages += 1
+      cursor = answer.nextCursor
+    } while cursor != nil
+    return FetchedCollection(rows: rows, isOnePage: pages == 1)
+  }
+
+  /// A collection of resources, each with its version.
+  private func rows<Resource>(
+    _ page: (_ cursor: String?) -> Endpoint<Page<VersionedRow<Resource>>>
+  ) async throws(APIError) -> FetchedCollection<Versioned<Resource>> {
+    let collection = try await collection(page)
+    return FetchedCollection(rows: collection.rows.map(\.row), isOnePage: collection.isOnePage)
+  }
+
+  /// The IDs of a membership, in the collection's order. An ID that came on two pages is there once, at its first
+  /// place.
+  private func members(_ page: (_ cursor: String?) -> Endpoint<Page<Member>>) async throws(APIError) -> [String] {
+    var seen: Set<String> = []
+    return try await collection(page).rows.map(\.id).filter { seen.insert($0).inserted }
   }
 
   // MARK: - The one load

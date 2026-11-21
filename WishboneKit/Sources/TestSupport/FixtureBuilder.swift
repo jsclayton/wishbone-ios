@@ -131,7 +131,29 @@ public struct FixtureBuilder: Sendable {
     return Fixture.Person(id: person.id, name: person.name, session: nil)
   }
 
-  // MARK: - Groups, shared occasions, and blocked stores
+  /// Gives the user an avatar, as the user: a small image that the server keeps. Returns the image's ID.
+  @discardableResult
+  public func avatar(for person: Fixture.Person) async throws -> String {
+    let session = try person.signedIn()
+    var upload = URLRequest(url: server.url("/images"))
+    upload.httpMethod = "POST"
+    upload.setValue("Bearer \(session.token)", forHTTPHeaderField: "Authorization")
+    upload.setValue("image/png", forHTTPHeaderField: "Content-Type")
+    upload.httpBody = Self.onePixel
+    let image = try await TestHTTP.send(upload).expecting(201).json
+    let imageID = try id(of: image)
+    try await session.send("PATCH", "/users/me", json: ["avatar_image_id": .string(imageID)]).expecting(200)
+    return imageID
+  }
+
+  /// A PNG of one pixel.
+  private static let onePixel =
+    Data(
+      base64Encoded:
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+    ) ?? Data()
+
+  // MARK: - Groups, occasions, and blocked stores
 
   /// Makes a group, as the admin, with the users directly in it and the groups nested in it.
   public func group(
@@ -171,6 +193,26 @@ public struct FixtureBuilder: Sendable {
       try await adminSession.post("/occasions/\(occasion.id)/groups", ["group_id": .string(group.id)])
     }
     return occasion
+  }
+
+  /// Makes a custom occasion of the user, as the user, on one date. The date is far away, so that the occasion's
+  /// `next_date` is the same on every day that a test runs.
+  public func customOccasion(
+    _ name: String,
+    of person: Fixture.Person,
+    year: Int = 2040,
+    month: Int = 6,
+    day: Int = 1
+  ) async throws -> Fixture.Occasion {
+    let body: JSON = [
+      "kind": "custom",
+      "name": .string(self.name(name)),
+      "rule": [
+        "kind": "once", "year": .number(Double(year)), "month": .number(Double(month)), "day": .number(Double(day)),
+      ],
+    ]
+    let made = try await person.signedIn().post("/occasions", body)
+    return Fixture.Occasion(id: try id(of: made), name: self.name(name))
   }
 
   /// Blocks a store, as the admin. The store's host name holds this builder's tag.
