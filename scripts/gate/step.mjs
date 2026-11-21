@@ -80,7 +80,7 @@ export function startKeeper(pids = [], { command = [process.execPath, keeperModu
  * Runs `command` until it exits, passes `limitMs`, or `signal` aborts. Then it stops every process that the step
  * left.
  *
- * The step's output goes to `echo` as it comes, and to the file at `logPath`. `onStart` is called with the
+ * The step's output goes to `echo` as it comes, and to the file at `logPath` a whole line at a time. `onStart` is called with the
  * step's process ID when it starts.
  * Resolves with `{ exit, timedOut, interrupted, ms, pid }`. `exit` is the exit code, or null when the step was
  * stopped or died from a signal.
@@ -103,6 +103,9 @@ export function runStep({ command, limitMs, logPath, cwd, env, signal, echo = pr
     let settled = false;
     let stopping = null;
     let closeFallback = null;
+    // The log gets whole lines. Both streams go to one log, so a line that comes in two chunks would be split by
+    // a chunk from the other stream between them. What is left of a line at the end goes to the log then.
+    const partial = new Map();
 
     const stop = () => {
       stopping ??= stopFamily(child.pid, { graceMs });
@@ -131,15 +134,23 @@ export function runStep({ command, limitMs, logPath, cwd, env, signal, echo = pr
         keeper.stdin.end(`forget ${child.pid}\n`);
         await keeperExited;
       }
-      if (log !== null) await new Promise((done) => log.end(done));
+      if (log !== null) {
+        for (const rest of partial.values()) if (rest.length > 0) log.write(Buffer.concat([rest, Buffer.from('\n')]));
+        await new Promise((done) => log.end(done));
+      }
       if (error) reject(error);
       else resolve({ exit: timedOut || interrupted ? null : exit, timedOut, interrupted, ms: Date.now() - started, pid: child.pid });
     };
 
     for (const stream of [child.stdout, child.stderr]) {
+      partial.set(stream, Buffer.alloc(0));
       stream.on('data', (chunk) => {
         echo?.write(chunk);
-        log?.write(chunk);
+        if (log === null) return;
+        const text = Buffer.concat([partial.get(stream), chunk]);
+        const end = text.lastIndexOf(10) + 1;
+        if (end > 0) log.write(text.subarray(0, end));
+        partial.set(stream, text.subarray(end));
       });
     }
     child.on('error', (error) => settle(error));

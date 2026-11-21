@@ -47,6 +47,14 @@ test('a step gives its exit code, and its output goes to the log', async (t) => 
   assert.deepEqual(readFileSync(logPath, 'utf8').split('\n').filter(Boolean).sort(), ['err', 'out']);
 });
 
+test('a line on one stream is whole in the log, when the other stream writes in the middle of it', async (t) => {
+  const folder = scratch(t);
+  const logPath = path.join(folder, 'step.log');
+  const script = 'printf "Test Case skipped"; sleep 0.2; echo err >&2; sleep 0.2; printf " (0.001 seconds).\\n"; printf "no end"';
+  await runStep({ command: ['sh', '-c', script], limitMs: 10_000, logPath, echo: null });
+  assert.deepEqual(readFileSync(logPath, 'utf8').split('\n').filter(Boolean).sort(), ['Test Case skipped (0.001 seconds).', 'err', 'no end']);
+});
+
 test('a step past its limit is stopped, with its child processes', async (t) => {
   const folder = scratch(t);
   const pidFile = path.join(folder, 'pids');
