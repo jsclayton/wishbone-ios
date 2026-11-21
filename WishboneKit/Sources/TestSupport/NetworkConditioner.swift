@@ -450,9 +450,10 @@ extension NetworkConditioner {
 
     /// Sends the request to the real server, and returns its answer.
     ///
-    /// The request goes on a new connection, as each request of `TestHTTP` does, and for the same reason: the
-    /// server can close a kept connection just as the next request goes on it. The code under test would then see
-    /// a lost connection that no real network caused.
+    /// The request goes on a new connection, to `127.0.0.1` and with `Connection: close`, as each request of
+    /// `TestHTTP` does (see `TestHTTP.alone(_:)`), and for the same reason: the server can close a kept connection
+    /// just as the next request goes on it. The code under test would then see a lost connection that no real
+    /// network caused.
     private func forward(_ request: HTTPReader.Request) async throws -> CannedAnswer {
       guard let url = URL(string: server.absoluteString + request.target) else { throw URLError(.badURL) }
       var forwarded = URLRequest(url: url)
@@ -471,7 +472,7 @@ extension NetworkConditioner {
         session.finishTasksAndInvalidate()
       }
       guard !isStopped else { throw CancellationError() }
-      let (body, response) = try await session.data(for: forwarded, delegate: NoRedirects())
+      let (body, response) = try await session.data(for: TestHTTP.alone(forwarded), delegate: NoRedirects())
       guard let response = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
       var headers: [String: String] = [:]
       for (name, value) in response.allHeaderFields {

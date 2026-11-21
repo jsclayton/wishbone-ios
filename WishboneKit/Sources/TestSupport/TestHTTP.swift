@@ -7,7 +7,7 @@ import Foundation
 /// connection just as the client sends the next request on it: the test server resets a connection that has
 /// carried no request for 10 seconds, and a reverse proxy closes an idle one. `URLSession` then sends a `GET`
 /// again, but fails a `POST`, `PATCH`, `PUT` or `DELETE` with `networkConnectionLost`, and the test fails on
-/// something that it doesn't test.
+/// something that it doesn't test. See `alone(_:)` for what keeps a new connection for each request cheap.
 public enum TestHTTP {
   /// One answer from a server.
   public struct Answer: Sendable {
@@ -68,7 +68,7 @@ public enum TestHTTP {
   public static func send(_ request: URLRequest) async throws -> Answer {
     let session = newSession()
     defer { session.finishTasksAndInvalidate() }
-    let (body, response) = try await session.data(for: request, delegate: NoRedirects())
+    let (body, response) = try await session.data(for: alone(request), delegate: NoRedirects())
     guard let response = response as? HTTPURLResponse, let url = request.url else { throw URLError(.badServerResponse) }
     var headers: [String: String] = [:]
     for (name, value) in response.allHeaderFields {
@@ -76,6 +76,27 @@ public enum TestHTTP {
     }
     return Answer(
       method: request.httpMethod ?? "GET", url: url, status: response.statusCode, headers: headers, body: body)
+  }
+
+  /// The request as it goes on a connection of its own, which `newSession()` gives it:
+  ///
+  /// - To `127.0.0.1`, not `localhost`. A test server listens on `127.0.0.1` only, and its address names
+  ///   `localhost`. A session that is new for each request would look the name up each time, and might try `::1`
+  ///   first. Only the address that the request connects to changes: the server's address and its public URL stay
+  ///   `localhost`.
+  /// - With `Connection: close`, so the server closes the connection after its answer. The side that closes first
+  ///   keeps the connection's port in `TIME_WAIT` for 30 seconds. That is then the server's one port, not a new
+  ///   ephemeral port of this machine's for each request, which every test process on the machine shares.
+  static func alone(_ request: URLRequest) -> URLRequest {
+    var request = request
+    if let url = request.url, url.scheme == "http", url.host() == "localhost",
+      var parts = URLComponents(url: url, resolvingAgainstBaseURL: false)
+    {
+      parts.host = "127.0.0.1"
+      request.url = parts.url ?? url
+    }
+    request.setValue("close", forHTTPHeaderField: "Connection")
+    return request
   }
 
   /// A session for one request. A session's connections are its own, so the request goes on a new connection.

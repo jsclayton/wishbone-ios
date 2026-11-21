@@ -9,6 +9,10 @@ import Testing
 /// reverse proxy closes an idle one. `URLSession` sends a `GET` again on a new connection, but fails a `POST`,
 /// `PATCH`, `PUT` or `DELETE` with `networkConnectionLost`. So the harness never sends a request on a connection
 /// that an earlier request used.
+///
+/// The small server below closes a connection that has carried a request, when the next one comes, because that
+/// is the moment it can make every time. The test server's case, a connection that carried no request, takes a
+/// wait of 10 seconds. A new connection for each request rules out both.
 @Suite("A kept connection that the server closes", .timeLimit(.minutes(1)))
 struct KeptConnectionTests {
   @Test("Each request of the harness goes on a new connection, so a closed kept connection fails none")
