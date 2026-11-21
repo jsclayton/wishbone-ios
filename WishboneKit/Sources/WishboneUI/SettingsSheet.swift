@@ -53,22 +53,22 @@ struct SettingsSheet: View {
           Text("Signed in as \(name)", bundle: #bundle)
         }
         // The full address, with its scheme, so a person can tell an `http` instance from an `https` one.
+        // The primary color: the system's secondary gray is below 4.5:1 on the row.
         Text(session.session.instance.text)
-          .foregroundStyle(.secondary)
           .textSelection(.enabled)
       }
       .accessibilityElement(children: .combine)
 
-      Button(role: .destructive) {
+      // The row opens the warning, whose Sign out button has the destructive role. The row has no role of its own,
+      // because a destructive row draws its words in the system's red, which is below 4.5:1 on the row as text.
+      Button {
         isConfirmingSignOut = true
       } label: {
-        HStack {
-          Text("Sign out", bundle: #bundle)
-          if device.isSigningOut {
-            Spacer()
-            ProgressView()
-          }
-        }
+        Text("Sign out", bundle: #bundle)
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .overlay(alignment: .trailing) {
+        if device.isSigningOut { ProgressView() }
       }
       .disabled(device.isSigningOut)
     }
