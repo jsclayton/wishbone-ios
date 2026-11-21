@@ -5,6 +5,9 @@ import SwiftUI
 /// It is the same for a missing thing and a hidden thing, so it never says what kind of thing was asked for, or
 /// why it is not there.
 struct NotFoundPage: View {
+  /// Whether VoiceOver is on the page's one element.
+  @AccessibilityFocusState private var isRead: Bool
+
   var body: some View {
     ContentUnavailableView {
       Label {
@@ -15,7 +18,9 @@ struct NotFoundPage: View {
     } description: {
       Text("This is gone, or it isn't shared with you.", bundle: #bundle)
     }
-    // The title and the line are one element.
+    // The title and the line are one element. VoiceOver goes to it when the page appears, and so reads it.
     .accessibilityElement(children: .combine)
+    .accessibilityFocused($isRead)
+    .task { isRead = true }
   }
 }
