@@ -124,7 +124,13 @@ const shots = (screen, settings = labels) => settings.map((label, index) => `${s
 test('the result bundle passes when it has each screen that the journeys reached in the four settings, once', () => {
   const names = [...shots('the signed-out screen'), ...shots('Home'), 'Kite, the screenshot of a failure_0_1.png', ...shots('Lists')];
   assert.deepEqual(checkAuditScreenshots(names, labels, ['the signed-out screen', 'Home', 'Lists']), { screens: 3, problem: null });
-  assert.deepEqual(checkAuditScreenshots([], labels, []), { screens: 0, problem: null });
+});
+
+test('the result bundle fails when the settings helper audited no screen', () => {
+  // The journeys didn't reach the helper, so each audited once in the simulator's own settings.
+  const problem = "the settings helper audited no screen, so the journeys didn't reach it";
+  assert.deepEqual(checkAuditScreenshots([], labels, []), { screens: 0, problem });
+  assert.deepEqual(checkAuditScreenshots(shots('Home'), labels, []), { screens: 1, problem });
 });
 
 test('the result bundle fails when it has fewer screens than the settings helper audited', () => {
