@@ -14,6 +14,8 @@ final class ProfileGateTests {
   static let update = Route("PATCH", "/users/me")
   static let confirm = Route("POST", "/users/me/confirm-profile")
   static let upload = Route("POST", "/images")
+  static let me = Route("GET", "/users/me")
+  static let versions = Route("GET", "/versions")
 
   let instance: Instance
 
@@ -65,6 +67,42 @@ final class ProfileGateTests {
     try await other.builder.confirmProfile(of: sam)
     let confirmed = try await signedIn(as: sam, on: other)
     #expect(try #require(confirmed.session).needsProfileGate == false)
+  }
+
+  @Test("After a sign-in whose first pull is held, the gate is the first screen: the user is in the copy already")
+  func gateBeforeThePull() async throws {
+    let robin = try await instance.person("Robin")
+    let device = instance.device()
+    let pull = instance.conditioner.hold(Self.versions, at: .request)
+    let link = try await instance.loginLink(for: robin)
+    async let signingIn: Void = device.signIn(pasting: link)
+    await pull.waitUntilHeld()
+
+    // The first pull has not reached the server, and the device has published the session with the user in it.
+    // So the window goes from "Signing in…" to the gate, and never shows the tabs first.
+    let session = try #require(device.session)
+    #expect(device.signInState == .signedIn(name: robin.name))
+    #expect(session.user?.id == robin.id)
+    #expect(session.needsProfileGate)
+    #expect(instance.conditioner.requests.filter { $0.isOn(Self.me) }.count == 1)
+
+    pull.release()
+    await signingIn
+    #expect(session.needsProfileGate)
+  }
+
+  @Test("When the read of the user fails, the sign-in goes on, and the first sync brings the gate")
+  func readOfTheUserFails() async throws {
+    let robin = try await instance.person("Robin")
+    let device = instance.device()
+    instance.conditioner.answer(Self.me, with: .init(status: 503))
+
+    await device.signIn(pasting: try await instance.loginLink(for: robin))
+
+    #expect(device.signInState == .signedIn(name: robin.name))
+    let session = try #require(device.session)
+    #expect(!session.isInstanceUnreachable)
+    #expect(session.needsProfileGate)
   }
 
   @Test("Continue sends only the changed fields, then confirms, and the gate goes from every window")

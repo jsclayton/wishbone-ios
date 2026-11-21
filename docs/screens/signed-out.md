@@ -44,7 +44,7 @@ Four cases, as the spec lists them. The last has a web link to the server projec
 ## States
 
 - **Plain:** no message.
-- **Signing in:** the buttons are disabled, and a progress indicator shows with "Signing in…". The app reads the instance's version, then redeems the link.
+- **Signing in:** the buttons are disabled, and a progress indicator shows with "Signing in…". The app reads the instance's version, redeems the link, and then reads the user (`GET /users/me`) into the copy. So the next screen is the profile gate when the user's profile isn't confirmed, however slow the first sync is. When the read of the user fails, the sign-in goes on, and the first sync brings the user.
 - **Signed in:** "Signed in as {name}" shows briefly, then the next screen.
 - **Signed out by the server:** the message from [The API's own 401 signs the device out](../spec.md#the-apis-own-401-signs-the-device-out), or "Your account has been deleted."
 - **Signed out with no connection:** the message from [Sign out](../spec.md#sign-out).

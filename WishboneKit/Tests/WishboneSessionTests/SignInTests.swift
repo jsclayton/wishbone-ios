@@ -245,13 +245,13 @@ struct SignInTests {
     await until { session.primaryListItems.count == 1 }
 
     let requests = instance.conditioner.requests
-    // The version check, the redeem, the first sync, and the report of the zone. The first sync is the versions,
-    // and then one request or more for each kind that the copy holds.
+    // The version check, the redeem, the read of the user, the first sync, and the report of the zone. The first
+    // sync is the versions, and then one request or more for each kind that the copy holds.
     #expect(
-      requests.prefix(3).map { "\($0.method) \($0.target)" } == [
-        "GET /api/v2/health", "POST /api/v2/login-links/redeem", "GET /api/v2/versions",
+      requests.prefix(4).map { "\($0.method) \($0.target)" } == [
+        "GET /api/v2/health", "POST /api/v2/login-links/redeem", "GET /api/v2/users/me", "GET /api/v2/versions",
       ])
-    #expect(requests.dropFirst(3).dropLast().allSatisfy { $0.method == "GET" })
+    #expect(requests.dropFirst(4).dropLast().allSatisfy { $0.method == "GET" })
     #expect(requests.count > 6)
     #expect(requests.last.map { "\($0.method) \($0.target)" } == "PATCH /api/v2/users/me")
     for request in requests {

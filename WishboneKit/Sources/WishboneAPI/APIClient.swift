@@ -70,6 +70,11 @@ public struct APIClient: Sendable {
     return .changed(Versions(entries: answer.body.data, etag: answer.etag))
   }
 
+  /// `GET /users/me`: the session's own user, with its version.
+  public func me() async throws(APIError) -> Versioned<User> {
+    try await versioned(.me)
+  }
+
   /// `PATCH /users/me` with the time zone: sets the IANA zone on the session's own user, and gives back the user,
   /// with the version that the answer carried.
   public func reportTimeZone(_ identifier: String) async throws(APIError) -> Versioned<User> {

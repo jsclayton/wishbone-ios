@@ -6,6 +6,7 @@ public enum Route: String, Sendable, CaseIterable {
   case health
   case redeemLoginLink
   case versions
+  case me
   case updateMe
   case users
   case user
@@ -32,9 +33,9 @@ public enum Route: String, Sendable, CaseIterable {
 
   public var method: String {
     switch self {
-    case .health, .versions, .users, .user, .groups, .group, .groupUsers, .groupGroups, .occasions, .occasion,
-      .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation, .gifts, .gift,
-      .blockedStores:
+    case .health, .versions, .me, .users, .user, .groups, .group, .groupUsers, .groupGroups, .occasions,
+      .occasion, .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation,
+      .gifts, .gift, .blockedStores:
       "GET"
     case .redeemLoginLink, .confirmProfile, .uploadImage: "POST"
     case .updateMe: "PATCH"
@@ -53,7 +54,7 @@ public enum Route: String, Sendable, CaseIterable {
     case .health: "/health"
     case .redeemLoginLink: "/login-links/redeem"
     case .versions: "/versions"
-    case .updateMe: "/users/me"
+    case .me, .updateMe: "/users/me"
     case .users: "/users"
     case .user: "/users/{id}"
     case .groups: "/groups"
@@ -86,7 +87,7 @@ public enum Route: String, Sendable, CaseIterable {
     case .health, .redeemLoginLink: true
     case .versions, .updateMe, .users, .user, .groups, .group, .groupUsers, .groupGroups, .occasions, .occasion,
       .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation, .gifts, .gift,
-      .blockedStores, .revokeCurrentSession, .confirmProfile, .uploadImage:
+      .blockedStores, .revokeCurrentSession, .confirmProfile, .uploadImage, .me:
       false
     }
   }
@@ -103,7 +104,7 @@ public enum Route: String, Sendable, CaseIterable {
       .invitations, .gifts, .blockedStores:
       Self.paging
     case .health, .redeemLoginLink, .versions, .updateMe, .user, .group, .occasion, .list, .item, .invitation, .gift,
-      .revokeCurrentSession, .confirmProfile, .uploadImage:
+      .revokeCurrentSession, .confirmProfile, .uploadImage, .me:
       []
     }
   }
@@ -120,7 +121,7 @@ public enum Route: String, Sendable, CaseIterable {
     case .updateMe: ["Idempotency-Key"]
     case .health, .redeemLoginLink, .users, .user, .groups, .group, .groupUsers, .groupGroups, .occasions, .occasion,
       .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation, .gifts, .gift,
-      .blockedStores, .revokeCurrentSession, .confirmProfile, .uploadImage:
+      .blockedStores, .revokeCurrentSession, .confirmProfile, .uploadImage, .me:
       []
     }
   }
@@ -132,7 +133,7 @@ public enum Route: String, Sendable, CaseIterable {
     case .updateMe: fields(of: UserChanges.CodingKeys.self, nested: ["birthday": PartialDate.fields])
     case .health, .versions, .users, .user, .groups, .group, .groupUsers, .groupGroups, .occasions, .occasion,
       .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation, .gifts, .gift,
-      .blockedStores, .revokeCurrentSession, .confirmProfile, .uploadImage:
+      .blockedStores, .revokeCurrentSession, .confirmProfile, .uploadImage, .me:
       []
     }
   }
@@ -144,7 +145,7 @@ public enum Route: String, Sendable, CaseIterable {
     case .health: Health.fields
     case .redeemLoginLink: RedeemedLoginLink.fields
     case .versions: VersionsBody.fields
-    case .updateMe, .user, .confirmProfile: User.fields
+    case .me, .updateMe, .user, .confirmProfile: User.fields
     case .uploadImage: ImageSummary.fields
     case .users: Page<VersionedRow<User>>.fields
     case .groups: Page<VersionedRow<Group>>.fields
@@ -289,6 +290,11 @@ public struct UserChanges: Encodable, Sendable, Equatable {
 }
 
 extension Endpoint where Response == User {
+  /// The session's own user.
+  static var me: Endpoint {
+    Endpoint(route: .me)
+  }
+
   static func user(_ id: String) -> Endpoint {
     Endpoint(route: .user, parameters: ["id": id])
   }

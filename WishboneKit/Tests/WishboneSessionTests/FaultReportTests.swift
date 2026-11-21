@@ -162,7 +162,10 @@ struct FaultReportTests {
       guard case .request(let route, let status) = breadcrumb else { return nil }
       return "\(route.method) \(route.template) \(status.rawValue)"
     }
-    #expect(Array(requests.prefix(3)) == ["GET /health 2xx", "POST /login-links/redeem 2xx", "GET /versions 2xx"])
+    #expect(
+      Array(requests.prefix(4)) == [
+        "GET /health 2xx", "POST /login-links/redeem 2xx", "GET /users/me 2xx", "GET /versions 2xx",
+      ])
     #expect(diagnostics.version != nil)
 
     instance.conditioner.dropEverything()
