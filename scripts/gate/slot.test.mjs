@@ -82,13 +82,14 @@ test('a gate that is killed outright holds the slot until its step is stopped', 
   const pidFile = path.join(folder, 'pids');
   const slotModule = fileURLToPath(new URL('./slot.mjs', import.meta.url));
   const stepModule = fileURLToPath(new URL('./step.mjs', import.meta.url));
-  // The step ignores the request to stop, so it ends only when it is killed, a while after the gate dies.
+  // The step ignores the request to stop, so it ends only when it is killed, a while after the gate dies. Its limit
+  // is not under test, so it is an hour: a busy machine can take many seconds to start the step.
   const script = `trap '' TERM; echo $$ > "${pidFile}"; while true; do sleep 0.1; done`;
   const gate = `
     const { takeSlot } = await import(${JSON.stringify(slotModule)});
     const { runStep } = await import(${JSON.stringify(stepModule)});
     const slot = await takeSlot(${JSON.stringify(folder)});
-    await runStep({ command: ['sh', '-c', ${JSON.stringify(script)}], limitMs: 60_000, echo: null, onStart: (pid) => slot.watch(pid) });
+    await runStep({ command: ['sh', '-c', ${JSON.stringify(script)}], limitMs: 60 * 60_000, echo: null, onStart: (pid) => slot.watch(pid) });
   `;
   const other = spawn(process.execPath, ['--input-type=module', '-e', gate], { stdio: 'ignore' });
   t.after(() => other.kill('SIGKILL'));
@@ -122,9 +123,9 @@ test('by itself, a script waits in `inSlot` until the gate that holds the slot l
   await gate.release();
   await alone;
   assert.deepEqual(events, ['the gate lets go', 'the script runs']);
-  // The script let go of the slot when it ended, so the next taker gets it without a wait. The time to start the
-  // next holder is not a wait: a taker waits only when `lockf` doesn't get the lock, and a held slot never comes
-  // free here, so a minute is far past the start and still ends the test.
+  // The script let go of the slot when it ended, so the next taker gets it without a wait. The notice comes only
+  // after a minute, far past the time to start the holder, and a held slot never comes free here, so the notice
+  // still ends the test.
   const stillHeld = new AbortController();
   const next = await takeSlot(folder, { waitNoticeMs: 60_000, signal: stillHeld.signal, onWait: () => stillHeld.abort() });
   await next.release();

@@ -210,7 +210,7 @@ test('two gates at once take turns at the slot', async (t) => {
         {
           name: 'build',
           slot: true,
-          limitMs: 5 * 60_000,
+          limitMs: noLimitMs,
           command: ['sh', '-c', `echo "${name} starts" >> "${turns}"; while [ ! -e "${go}" ]; do sleep 0.05; done; echo "${name} ends" >> "${turns}"`],
         },
       ],
@@ -294,9 +294,9 @@ test('a time reads as minutes and seconds', () => {
 
 test("a step's `after` runs however the step ends: it passes, it fails, or it is stopped at its limit", async (t) => {
   for (const [command, limitMs, expected] of [
-    [['true'], 10_000, /^GATE PASS/],
-    [['false'], 10_000, /^GATE FAIL step 1 \(simulator\): exit 1/],
-    [['sleep', '30'], 200, /^GATE FAIL step 1 \(simulator\): stopped at its limit/],
+    [['true'], noLimitMs, /^GATE PASS/],
+    [['false'], noLimitMs, /^GATE FAIL step 1 \(simulator\): exit 1/],
+    [['sleep', '60'], 200, /^GATE FAIL step 1 \(simulator\): stopped at its limit/],
   ]) {
     const { options } = gateIn(t);
     let ran = 0;

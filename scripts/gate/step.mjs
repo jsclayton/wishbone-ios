@@ -114,8 +114,13 @@ export function runStep({ command, limitMs, logPath, cwd, env, signal, echo = pr
     // a chunk from the other stream between them. What is left of a line at the end goes to the log then.
     const partial = new Map();
 
+    // The limit and an interrupt start a stop and don't wait for it, so a failed stop is marked as handled here.
+    // `settle` still waits for the same stop, and a failure there is the step's error.
     const stop = () => {
-      stopping ??= stopFamily(child.pid, { graceMs });
+      if (stopping === null) {
+        stopping = stopFamily(child.pid, { graceMs });
+        stopping.catch(() => {});
+      }
       return stopping;
     };
     const cancelLimit = startLimit(limitMs, () => {
@@ -165,9 +170,11 @@ export function runStep({ command, limitMs, logPath, cwd, env, signal, echo = pr
       exit = code;
       // `close` comes when the output ends. A process that the step left behind can hold the output open, so stop
       // those processes now. When they are gone, nothing holds it, so don't wait for `close` for long after that.
-      stop().then(() => {
-        if (!settled) closeFallback = setTimeout(() => settle(), 2000);
-      });
+      stop()
+        .then(() => {
+          if (!settled) closeFallback = setTimeout(() => settle(), 2000);
+        })
+        .catch(() => {});
     });
     child.on('close', () => settle());
   });
