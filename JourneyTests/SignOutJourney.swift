@@ -50,7 +50,9 @@ nonisolated final class SignOutJourney: XCTestCase {
       NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", robin.name, address)
     ).firstMatch
     XCTAssertTrue(signedIn.waitForExistence(timeout: 10), "Settings doesn't show the name and \(address).")
-    try await Audit.run(on: app, showing: "Settings", in: self)
+    try await Audit.run(
+      on: app, showing: "Settings", in: self,
+      rowsThatLeaveTheScreen: ["Share diagnostics", "About", "Source code", "Acknowledgements", "Version"])
 
     // Sign out, after its warning.
     app.buttons[Audit.words("Sign out")].tap()

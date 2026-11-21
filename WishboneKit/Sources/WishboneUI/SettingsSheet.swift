@@ -4,7 +4,7 @@ import WishboneSession
 /// Settings: what is about the user and this device, as a sheet from the user's avatar. See
 /// `docs/screens/settings.md`.
 ///
-/// It holds the Signed in block and Share diagnostics. Every other row joins with its own screen.
+/// The sections are in the order of `SettingsSection`. A section that is not built yet joins there with its screen.
 struct SettingsSheet: View {
   @Environment(Device.self) private var device
   @Environment(\.dismiss) private var dismiss
@@ -17,12 +17,17 @@ struct SettingsSheet: View {
   var body: some View {
     NavigationStack {
       List {
-        signedIn
-        Section {
-          NavigationLink {
-            ShareDiagnosticsScreen(place: .pushed)
-          } label: {
-            Text("Share diagnostics", bundle: #bundle)
+        if session.isInstanceUnreachable {
+          // The line blocks nothing: every row still opens. The primary color: the system's secondary gray is below
+          // 4.5:1 on the row.
+          Text("Can't reach \(session.session.instance.text)", bundle: #bundle)
+        }
+        ForEach(sections, id: \.self) { section in
+          switch section {
+          case .signedIn: signedIn
+          case .signInAndDevices: signInAndDevices
+          case .shareDiagnostics: shareDiagnostics
+          case .about: about
           }
         }
       }
@@ -38,6 +43,59 @@ struct SettingsSheet: View {
       }
     }
     .signOutConfirmation(isPresented: $isConfirmingSignOut)
+  }
+
+  /// The sections for the signed-in user. Before the user's record is in the copy, they are as for a user who is not
+  /// the admin, and who has parents: the fewest.
+  private var sections: [SettingsSection] {
+    let record = session.user?.record
+    return SettingsSection.shown(isAdmin: record?.isAdmin ?? false, hasParents: !(record?.parentIDs.isEmpty ?? false))
+  }
+
+  /// The section that holds Sign-in and devices, with the help line on Require Face ID as its footer. See "No Face
+  /// ID lock of the app's own" in `docs/spec.md`.
+  private var signInAndDevices: some View {
+    Section {
+    } footer: {
+      // The label color itself: the system's secondary gray of a footer is below 4.5:1. The hierarchical `.primary`
+      // of a section's footer is that gray.
+      Text(
+        "To keep your gifts private on a shared device, touch and hold Wishbone on the Home Screen and choose Require Face ID.",
+        bundle: #bundle
+      )
+      .foregroundStyle(Color.primary)
+    }
+  }
+
+  private var shareDiagnostics: some View {
+    Section {
+      NavigationLink {
+        ShareDiagnosticsScreen(place: .pushed)
+      } label: {
+        Text("Share diagnostics", bundle: #bundle)
+      }
+    }
+  }
+
+  /// Source code, Acknowledgements, and the app's version and build.
+  private var about: some View {
+    let about = AppAbout.current
+    return Section {
+      if let sourceCode = about.sourceCode {
+        WebLinkRow(title: String(localized: "Source code", bundle: #bundle), destination: sourceCode)
+      }
+      NavigationLink {
+        AcknowledgementsScreen()
+      } label: {
+        Text("Acknowledgements", bundle: #bundle)
+      }
+      Text("Version \(about.version) (\(about.build))", bundle: #bundle)
+        .textSelection(.enabled)
+    } header: {
+      // The label color itself, as in the footer above.
+      Text("About", bundle: #bundle)
+        .foregroundStyle(Color.primary)
+    }
   }
 
   /// The Signed in block: the user's name, the instance address with its scheme, and Sign out.
