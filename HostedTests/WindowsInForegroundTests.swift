@@ -48,7 +48,7 @@ private final class PhasedWindow {
   @Observable
   @MainActor
   final class Phase {
-    var value = ScenePhase.background
+    var value = SwiftUI.ScenePhase.background
   }
 
   struct Root: View {
@@ -66,7 +66,7 @@ private final class PhasedWindow {
   private let window: UIWindow
 
   /// The phase of the window's scene.
-  var phase: ScenePhase {
+  var phase: SwiftUI.ScenePhase {
     get { state.value }
     set { state.value = newValue }
   }
