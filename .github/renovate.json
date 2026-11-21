@@ -1,0 +1,61 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":semanticCommits", ":dependencyDashboard"],
+  "platformAutomerge": true,
+  "automergeType": "pr",
+  "prCreation": "not-pending",
+  "rebaseWhen": "behind-base-branch",
+  "schedule": ["* 0-5 * * 6"],
+  "timezone": "America/Los_Angeles",
+  "minimumReleaseAge": "3 days",
+  "separateMajorMinor": true,
+  "prConcurrentLimit": 3,
+  "prHourlyLimit": 2,
+  "osvVulnerabilityAlerts": true,
+  "vulnerabilityAlerts": {
+    "minimumReleaseAge": "1 day"
+  },
+  "packageRules": [
+    {
+      "groupName": "Node toolchain",
+      "matchManagers": ["mise", "npm"],
+      "matchPackageNames": ["node"]
+    },
+    {
+      "groupName": "pnpm toolchain",
+      "matchPackageNames": ["pnpm"]
+    },
+    {
+      "groupName": "commitlint",
+      "matchPackageNames": ["@commitlint/**"]
+    },
+    {
+      "groupName": "GitHub Actions",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "pinDigests": true
+    },
+    {
+      "matchUpdateTypes": ["major"],
+      "labels": ["dependencies", "major-update"]
+    },
+    {
+      "description": "Renovate merges its own minor and patch updates of tools when CI is green",
+      "matchUpdateTypes": ["minor", "patch"],
+      "labels": ["dependencies"],
+      "automerge": true
+    },
+    {
+      "description": "A Swift package ships in the app (sentry-cocoa and GRDB), so every update of one gets a review",
+      "matchManagers": ["swift"],
+      "automerge": false
+    },
+    {
+      "description": "The Xcode version moves by hand, and the macOS runner image holds it",
+      "matchManagers": ["github-actions"],
+      "matchDepTypes": ["github-runner"],
+      "matchDepNames": ["macos", "xcode"],
+      "enabled": false
+    }
+  ]
+}
