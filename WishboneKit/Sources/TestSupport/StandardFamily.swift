@@ -9,6 +9,11 @@
 /// ```
 ///
 /// The server at the pinned release has no deletion requests, so the family has none yet.
+///
+/// Some rows are for the whole instance, and the tests of a test process share one server. So a user of one family
+/// also sees the occasion marked everyone of every other family, the admin sees every family's users, groups, and
+/// blocked stores, and a collection can have more than one page. A test that compares a whole collection picks
+/// out its own rows by their IDs or by the builder's tag, or starts a private server.
 public struct StandardFamily: Sendable {
   /// The instance's admin. The admin sees every user and every group, and no list through that access.
   public let admin: Fixture.Person
@@ -62,8 +67,8 @@ public struct StandardFamily: Sendable {
   /// The parent's invitation of the deactivated child to `parentList`. Nobody answered it.
   public let pendingInvitation: Fixture.Invitation
 
-  /// A gift that the relative gave to the deactivated child, from `primaryList`. Its reveal has passed, so its
-  /// item has left the list.
+  /// A gift that the relative gave to the deactivated child, from `primaryList`, for `groupOccasion`. Its reveal
+  /// has passed, so its item has left the list.
   public let givenGift: Fixture.Gift
 }
 
@@ -95,7 +100,9 @@ extension FixtureBuilder {
     _ = try await item("Bunk bed", on: sharedList, as: child)
     let parentList = try await list("Our house", of: parent)
     let pendingInvitation = try await invite(soonDeactivated, to: parentList, as: parent)
-    let givenGift = try await claim(givenItem, as: relative, fromLabel: "The cousins")
+    // The occasion is named. The server's own pick is the soonest one, which moves with the date, and can be
+    // another family's occasion for everyone.
+    let givenGift = try await claim(givenItem, as: relative, for: groupOccasion, fromLabel: "The cousins")
     try await reveal(giftsFor: soonDeactivated)
 
     let deactivatedChild = try await deactivate(soonDeactivated)

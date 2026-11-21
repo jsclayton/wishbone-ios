@@ -4,7 +4,7 @@ import Testing
 
 @Suite("The standard family", .timeLimit(.minutes(1)))
 struct StandardFamilyTests {
-  /// The IDs in a collection's first page, which holds everything of one family.
+  /// The IDs in one page of a collection. Each use is of a collection that holds one family's rows only.
   private func ids(_ collection: JSON) -> Set<String> {
     Set((collection["data"].array ?? []).compactMap { $0["id"].string })
   }
@@ -89,7 +89,7 @@ struct StandardFamilyTests {
     #expect(try await admin.get("/occasions/\(family.everyoneOccasion.id)")["is_everyone"] == true)
 
     // Only the admin sees the blocked stores.
-    let stores = try await admin.get("/blocked-stores?limit=200")["data"].array ?? []
+    let stores = try await admin.all("/blocked-stores")
     #expect(
       stores.contains { $0["id"].string == family.blockedStore.id && $0["store"].string == family.blockedStore.store })
     #expect(try await family.parent.signedIn().send("GET", "/blocked-stores").status == 403)
@@ -137,6 +137,9 @@ struct StandardFamilyTests {
     #expect(gift["giver"]["id"].string == family.relative.id)
     #expect(gift["from_label"] == "The cousins")
     #expect(gift["note"].isNull)
+    // The gift is for the family's own group occasion, on every day of the year, whatever else is on the server.
+    #expect(gift["occasion"]["id"].string == family.groupOccasion.id)
+    #expect(gift["occasion_name"].string == family.groupOccasion.name)
   }
 
   private func readsBackAsTheChild(_ family: StandardFamily) async throws {
@@ -150,7 +153,7 @@ struct StandardFamilyTests {
     #expect(try await child.status(of: "/lists/\(family.primaryList.id)") == 404)
     #expect(try await child.status(of: "/gifts/\(family.givenGift.id)") == 404)
     // Both shared occasions apply to the child.
-    let occasions = ids(try await child.get("/occasions?kind=shared&limit=200"))
+    let occasions = Set(try await child.all("/occasions?kind=shared").compactMap { $0["id"].string })
     #expect(occasions.isSuperset(of: [family.groupOccasion.id, family.everyoneOccasion.id]))
   }
 
@@ -166,7 +169,9 @@ struct StandardFamilyTests {
     // The gift is in the relative's Given, with the fields that only its giver sees.
     let given = try await relative.get("/gifts?giver_id=me&state=given")
     #expect(ids(given) == [family.givenGift.id])
-    #expect(try await relative.get("/gifts/\(family.givenGift.id)")["is_bought"] == false)
+    let gift = try await relative.get("/gifts/\(family.givenGift.id)")
+    #expect(gift["is_bought"] == false)
+    #expect(gift["occasion"]["id"].string == family.groupOccasion.id)
     #expect(try await relative.get("/gifts?giver_id=me&state=open")["data"].array?.isEmpty == true)
   }
 
@@ -190,6 +195,14 @@ struct StandardFamilyTests {
     #expect(first.admin.id == second.admin.id)
     #expect(try await first.parent.signedIn().status(of: "/users/\(second.parent.id)") == 404)
     #expect(try await first.parent.signedIn().status(of: "/lists/\(second.parentList.id)") == 404)
+
+    // An occasion marked everyone is for the whole instance, so each family sees the other's. Each family's gift
+    // is still for its own group occasion.
+    #expect(try await second.parent.signedIn().status(of: "/occasions/\(first.everyoneOccasion.id)") == 200)
+    for family in [first, second] {
+      let gift = try await family.relative.signedIn().get("/gifts/\(family.givenGift.id)")
+      #expect(gift["occasion"]["id"].string == family.groupOccasion.id)
+    }
   }
 
   @Test("A test that needs less seeds less, and reveal goes through the server's test hook")

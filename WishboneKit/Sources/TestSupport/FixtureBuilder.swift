@@ -218,6 +218,8 @@ public struct FixtureBuilder: Sendable {
   // MARK: - Gifts
 
   /// Claims the item, as the giver. With no occasion, the server picks the soonest one that the giver may pick.
+  /// That pick moves with the date, and on a shared server it can be an occasion for everyone that another test
+  /// made. A test that reads the gift's occasion names one.
   public func claim(
     _ item: Fixture.Item,
     as giver: Fixture.Person,
