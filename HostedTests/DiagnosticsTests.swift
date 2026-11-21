@@ -233,11 +233,21 @@ struct DiagnosticsTests {
     // No automatic breadcrumbs.
     #expect((event["breadcrumbs"] as? [Any] ?? []).isEmpty)
     // The second net: nowhere in the envelope, under any name.
-    let text = envelope.items.map { String(decoding: $0.payload, as: UTF8.self) }.joined()
-    let zone = TimeZone.current.identifier
-    for key in ["timezone", "time_zone", "ip_address", "device_app_hash"] + (zone.contains("/") ? [zone] : []) {
-      #expect(!text.contains(key), "The envelope holds \(key).")
+    let forbidden = Self.zoneAndIDs(zone: TimeZone.current.identifier)
+    for key in forbidden {
+      #expect(!envelope.text.contains(key), "The envelope holds \(key).")
     }
+    // The check can fail: an envelope that holds the device's zone, as Sentry's JSON writes it, with `/` as `\/`.
+    let zone = TimeZone.current.identifier.replacingOccurrences(of: "/", with: #"\/"#)
+    let planted = EnvelopeReceiver.envelope(Data(#"{}\#n{"type":"event"}\#n{"contexts":{"tz":"\#(zone)"}}"#.utf8))
+    #expect(forbidden.contains { planted.text.contains($0) }, "The check can't find the zone \(zone).")
+  }
+
+  /// What an envelope never holds: the names of the fields for the time zone, the IP address and the vendor's
+  /// hash, and the device's zone itself. A zone such as `America/Denver` is found anywhere in the text. A zone with
+  /// no `/`, such as `UTC`, is found as a whole value, so a word inside another value doesn't count.
+  static func zoneAndIDs(zone: String) -> [String] {
+    ["timezone", "time_zone", "ip_address", "device_app_hash", "\"\(zone)\""] + (zone.contains("/") ? [zone] : [])
   }
 
   @Test("An event names no install folder: each image's path is its path inside the app's bundle")
@@ -268,7 +278,14 @@ struct DiagnosticsTests {
     #expect(packages.contains { $0.hasPrefix("Wishbone") }, "\(packages)")
     #expect(!(files + packages).contains { $0.contains(".app/") }, "\(files + packages)")
 
-    // Nowhere in the envelope: the folder that iOS gives the app at install.
+    // Nowhere in the envelope: the folder that iOS gives the app at install. The check can fail: the text of an
+    // envelope reads Sentry's `\/` as `/`.
+    let planted = EnvelopeReceiver.envelope(Data(#"{}\#n{"type":"event"}\#n{"code_file":"\/var\/containers\/A"}"#.utf8))
+    #expect(planted.text.contains("/var/containers/"))
+    // A path that ends at the container's folder keeps no UUID.
+    let container = "/private/var/containers/Bundle/Application/\(UUID().uuidString)"
+    #expect(Diagnostics.pathInsideBundle(container) == "")
+    #expect(Diagnostics.pathInsideBundle(container + "/Wishbone.app/Wishbone") == "Wishbone")
     for folder in ["/containers/", "/var/containers/"] {
       #expect(envelope.text.range(of: folder, options: .caseInsensitive) == nil, "The envelope names \(folder).")
     }
@@ -318,13 +335,13 @@ struct DiagnosticsTests {
   }
 
   /// The user of an event, as its fields.
-  private func user(_ event: [String: Any]) -> [String: String] {
+  func user(_ event: [String: Any]) -> [String: String] {
     (event["user"] as? [String: Any] ?? [:]).compactMapValues { $0 as? String }
   }
 }
 
 /// A test's own defaults and folder, which it removes when it goes.
-nonisolated private final class Place {
+nonisolated final class Place {
   let suite = "DiagnosticsTests-\(UUID().uuidString)"
   let defaults: UserDefaults
   let folder: URL

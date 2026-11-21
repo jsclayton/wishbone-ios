@@ -68,7 +68,10 @@ public struct WindowRoot: View {
 }
 
 /// The tabs, at the window's place. The place starts as the window saved it, and each change is saved.
+///
+/// Each place that the window opens leaves a breadcrumb of its kind, never of what it shows.
 private struct PlacedFrame: View {
+  @Environment(\.diagnosticsReporter) private var diagnostics
   private let session: SessionModel
   private let save: (Data) -> Void
   @State private var place: WindowPlace
@@ -81,6 +84,9 @@ private struct PlacedFrame: View {
 
   var body: some View {
     TabFrame(session: session, place: $place)
-      .onChange(of: place) { save(place.saved(for: session.session)) }
+      .onChange(of: place) { earlier, place in
+        save(place.saved(for: session.session))
+        if let kind = place.opened(since: earlier) { diagnostics.leave(.placeOpened(kind)) }
+      }
   }
 }

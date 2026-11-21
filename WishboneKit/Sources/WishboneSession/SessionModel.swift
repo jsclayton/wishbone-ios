@@ -266,10 +266,10 @@ public final class SessionModel {
   ///
   /// Diagnostics, for each way that a pull stops:
   /// - An unreachable instance, a cancelled request, a 404, and the API's own 401: never.
-  /// - An answer that can't be decoded: captured, as the path template and the key path, never a value.
-  /// - A copy that can't be read or written: captured, by its code only.
-  ///
-  /// Nothing is captured yet: the app has no diagnostics until `WishboneDiagnostics` holds them.
+  /// - An answer that can't be decoded: captured by the client, as the path template and the key path, never a
+  ///   value.
+  /// - A copy that can't be read or written: never. The spec's captured faults of the database are one that will
+  ///   not open, and a migration that drops the copy, which the database captures when it opens.
   private func pull() async -> PullEnd {
     do {
       let user = try await Pull(client: client, database: database, userID: session.userID).run()

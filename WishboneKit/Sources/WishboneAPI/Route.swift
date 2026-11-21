@@ -42,6 +42,11 @@ public enum Route: String, Sendable, CaseIterable {
     }
   }
 
+  /// Whether a request on the route is a write: anything but a `GET`.
+  public var isWrite: Bool {
+    method != "GET"
+  }
+
   /// The path template under `/api/v2`, as the server's route table writes it.
   public var template: String {
     switch self {

@@ -57,7 +57,7 @@ let package = Package(
     ),
     .target(
       name: "WishboneDiagnostics",
-      dependencies: [.product(name: "Sentry", package: "sentry-cocoa")],
+      dependencies: ["WishboneAPI", .product(name: "Sentry", package: "sentry-cocoa")],
       swiftSettings: moduleSettings
     ),
     .target(
@@ -82,6 +82,8 @@ let package = Package(
     ),
     .testTarget(
       name: "FitnessTests",
+      // The diagnostics vocabulary, which the privacy manifest and the allow list of path templates are held to.
+      dependencies: ["WishboneAPI"],
       swiftSettings: everyTarget
     ),
   ],

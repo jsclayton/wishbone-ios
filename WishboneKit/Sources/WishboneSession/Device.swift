@@ -85,13 +85,17 @@ public final class Device {
     /// The device's time zone, which the session reports to the user's record.
     public var timeZone: TimeZoneSource
 
+    /// Where the app's own faults and breadcrumbs go. Only the app gives one: an extension sends nothing.
+    public var diagnostics: any DiagnosticsReporter
+
     public init(
       userAgent: UserAgent,
       keychain: any SessionKeychain,
       marker: any InstallMarker,
       storage: SessionStorage,
       clock: any Clock<Duration> = ContinuousClock(),
-      timeZone: TimeZoneSource = .system
+      timeZone: TimeZoneSource = .system,
+      diagnostics: any DiagnosticsReporter = .none
     ) {
       self.userAgent = userAgent
       self.keychain = keychain
@@ -99,6 +103,7 @@ public final class Device {
       self.storage = storage
       self.clock = clock
       self.timeZone = timeZone
+      self.diagnostics = diagnostics
     }
   }
 
@@ -170,7 +175,8 @@ public final class Device {
       Log.fault(.session, "The session keychain can't forget the session.", detail: "\(error.status)")
     }
     LocalDatabase.removeAll(in: setup.storage)
-    let client = APIClient(session: leftOver, userAgent: setup.userAgent, clock: setup.clock)
+    let client = APIClient(
+      session: leftOver, userAgent: setup.userAgent, clock: setup.clock, diagnostics: setup.diagnostics)
     revokingLeftOver = Task {
       // A refusal and an unreachable instance end the same: the session stays in the user's Devices list until
       // someone revokes it, or it goes 365 days unused.
@@ -228,9 +234,13 @@ public final class Device {
   }
 
   private func signIn(with link: LoginLink) async {
+    // The version check read the version of the link's instance. A sign-in that doesn't end signed in leaves the
+    // device with no instance, so no event names that version.
+    defer { if session == nil { setup.diagnostics.wishboneVersion(nil) } }
     keptLink = nil
     signInState = .signingIn
-    let client = APIClient(instance: link.instance, userAgent: setup.userAgent, clock: setup.clock)
+    let client = APIClient(
+      instance: link.instance, userAgent: setup.userAgent, clock: setup.clock, diagnostics: setup.diagnostics)
     let redeemed: (session: Session, name: String)
     do {
       // The version check comes first, so a link is never used up on an instance that the app can't work with.
@@ -344,12 +354,17 @@ public final class Device {
       Log.fault(.session, "The session keychain can't forget the session.", detail: "\(error.status)")
     }
     LocalDatabase.removeAll(in: setup.storage)
+    // The device has no instance now, so no event names a version.
+    setup.diagnostics.wishboneVersion(nil)
   }
 
   /// The session model of a session, with its local database and its client.
   private func model(for session: Session) -> SessionModel? {
-    guard let database = LocalDatabase.of(session, in: setup.storage) else { return nil }
-    let client = APIClient(session: session, userAgent: setup.userAgent, clock: setup.clock)
+    guard let database = LocalDatabase.of(session, in: setup.storage, diagnostics: setup.diagnostics) else {
+      return nil
+    }
+    let client = APIClient(
+      session: session, userAgent: setup.userAgent, clock: setup.clock, diagnostics: setup.diagnostics)
     return SessionModel(
       session: session, client: client, database: database, timeZone: setup.timeZone,
       endedByServer: { [weak self] model in await self?.endedByServer(model) })

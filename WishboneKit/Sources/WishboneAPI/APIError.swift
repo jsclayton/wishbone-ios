@@ -1,13 +1,16 @@
 /// Why a request to the instance gave no result. Every request ends in a result or in one of these.
 ///
-/// Diagnostics, for each case:
-/// - `unreachable`, `cancelled`, `unauthorized`, and `appTooOld`: never.
-/// - `refused`: captured only for a 400 or a 422 of a write that the app sent, and for a code that is not in
-///   `ErrorCode`'s list. Otherwise never.
-/// - `undecodable`: captured, as the path template and the key path, never a value.
+/// Diagnostics, for each case (see ``diagnosticSide``):
+/// - `unreachable`, `cancelled`, `unauthorized`, and `appTooOld`: never. A 5xx is unreachable: it is the operator's
+///   server, not the app's fault.
+/// - `refused`: captured for a 400 or a 422 of a write that the app sent, as the route and the code, and
+///   for a code that is not in `ErrorCode`'s list, as the code only. Otherwise never: a 404 or a 410 for something
+///   deleted elsewhere, a 403, a 429.
+/// - `undecodable`: captured, as the path template and the key path, never a value. Except for `GET /health`: an
+///   address that is not a Wishbone answers it so, and the sign-in says "No Wishbone found".
 ///
-/// Nothing is captured yet: the app has no diagnostics until `WishboneDiagnostics` holds them.
-public enum APIError: Error, Sendable, Equatable {
+/// The client reports each one as its side asks, where the request ends.
+public enum APIError: Diagnosed, Sendable, Equatable {
   /// The instance can't be reached. See "Unreachable never ends the session" in `docs/spec.md`.
   case unreachable(Unreachable)
 
@@ -42,6 +45,8 @@ public enum APIError: Error, Sendable, Equatable {
   /// A problem of the API. The app shows its own words for the code, and the server's `detail` only for a code
   /// that it doesn't know.
   public struct Refusal: Sendable, Equatable {
+    /// The route that was refused.
+    public let route: Route
     public let status: Int
     public let code: ErrorCode
     public let detail: String
@@ -50,7 +55,8 @@ public enum APIError: Error, Sendable, Equatable {
     /// in the server's order. A 422 `invalid_input` marks them on the form. Empty when the problem names none.
     public let fields: [String]
 
-    public init(status: Int, code: ErrorCode, detail: String, fields: [String] = []) {
+    public init(route: Route, status: Int, code: ErrorCode, detail: String, fields: [String] = []) {
+      self.route = route
       self.status = status
       self.code = code
       self.detail = detail
@@ -62,5 +68,26 @@ public enum APIError: Error, Sendable, Equatable {
   public struct Undecodable: Sendable, Equatable {
     public let route: Route
     public let keyPath: String
+  }
+}
+
+extension APIError {
+  public var diagnosticSide: DiagnosticSide {
+    switch self {
+    case .unreachable, .cancelled, .unauthorized, .appTooOld: .never
+    case .refused(let refusal): refusal.diagnosticSide
+    case .undecodable(let answer) where answer.route == .health: .never
+    case .undecodable(let answer): .captured(.undecodable(answer.route, keyPath: answer.keyPath))
+    }
+  }
+}
+
+extension APIError.Refusal {
+  /// A 400 or a 422 of a write is the app's fault: it sent what the server can't take. So is a code that the app
+  /// doesn't know. Any other refusal is the server's answer to the person, and no fault.
+  public var diagnosticSide: DiagnosticSide {
+    if route.isWrite, status == 400 || status == 422 { return .captured(.refused(route, code: code)) }
+    if case .unknown(let text) = code { return .captured(.unknown(text)) }
+    return .never
   }
 }

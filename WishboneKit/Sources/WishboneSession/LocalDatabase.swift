@@ -13,21 +13,26 @@ struct LocalDatabase: Sendable {
   let writer: any DatabaseWriter
 
   /// A database in memory. Nothing is on disk.
-  static func inMemory() throws -> LocalDatabase {
-    try LocalDatabase(writer: DatabaseQueue())
+  static func inMemory(diagnostics: any DiagnosticsReporter = .none) throws -> LocalDatabase {
+    try LocalDatabase(writer: DatabaseQueue(), diagnostics: diagnostics)
   }
 
   /// Opens the database file, and makes it when there is none.
-  static func open(at file: URL) throws -> LocalDatabase {
+  static func open(at file: URL, diagnostics: any DiagnosticsReporter = .none) throws -> LocalDatabase {
     var configuration = Configuration()
     // Another connection can hold the file for a moment, for example while it closes. The open waits for it.
     configuration.busyMode = .timeout(5)
-    return try LocalDatabase(writer: DatabasePool(path: file.path(percentEncoded: false), configuration: configuration))
+    return try LocalDatabase(
+      writer: DatabasePool(path: file.path(percentEncoded: false), configuration: configuration),
+      diagnostics: diagnostics)
   }
 
-  private init(writer: any DatabaseWriter) throws {
+  /// Diagnostics: a copy that the schema number drops is captured, as the two numbers.
+  private init(writer: any DatabaseWriter, diagnostics: any DiagnosticsReporter) throws {
     self.writer = writer
-    try Self.prepareCopy(in: writer)
+    if let dropped = try Self.prepareCopy(in: writer) {
+      diagnostics.capture(.copyDropped(from: dropped, to: Self.copySchema))
+    }
   }
 
   // MARK: - Where the file goes
@@ -46,27 +51,46 @@ struct LocalDatabase: Sendable {
   /// next sync fills. When the file can't be opened for another reason, or no file can be made, the database is in
   /// memory, so the session still works until the app ends. The file stays as it is.
   ///
-  /// Diagnostics: "the local database will not open" is captured, by its code only. Nothing is captured yet: the
-  /// app has no diagnostics until `WishboneDiagnostics` holds them.
-  static func of(_ session: Session, in storage: SessionStorage) -> LocalDatabase? {
+  /// Diagnostics: "the local database will not open" is captured, by its domain and code only, for each open that
+  /// fails: a damaged file, a file or a folder that can't be opened or made, and a database in memory.
+  static func of(
+    _ session: Session, in storage: SessionStorage, diagnostics: any DiagnosticsReporter = .none
+  ) -> LocalDatabase? {
     if case .folder(let base) = storage {
       let folder = folder(of: session, under: base)
       do {
-        return try open(in: folder)
+        return try open(in: folder, diagnostics: diagnostics)
       } catch let error as DatabaseError where [.SQLITE_CORRUPT, .SQLITE_NOTADB].contains(error.resultCode) {
         Log.fault(.session, "The local database is damaged. It is made again.", detail: "\(error)")
+        diagnostics.capture(.databaseWillNotOpen(cause(of: error)))
         try? FileManager.default.removeItem(at: folder)
-        if let database = try? open(in: folder) { return database }
+        do {
+          return try open(in: folder, diagnostics: diagnostics)
+        } catch {
+          Log.fault(.session, "The local database will not open again.", detail: "\(error)")
+          diagnostics.capture(.databaseWillNotOpen(cause(of: error)))
+        }
       } catch {
         Log.fault(.session, "The local database will not open.", detail: "\(error)")
+        diagnostics.capture(.databaseWillNotOpen(cause(of: error)))
       }
     }
     do {
-      return try inMemory()
+      return try inMemory(diagnostics: diagnostics)
     } catch {
       Log.fault(.session, "The local database will not open in memory.", detail: "\(error)")
+      diagnostics.capture(.databaseWillNotOpen(cause(of: error)))
       return nil
     }
+  }
+
+  /// The domain and code of an error of the database: SQLite's extended result code, or the domain and code of any
+  /// other error, such as a folder that can't be made. Never its message, which can name the file.
+  static func cause(of error: any Error) -> ErrorCause {
+    if let error = error as? DatabaseError {
+      return ErrorCause(domain: .sqlite, code: Int(error.extendedResultCode.rawValue))
+    }
+    return ErrorCause(error)
   }
 
   /// Removes every session's files under the storage, as a sign-out does. A device holds one session at most, so
@@ -96,7 +120,7 @@ struct LocalDatabase: Sendable {
     }
   }
 
-  private static func open(in folder: URL) throws -> LocalDatabase {
+  private static func open(in folder: URL, diagnostics: any DiagnosticsReporter) throws -> LocalDatabase {
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     // The folder is left out of backups: the copy comes from the instance again. Its files keep iOS's default
     // file protection, so background refresh can sync while the device is locked.
@@ -104,7 +128,7 @@ struct LocalDatabase: Sendable {
     var values = URLResourceValues()
     values.isExcludedFromBackup = true
     try folder.setResourceValues(values)
-    return try open(at: folder.appending(path: "database.sqlite"))
+    return try open(at: folder.appending(path: "database.sqlite"), diagnostics: diagnostics)
   }
 
   // MARK: - What the pull reads

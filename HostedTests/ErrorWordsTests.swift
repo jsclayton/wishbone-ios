@@ -8,7 +8,7 @@ import WishboneUI
 @MainActor
 struct ErrorWordsTests {
   private func words(_ code: String, status: Int = 422, detail: String = "The server's own words.") -> String? {
-    ErrorWords.words(for: APIError.Refusal(status: status, code: ErrorCode(code), detail: detail))
+    ErrorWords.words(for: APIError.Refusal(route: .updateMe, status: status, code: ErrorCode(code), detail: detail))
   }
 
   @Test("A code in the table gives the app's words, one that is not gives the server's detail, and success none")

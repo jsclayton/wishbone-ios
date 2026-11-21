@@ -111,7 +111,7 @@ enum LocalCopyRules {
   /// **When this fails, what the copy keeps has changed.** Raise `LocalDatabase.copySchema`, so that every device
   /// drops the old copy. Then record the new number here, with the digest that the failure gives. If only the
   /// code's own shape changed, and nothing that a database holds, record the digest alone.
-  static let recorded = (schema: 5, digest: "e6fcca71c46235f8")
+  static let recorded = (schema: 5, digest: "93f9e7c06162ca34")
 
   /// The digest of the sources: their code, with no comment line and no white space.
   static func digest(of sources: [String]) -> String {

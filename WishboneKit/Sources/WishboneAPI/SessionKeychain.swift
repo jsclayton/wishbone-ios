@@ -15,14 +15,16 @@ public protocol SessionKeychain: Sendable {
 
 /// The Keychain refused a call.
 ///
-/// Diagnostics: never. The event vocabulary has no case for it.
-public struct SessionKeychainError: Error, Sendable, Equatable {
+/// Diagnostics: never. The event vocabulary has no case for it, and the spec captures none.
+public struct SessionKeychainError: Diagnosed, Sendable, Equatable {
   /// The `OSStatus` of the call that failed.
   public let status: Int32
 
   public init(status: Int32) {
     self.status = status
   }
+
+  public var diagnosticSide: DiagnosticSide { .never }
 }
 
 /// The session keychain in the system's Keychain.

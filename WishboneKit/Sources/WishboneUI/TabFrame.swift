@@ -1,4 +1,5 @@
 import SwiftUI
+import WishboneAPI
 import WishboneSession
 
 /// The frame around every screen behind the sign-in: Home, Lists, Gifts, and the plus. In a narrow window it is a
@@ -15,6 +16,8 @@ public struct TabFrame: View {
 
   /// Whether this window shows Settings. Each window can show its own.
   @State private var isShowingSettings = false
+
+  @Environment(\.diagnosticsReporter) private var diagnostics
 
   public init(session: SessionModel, place: Binding<WindowPlace>) {
     self.session = session
@@ -79,6 +82,9 @@ public struct TabFrame: View {
     .tabViewSidebarFooter { shortcuts }
     .sheet(isPresented: $isShowingSettings) {
       SettingsSheet(session: session)
+    }
+    .onChange(of: isShowingSettings) { _, isShowing in
+      if isShowing { diagnostics.leave(.placeOpened(.settings)) }
     }
   }
 

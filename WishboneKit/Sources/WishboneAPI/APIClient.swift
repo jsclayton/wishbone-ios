@@ -11,19 +11,22 @@ public struct APIClient: Sendable {
   private let userAgent: UserAgent
   private let clock: any Clock<Duration>
   private let timeout: Duration
+  private let diagnostics: any DiagnosticsReporter
 
   /// A client with no session, for the version check and the redeem of a login link.
   public init(
     instance: InstanceAddress,
     userAgent: UserAgent,
     clock: any Clock<Duration> = ContinuousClock(),
-    timeout: Duration = .seconds(30)
+    timeout: Duration = .seconds(30),
+    diagnostics: any DiagnosticsReporter = .none
   ) {
     self.instance = instance
     token = nil
     self.userAgent = userAgent
     self.clock = clock
     self.timeout = timeout
+    self.diagnostics = diagnostics
   }
 
   /// The client of a session.
@@ -31,20 +34,24 @@ public struct APIClient: Sendable {
     session: Session,
     userAgent: UserAgent,
     clock: any Clock<Duration> = ContinuousClock(),
-    timeout: Duration = .seconds(30)
+    timeout: Duration = .seconds(30),
+    diagnostics: any DiagnosticsReporter = .none
   ) {
     instance = session.instance
     token = session.token
     self.userAgent = userAgent
     self.clock = clock
     self.timeout = timeout
+    self.diagnostics = diagnostics
   }
 
   // MARK: - The routes
 
-  /// `GET /health`: the instance's version. It needs no token.
+  /// `GET /health`: the instance's version. It needs no token. The version tags every event of diagnostics.
   public func health() async throws(APIError) -> Health {
-    try await load(.health)
+    let health = try await load(.health)
+    diagnostics.wishboneVersion(ServerVersion(health.version))
+    return health
   }
 
   /// `POST /login-links/redeem`: uses the link, and starts a bearer session. The link works once.
@@ -320,15 +327,34 @@ public struct APIClient: Sendable {
   }
 
   /// Every request goes through here: the user agent, the token, the time limit, the log, the strict test for the
-  /// API's own answers, and the rule for an unreachable instance.
+  /// API's own answers, the rule for an unreachable instance, and diagnostics.
   ///
   /// Nil is a 304 for a request with `If-None-Match`: the answer that the request named still holds.
+  ///
+  /// Diagnostics: each request leaves a breadcrumb of its method, its path template, and its status class. Each
+  /// error is reported as its side asks (see `APIError`).
   private func answer<Response>(to endpoint: Endpoint<Response>) async throws(APIError) -> Answer<Response>? {
+    do {
+      return try await exchange(endpoint)
+    } catch {
+      diagnostics.report(error)
+      throw error
+    }
+  }
+
+  /// One request and its answer. Each way that it ends goes through `ended`, once.
+  private func exchange<Response>(_ endpoint: Endpoint<Response>) async throws(APIError) -> Answer<Response>? {
     let route = endpoint.route
+    // The log line, and the breadcrumb: the route and the status, never the address, the query, a header, or a
+    // body.
+    func ended(_ outcome: StaticString, status: Int? = nil) {
+      Log.request(route, outcome, status: status)
+      diagnostics.leave(.request(route, StatusClass(status: status)))
+    }
     // A query parameter that the route doesn't name is never sent.
     let query = endpoint.query.filter { route.queryParameters.contains($0.name) }
     guard let url = instance.url(path: endpoint.path, query: query) else {
-      Log.request(route, "has no URL")
+      ended("has no URL")
       throw .unreachable(.notTheAPI)
     }
     var request = URLRequest(url: url)
@@ -361,7 +387,7 @@ public struct APIClient: Sendable {
         }
       }
       guard let response = response as? HTTPURLResponse else {
-        Log.request(route, "is not HTTP")
+        ended("is not HTTP")
         throw APIError.unreachable(.notTheAPI)
       }
       (data, answer) = (body, response)
@@ -369,16 +395,16 @@ public struct APIClient: Sendable {
       throw error
     } catch {
       if Task.isCancelled {
-        Log.request(route, "was cancelled")
+        ended("was cancelled")
         throw .cancelled
       }
       if let error = error as? URLError, Self.untrustedCertificate.contains(error.code) {
-        Log.request(route, "has a certificate that the device doesn't trust")
+        ended("has a certificate that the device doesn't trust")
         throw .unreachable(.untrustedCertificate)
       }
       // Apart from the certificate codes above: no network, a timeout, a DNS failure, another TLS failure, a
       // connection that closed. All are unreachable, and the rule depends on no one code of `URLError`.
-      Log.request(route, error is TimedOut ? "timed out" : "got no answer")
+      ended(error is TimedOut ? "timed out" : "got no answer")
       throw .unreachable(.noAnswer)
     }
 
@@ -388,28 +414,28 @@ public struct APIClient: Sendable {
     switch status {
     case 204 where Response.self == NoContent.self:
       // A route that answers with no body. Its answer is the status alone.
-      Log.request(route, "ok", status: status)
+      ended("ok", status: status)
       guard let none = NoContent() as? Response else { throw .undecodable(.init(route: route, keyPath: "")) }
       return Answer(body: none, etag: nil)
     case 200..<300:
       guard contentType == "application/json" else {
-        Log.request(route, "answer is not the API's", status: status)
+        ended("answer is not the API's", status: status)
         throw .unreachable(.notTheAPI)
       }
       do {
         let decoded = try await JSONCoding.decode(Response.self, from: data)
-        Log.request(route, "ok", status: status)
+        ended("ok", status: status)
         return Answer(body: decoded, etag: answer.value(forHTTPHeaderField: "ETag"))
       } catch {
         let undecodable = APIError.Undecodable(route: route, keyPath: JSONCoding.keyPath(of: error))
-        Log.request(route, "answer can't be decoded", status: status)
+        ended("answer can't be decoded", status: status)
         throw .undecodable(undecodable)
       }
     case 304 where endpoint.ifNoneMatch != nil:
-      Log.request(route, "not modified", status: status)
+      ended("not modified", status: status)
       return nil
     case 500..<600:
-      Log.request(route, "server error", status: status)
+      ended("server error", status: status)
       throw .unreachable(.noAnswer)
     default:
       // Only the API's own answer counts: a problem with a code. A 401 from a reverse proxy, an access gateway, or
@@ -417,14 +443,14 @@ public struct APIClient: Sendable {
       guard contentType == "application/problem+json",
         let problem = try? await JSONCoding.decode(Problem.self, from: data)
       else {
-        Log.request(route, "answer is not the API's", status: status)
+        ended("answer is not the API's", status: status)
         throw .unreachable(.notTheAPI)
       }
       let code = ErrorCode(problem.code)
-      Log.request(route, "refused", status: status)
+      ended("refused", status: status)
       if status == 401, code == .unauthorized { throw .unauthorized }
       if status == 410, code == .apiVersionRemoved { throw .appTooOld }
-      throw .refused(.init(status: status, code: code, detail: problem.detail, fields: problem.fields))
+      throw .refused(.init(route: route, status: status, code: code, detail: problem.detail, fields: problem.fields))
     }
   }
 

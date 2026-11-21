@@ -1,5 +1,7 @@
 import Foundation
 import Observation
+import Synchronization
+import WishboneAPI
 
 /// Diagnostics on this device: the switch, the diagnostics ID, and the rule for when the SDK starts. See "On by
 /// default, for each device, after a notice" and "Builds that send nothing" in `docs/spec.md`.
@@ -73,7 +75,17 @@ public final class Diagnostics {
   public private(set) var hasShownNotice: Bool
 
   /// Whether the SDK runs.
-  public private(set) var isRunning = false
+  public private(set) var isRunning = false {
+    didSet { recorder.isRunning = isRunning }
+  }
+
+  /// Where the app's own faults and breadcrumbs go: the app gives it to its device. It records nothing while the SDK
+  /// doesn't run, so with diagnostics off nothing is recorded.
+  public nonisolated var reporter: any DiagnosticsReporter {
+    recorder
+  }
+
+  private let recorder: Recorder
 
   /// The app's own random ID for this device, while diagnostics are on. It is never the user ID, the server's
   /// session ID, or anything the instance knows.
@@ -90,6 +102,7 @@ public final class Diagnostics {
     static let isOff = "WishboneDiagnostics.isOff"
     static let hasShownNotice = "WishboneDiagnostics.hasShownNotice"
     static let id = "WishboneDiagnostics.id"
+    static let wishboneVersion = "WishboneDiagnostics.wishboneVersion"
   }
 
   /// Reads the switch from `defaults`. It doesn't start the SDK: ``start()`` does.
@@ -99,6 +112,7 @@ public final class Diagnostics {
     self.build = build
     self.defaults = defaults
     self.folder = folder
+    recorder = Recorder(defaults: defaults, key: Key.wishboneVersion)
     isOn = !defaults.bool(forKey: Key.isOff)
     hasShownNotice = defaults.bool(forKey: Key.hasShownNotice)
     // While diagnostics are on, the device has an ID.
@@ -115,7 +129,9 @@ public final class Diagnostics {
   /// Starts the SDK when the rule allows it. The app calls it at launch. It does nothing when the SDK runs.
   public func start() {
     guard !isRunning, build.maySend, hasShownNotice, isOn, let id = diagnosticsID else { return }
-    SentryReporter.start(dsn: build.dsn, environment: build.environment, diagnosticsID: id, folder: folder)
+    SentryReporter.start(
+      dsn: build.dsn, environment: build.environment, diagnosticsID: id, folder: folder,
+      wishboneVersion: recorder.versionTag)
     isRunning = true
   }
 
@@ -137,7 +153,9 @@ public final class Diagnostics {
   private func turnOff() {
     defaults.set(true, forKey: Key.isOff)
     defaults.removeObject(forKey: Key.id)
-    // What is on disk goes first, so the SDK can't send it while it closes. Then once more, for what it wrote then.
+    // Nothing more is recorded from now. What is on disk goes first, so the SDK can't send it while it closes. Then
+    // once more, for what it wrote then.
+    recorder.isRunning = false
     deleteUnsent()
     if isRunning {
       SentryReporter.stop()
@@ -156,12 +174,79 @@ public final class Diagnostics {
   }
 }
 
+/// The reporter of the app: it hands each fault and breadcrumb to the SDK while the SDK runs, and drops it otherwise.
+/// It keeps the instance's Wishbone version in the app's own defaults, so an event at the next launch is tagged before
+/// the app reads `GET /health` again.
+nonisolated private final class Recorder: DiagnosticsReporter {
+  private struct State {
+    var isRunning = false
+    var version: ServerVersion?
+  }
+
+  private let state: Mutex<State>
+  // `UserDefaults` is safe to use from any thread.
+  nonisolated(unsafe) private let defaults: UserDefaults
+  private let key: String
+
+  init(defaults: UserDefaults, key: String) {
+    self.defaults = defaults
+    self.key = key
+    state = Mutex(State(version: defaults.string(forKey: key).flatMap(ServerVersion.init)))
+  }
+
+  var isRunning: Bool {
+    get { state.withLock { $0.isRunning } }
+    set { state.withLock { $0.isRunning = newValue } }
+  }
+
+  /// The tag of the instance's Wishbone version.
+  var versionTag: String {
+    Scrubber.versionTag(state.withLock { $0.version })
+  }
+
+  func capture(_ fault: Fault) {
+    guard isRunning else { return }
+    SentryReporter.capture(fault)
+  }
+
+  func leave(_ breadcrumb: Breadcrumb) {
+    guard isRunning else { return }
+    SentryReporter.leave(breadcrumb)
+  }
+
+  func wishboneVersion(_ version: ServerVersion?) {
+    let isRunning = state.withLock { state in
+      state.version = version
+      return state.isRunning
+    }
+    if let version { defaults.set(version.text, forKey: key) } else { defaults.removeObject(forKey: key) }
+    if isRunning { SentryReporter.tag(wishboneVersion: Scrubber.versionTag(version)) }
+  }
+}
+
 #if DEBUG
   extension Diagnostics {
+    /// For the tests only: an event and a breadcrumb with the text in every field that a caller of the SDK can set,
+    /// and the words in each field of runtime free text.
+    @_spi(Testing) public func sendPlanted(_ text: String, words: String) {
+      guard isRunning else { return }
+      SentryReporter.sendPlanted(text, words: words)
+    }
+
     /// For the tests only: sends a fixed probe event, with no words of its own, through the running SDK.
     @_spi(Testing) public func sendProbe() {
       guard isRunning else { return }
       SentryReporter.sendProbe()
+    }
+
+    /// For the tests only: the debug ID of the image that ``sendPlanted(_:words:)`` plants.
+    @_spi(Testing) public nonisolated static var plantedImageID: String {
+      SentryReporter.plantedImageID
+    }
+
+    /// For the tests only: the part of a file's path that an event keeps. See ``Scrubber/pathInsideBundle(_:)``.
+    @_spi(Testing) public nonisolated static func pathInsideBundle(_ path: String) -> String {
+      Scrubber.pathInsideBundle(path)
     }
 
     /// For the tests only: waits until the SDK has tried to send what it holds.
