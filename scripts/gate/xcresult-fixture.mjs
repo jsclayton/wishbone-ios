@@ -14,7 +14,7 @@ export function testResults(tests, { runFailed } = {}) {
   for (const [name, outcome] of Object.entries(tests)) {
     const [bundle, identifier] = [name.slice(0, name.indexOf('.')), name.slice(name.indexOf('.') + 1)];
     const suite = identifier.split('/')[0];
-    const node = { name: identifier.split('/')[1], nodeIdentifier: identifier, nodeType: 'Test Case', result: results[outcome] ?? 'Failed' };
+    const node = { durationInSeconds: 1.5, name: identifier.split('/')[1], nodeIdentifier: identifier, nodeType: 'Test Case', result: results[outcome] ?? 'Failed' };
     if (details[outcome] !== undefined) node.children = [{ name: 'planted', nodeType: details[outcome] }];
     if (outcome === 'fail-case') {
       node.children = [

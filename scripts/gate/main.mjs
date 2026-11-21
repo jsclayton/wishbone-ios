@@ -84,10 +84,6 @@ const steps = [
     check: ({ exit }) => checkResultBundles(resultBundles(simulatorDirectory), { exit, allowedSkips }),
     // The simulator belongs to the system, so stopping the step's processes at its limit leaves it running.
     after: shutDownSimulator,
-    // On CI, the first calls to a newly booted simulator wait minutes for it to be ready. So there, the gate boots
-    // it and makes it ready while steps 1 to 4 run. CI's runner has one gate, so the warm-up needs no slot. On a
-    // Mac with several checkouts, the simulator is shared and in the slot, so the step boots it, in its turn.
-    warmUp: process.env.CI ? { command: ['node', 'scripts/gate/simulator.mjs', '--warm-up'], limitMs: 15 * minute } : undefined,
   },
 ];
 

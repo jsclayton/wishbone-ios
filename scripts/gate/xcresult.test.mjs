@@ -110,3 +110,9 @@ test('the check passes the named list of skips on', () => {
   assert.equal(check(tiers, bundles).fail, `the hosted tests: 1 skipped, and not on the named list: ${item}`);
   assert.equal(check(tiers, bundles, { allowedSkips: [item] }).fail, undefined);
 });
+
+test("a reading holds the time that its tests took, without Xcode's own time around them", () => {
+  assert.equal(readTestResults(testResults({ [item]: 'pass', [signIn]: 'pass' })).testsMs, 3000);
+  assert.equal(readTestResults({ testNodes: [] }).testsMs, 0);
+  assert.equal(readTestResults({}).testsMs, null);
+});

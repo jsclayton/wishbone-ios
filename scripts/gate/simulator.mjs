@@ -73,17 +73,16 @@ export const journeyRuns = [
 
 /**
  * Reads the script's arguments: the results folder, then the flags, in any order. `--no-build` runs the tests that
- * `just build` built. `--warm-up` is the gate's warm-up on CI (see `warmUpSimulator`). A word that starts with `--`
- * is a flag, never the folder.
+ * `just build` built. A word that starts with `--` is a flag, never the folder.
  */
 export function parseArguments(args) {
-  const known = ['--no-build', '--warm-up'];
+  const known = ['--no-build'];
   const flags = args.filter((arg) => arg.startsWith('--'));
   const words = args.filter((arg) => !arg.startsWith('--'));
   const unknown = flags.filter((flag) => !known.includes(flag));
-  if (unknown.length > 0) throw new Error(`unknown flag ${unknown.join(', ')}. The flags are ${known.join(' and ')}`);
+  if (unknown.length > 0) throw new Error(`unknown flag ${unknown.join(', ')}. The flag is ${known.join(', ')}`);
   if (words.length > 1) throw new Error(`one results folder, not ${words.length}: ${words.join(', ')}`);
-  return { results: words[0] ?? path.join('build', 'simulator'), build: !flags.includes('--no-build'), warmUp: flags.includes('--warm-up') };
+  return { results: words[0] ?? path.join('build', 'simulator'), build: !flags.includes('--no-build') };
 }
 
 /** The result bundles of a run, for `checkResultBundles`: the hosted tests, and each run of the journeys. */
@@ -261,8 +260,7 @@ function holdStatusBar(simulator) {
 
 /**
  * Boots the gate's simulator, holds its status bar still, and puts it in the default settings, with a line for
- * each part and its time. On a new CI runner, the first calls after the boot wait minutes for the simulator to be
- * ready, so the gate starts this early there (see `warmUpSimulator`). Returns `{ simulator, applier }`: the
+ * each part and its time. Returns `{ simulator, applier }`: the
  * simulator's ID, and the `settingsApplier` that knows its settings.
  */
 export function prepareSimulator({ say = console.log } = {}) {
@@ -278,30 +276,6 @@ export function prepareSimulator({ say = console.log } = {}) {
   const applier = settingsApplier(simulator);
   timed('Put the simulator in the default settings', () => applier.apply(settings[0]));
   return { simulator, applier };
-}
-
-/**
- * The gate's warm-up of the simulator step, on CI: it boots the simulator and makes it ready while the gate's
- * first four steps run. The simulator step then finds it ready. The warm-up leaves the simulator running: the
- * step, or the gate when the step doesn't run, shuts it down.
- */
-export function warmUpSimulator({ say = console.log } = {}) {
-  // DIAGNOSTIC, to be removed: the busiest processes every 10 seconds, and the runtime's dyld cache.
-  const sampler = spawn('sh', ['-c', 'while true; do echo "--- $(date -u +%H:%M:%S) load $(sysctl -n vm.loadavg)"; ps -Ao pcpu=,comm= -r | head -n 12; sleep 10; done'], { stdio: ['ignore', 'inherit', 'inherit'] });
-  try {
-    const started = Date.now();
-    try {
-      say(execFileSync('xcrun', ['simctl', 'runtime', 'dyld_shared_cache', 'update', '--all'], { encoding: 'utf8' }));
-    } catch (error) {
-      say(`dyld_shared_cache update failed: ${error.message}`);
-    }
-    say(`✓ Updated the dyld shared caches (${duration(Date.now() - started)})`);
-    prepareSimulator({ say });
-    say('--- ready; sampling for 3 more minutes');
-    execFileSync('sleep', ['180']);
-  } finally {
-    sampler.kill();
-  }
 }
 
 /** Runs `xcodebuild` with its output in a log file. Resolves with its exit code. */
@@ -333,10 +307,13 @@ export async function runSimulatorTier({ root, directory, build = true, say = co
   const run = async (what, args, { log, bundle, env }) => {
     const started = Date.now();
     const exit = await xcodebuild(args, { root, log: path.join(directory, log), env });
-    const problem = bundle === undefined ? null : judge(readResultBundle(bundle));
+    const reading = bundle === undefined ? null : readResultBundle(bundle);
+    const problem = reading === null ? null : judge(reading);
     const ok = exit === 0 && problem === null;
     const why = problem ?? `xcodebuild ended with ${exit}`;
-    say(ok ? `✓ ${what} (${duration(Date.now() - started)})` : `✗ ${what}: ${why} (log: ${relative(path.join(directory, log))})`);
+    // The rest of a run's time is Xcode's own: installing the app, and launching the test runner.
+    const tests = reading?.testsMs == null ? '' : `, the tests ${duration(reading.testsMs)}`;
+    say(ok ? `✓ ${what} (${duration(Date.now() - started)}${tests})` : `✗ ${what}: ${why} (log: ${relative(path.join(directory, log))})`);
     return ok;
   };
 
@@ -401,11 +378,7 @@ export async function runSimulatorTier({ root, directory, build = true, say = co
 if (import.meta.main) {
   const root = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8', cwd: path.dirname(fileURLToPath(import.meta.url)) }).trim();
   try {
-    const { results, build, warmUp } = parseArguments(process.argv.slice(2));
-    if (warmUp) {
-      warmUpSimulator();
-      process.exit(0);
-    }
+    const { results, build } = parseArguments(process.argv.slice(2));
     const directory = path.resolve(root, results);
     // Under the gate, the gate holds the slot. By itself, the run takes it, so it never breaks another
     // checkout's gate on the one simulator.

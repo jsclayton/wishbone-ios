@@ -152,11 +152,10 @@ test("the build's line counts the Swift files that it compiled, and a build with
 
 test('the results folder and the flags come in any order, and a flag is never the folder', () => {
   const folder = path.join('build', 'simulator');
-  assert.deepEqual(parseArguments([]), { results: folder, build: true, warmUp: false });
-  assert.deepEqual(parseArguments(['--no-build']), { results: folder, build: false, warmUp: false });
-  assert.deepEqual(parseArguments(['out', '--no-build']), { results: 'out', build: false, warmUp: false });
-  assert.deepEqual(parseArguments(['--no-build', 'out']), { results: 'out', build: false, warmUp: false });
-  assert.deepEqual(parseArguments(['--warm-up']), { results: folder, build: true, warmUp: true });
+  assert.deepEqual(parseArguments([]), { results: folder, build: true });
+  assert.deepEqual(parseArguments(['--no-build']), { results: folder, build: false });
+  assert.deepEqual(parseArguments(['out', '--no-build']), { results: 'out', build: false });
+  assert.deepEqual(parseArguments(['--no-build', 'out']), { results: 'out', build: false });
   assert.throws(() => parseArguments(['--nobuild']), /unknown flag --nobuild/);
   assert.throws(() => parseArguments(['one', 'two']), /one results folder, not 2/);
 });
