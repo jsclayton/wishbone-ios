@@ -10,3 +10,7 @@ pre-commit:
   jobs:
     - name: no-agent-scratch
       run: "! git diff --cached --name-only | grep -E '^(\\.agent|\\.claude|\\.beads)/|\\.local\\.md$'"
+    # It reports, and never rewrites a file. Run `just fmt` to fix what it finds.
+    - name: swift-format
+      glob: "*.swift"
+      run: xcrun swift-format lint --strict {staged_files}

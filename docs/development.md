@@ -70,6 +70,7 @@ An xcconfig file treats `//` as the start of a comment. To write a URL in one, s
 | Recipe | What it does |
 |---|---|
 | `just gate` | Every check that a pull request must pass, in order (see [The gate](#the-gate)) |
+| `just build` | Builds the app and both extensions for the simulator, with zero warnings, and adds new strings to the String Catalog |
 | `just test` | The package tests on macOS, with `swift test` |
 | `just lint` | `swift-format lint --strict`, actionlint and shellcheck, and the docs check |
 | `just fmt` | Formats the Swift files with swift-format |
@@ -89,6 +90,7 @@ WidgetExtension/    The widget extension: the countdown widget and the Add item 
 WishboneKit/        The local Swift package: the modules (see architecture.md) and their tests
 Config/             Shared.xcconfig, and your own Local.xcconfig
 AppStore/           The App Store listing, as files
+scripts/            The scripts that the recipes run
 docs/               The spec, the ADRs, and the guides
 ```
 
