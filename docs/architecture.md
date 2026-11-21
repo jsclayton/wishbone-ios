@@ -58,7 +58,7 @@ See [ADR 0003](adr/0003-one-session-model-is-shared-by-every-window-with-no-view
 See [ADR 0004](adr/0004-the-api-client-is-written-by-hand-and-checked-against-a-pinned-copy-of-the-servers-openapi-document.md).
 
 - One `APIClient` on `URLSession`, not `@MainActor`, built from the session's instance address and token.
-- Every request goes through one private load: the user agent, the redaction of logs, the strict test for the API's own 401 and 410, and the rule for an unreachable instance.
+- Every request goes through one private load: the user agent, the redaction of logs, the strict test for the API's own 401 and 410, the one resend of a write that is safe to repeat after a lost connection, and the rule for an unreachable instance.
 - Endpoints are typed values (method, path template, query, and body), so a test can list every route the app calls.
 - Models ignore unknown keys. Every enum has an `unknown(String)` case. A field that can be hidden keeps "absent" apart from `null` where it matters.
 - Error codes are one open enum, with `unknown(String)`.

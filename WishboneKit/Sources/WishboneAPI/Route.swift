@@ -106,6 +106,20 @@ public enum Route: String, Sendable, CaseIterable {
   /// What every collection takes: the size of a page, and the place of the next one.
   private static let paging = ["limit", "cursor"]
 
+  /// The headers that the client sends on the route, beyond the ones that every request has (`User-Agent`,
+  /// `Accept`, and `Authorization` and `Content-Type` where they apply).
+  public var sentHeaders: [String] {
+    switch self {
+    case .versions: ["If-None-Match"]
+    // A key makes the time zone report safe to send once more after a lost connection.
+    case .updateMe: ["Idempotency-Key"]
+    case .health, .redeemLoginLink, .users, .user, .groups, .group, .groupUsers, .groupGroups, .occasions, .occasion,
+      .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation, .gifts, .gift,
+      .blockedStores, .revokeCurrentSession, .confirmProfile, .uploadImage:
+      []
+    }
+  }
+
   /// The fields of the JSON body that the client sends. `POST /images` sends the bytes of a file, not JSON.
   public var sentFields: [String] {
     switch self {
@@ -162,6 +176,11 @@ struct Endpoint<Response: Model>: Sendable {
   /// The `ETag` of an earlier answer of the route. The server then answers 304, with no body, when its answer
   /// would be that one again. Only `GET /versions` takes it.
   var ifNoneMatch: String?
+
+  /// The `Idempotency-Key` of a write. A repeat of the write with the same key gets the first answer again, and
+  /// the server does no work again. So the client may send a write with a key once more when its connection was
+  /// lost. Each write has its own key, made with the endpoint, and its repeat has the same one.
+  var idempotencyKey: String?
 
   /// The path under `/api/v2`, with each parameter in its place.
   var path: String {
@@ -271,7 +290,7 @@ extension Endpoint where Response == User {
 
   /// Only the session's own user, `me`, is ever patched with a zone. The app never reports a child's.
   static func reportTimeZone(_ identifier: String) -> Endpoint {
-    Endpoint(route: .updateMe, body: UserChanges(timezone: identifier))
+    Endpoint(route: .updateMe, body: UserChanges(timezone: identifier), idempotencyKey: UUID().uuidString)
   }
 
   /// A merge patch of the session's own user.

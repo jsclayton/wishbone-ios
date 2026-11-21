@@ -129,8 +129,17 @@ public final class NetworkConditioner: Sendable {
     core.add(.init(route: route, action: .answer(answer)))
   }
 
+  /// Closes the connection of the next `count` requests that match the route, with no answer, as a server or a
+  /// reverse proxy does to a kept connection that it has just closed when the next request comes on it. The
+  /// request never reaches the server. A request after those passes through, unless another rule says otherwise.
+  ///
+  /// `URLSession` reports the lost connection to the code under test as `networkConnectionLost`.
+  public func loseConnection(_ route: Route, count: Int = 1) {
+    core.add(.init(route: route, action: .lose(Losses(count))))
+  }
+
   /// Goes back to passing every request through: it stops dropping, releases every hold, and forgets every canned
-  /// answer.
+  /// answer and every lost connection still to come.
   public func passEverything() {
     core.passEverything()
   }
@@ -245,6 +254,24 @@ public final class NetworkConditioner: Sendable {
     }
   }
 
+  /// How many more requests on a route lose their connection.
+  final class Losses: Sendable {
+    private let left: Mutex<Int>
+
+    init(_ count: Int) {
+      left = Mutex(count)
+    }
+
+    var isOver: Bool {
+      left.withLock { $0 <= 0 }
+    }
+
+    /// Takes one loss for a request.
+    func take() {
+      left.withLock { $0 = max($0 - 1, 0) }
+    }
+  }
+
   /// An answer that the conditioner gives in the server's place.
   public struct CannedAnswer: Sendable {
     public var status: Int
@@ -282,14 +309,20 @@ extension NetworkConditioner {
     enum Action: Sendable {
       case hold(Hold)
       case answer(CannedAnswer)
+      case lose(Losses)
     }
 
     let route: Route
     let action: Action
 
-    /// A hold that the test released is over, so it must not hide an older rule for its route.
+    /// A hold that the test released is over, and so are losses that have all happened. Neither must hide an
+    /// older rule for its route.
     var isInForce: Bool {
-      if case .hold(let hold) = action { !hold.isReleased } else { true }
+      switch action {
+      case .hold(let hold): !hold.isReleased
+      case .answer: true
+      case .lose(let losses): !losses.isOver
+      }
     }
   }
 
@@ -413,17 +446,25 @@ extension NetworkConditioner {
       do {
         var reader = HTTPReader(connection: connection)
         guard let request = try await reader.request() else { return }
-        let rule = state.withLock { state in
+        let rule = state.withLock { state -> Rule? in
           var headers: [String: String] = [:]
           for (name, value) in request.headers {
             headers[name.lowercased()] = value
           }
           state.requests.append(
             SeenRequest(method: request.method, target: request.target, headers: headers, body: request.body))
-          return state.rules.first { $0.isInForce && $0.route.matches(method: request.method, target: request.target) }
+          let rule = state.rules.first {
+            $0.isInForce && $0.route.matches(method: request.method, target: request.target)
+          }
+          // A loss is taken under the lock that found it in force, so two requests at once never both take the last.
+          if case .lose(let losses) = rule?.action { losses.take() }
+          return rule
         }
         let answer: CannedAnswer
         switch rule?.action {
+        case .lose:
+          // The connection closes with no answer when `serve` returns.
+          return
         case .answer(let canned):
           answer = canned
         case .hold(let hold) where hold.point == .request:

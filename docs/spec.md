@@ -141,6 +141,7 @@ Two ways in, one way to get help, and nothing to type.
 - Unreachable is: no network, a timeout, a DNS or TLS failure, a 5xx, and any answer that is not the API's own. An instance on a tailnet is unreachable whenever the VPN is off, so this is common for some families.
 - When signed in, the app keeps the session and shows the line "Can't reach {address}", which blocks nothing. What screens show meanwhile is in section 10.
 - During sign-in, the app keeps the link and offers Try again. If the answer was lost on the way back, the retry reports a used link, and the user needs a new one.
+- A server or a reverse proxy closes a kept connection that has been idle, and a request that goes on it at that moment is lost before any answer (`networkConnectionLost`). `URLSession` sends a `GET` again on a new connection by itself. The app sends a write once more, on a new connection, only when the write is safe to repeat: idempotent by HTTP (`PUT`, `DELETE`, or `PATCH` with `If-Match`), or with an `Idempotency-Key`. So a sign-out doesn't say "Can't reach" for that alone, and a time zone report isn't lost to it. A write that is not safe to repeat, such as a redeem, is never sent again. Each write is sent at most twice, inside one time limit.
 - A certificate that the device does not trust gets its own message, with no bypass and no "trust anyway" button. An admin with a private certificate authority installs it on the device, or serves plain HTTP inside the tailnet.
 - The extensions keep the session too. The widget keeps its last file.
 
@@ -196,7 +197,7 @@ This screen is in Settings (section 3). Settings itself has the **Signed in** bl
 
 ### Time zone
 
-- After sign-in, and each time the app comes to the foreground, the app compares the device's time zone with `timezone` on the user's record. If they differ, it sends `PATCH /users/me` with the IANA name.
+- After sign-in, and each time the app comes to the foreground, the app compares the device's time zone with `timezone` on the user's record. If they differ, it sends `PATCH /users/me` with the IANA name, and an `Idempotency-Key` of its own, so the report is safe to repeat.
 - It shows nothing and doesn't wait. A failure changes nothing, and the next foreground tries again.
 - It reports only the signed-in user's own zone, never a child's. Only the app reports, never an extension. The last report wins, and there is no setting.
 
