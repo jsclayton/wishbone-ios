@@ -78,9 +78,17 @@ sync-strings:
 # Test
 # ============================================================================
 
-# Run the package tests on macOS. It passes its arguments to `swift test`
+# Fetch and build the pinned Wishbone server that the tests run against, or reuse the built one
+server:
+    node scripts/server/build.mjs
+
+# Take the copy of the pinned server's OpenAPI document again. Run it when the pin moves
+server-openapi:
+    node scripts/server/openapi.mjs
+
+# Run the package tests on macOS, against the pinned server. It passes its arguments to `swift test`
 [positional-arguments]
-test *args:
+test *args: server
     swift test --package-path WishboneKit "$@"
 
 # ============================================================================
@@ -105,9 +113,9 @@ lint-ci:
 lint-docs:
     node scripts/check-docs.mjs
 
-# Run the tests of the gate's own scripts
+# Run the tests of the gate's own scripts, and of the script that builds the test server
 test-gate:
-    node --test 'scripts/gate/*.test.mjs'
+    node --test 'scripts/gate/*.test.mjs' 'scripts/server/*.test.mjs'
 
 # Format the Swift files in place with swift-format
 fmt:

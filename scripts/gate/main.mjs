@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import process from 'node:process';
 
+import { builtServerProblem } from '../server/build.mjs';
 import { readFloor, runGate } from './gate.mjs';
 import { checkEventStream } from './reading.mjs';
 import { slotDirectory } from './slot.mjs';
@@ -33,7 +34,15 @@ const steps = [
   },
   {
     name: 'server',
-    skip: 'no test needs the test server yet',
+    command: ['just', 'server'],
+    // A first build fetches the server's source, and can install the Go that it names.
+    limitMs: 10 * minute,
+    check: ({ exit }) => {
+      if (exit !== 0) return {};
+      // The step must leave a server that the package tests can start: built from the pin, and stamped.
+      const problem = builtServerProblem(root);
+      return problem === null ? {} : { fail: problem };
+    },
   },
   {
     name: 'package',
