@@ -11,6 +11,9 @@
         }
       }
     },
+    "Add" : {
+
+    },
     "Can't reach %@" : {
 
     },
@@ -23,19 +26,37 @@
     "Diagnostics settings" : {
 
     },
+    "Gifts" : {
+
+    },
+    "Home" : {
+
+    },
     "I don't have a link" : {
 
     },
     "If Wishbone crashes, it sends a report to its developer, never anything from your family's lists." : {
 
     },
+    "Lists" : {
+
+    },
     "No Wishbone found at %@" : {
+
+    },
+    "Not here" : {
 
     },
     "Nothing on this list yet." : {
 
     },
     "Open Settings" : {
+
+    },
+    "Paste a link or type what you want" : {
+
+    },
+    "People" : {
 
     },
     "Point the camera at the QR code of your login link." : {
@@ -81,6 +102,9 @@
 
     },
     "Wishbone needs the camera to scan a QR code. You can turn it on in Settings, or paste a link." : {
+
+    },
+    "Your lists" : {
 
     }
   },

@@ -16,7 +16,9 @@ enum StringBundle {
   static let unlabeledLiteral = #"\b(\w+)\s*(\()\s*\[?\s*#*""#
 
   /// The calls in `WishboneUI` that take a string literal with no label and show no words. Each has a reason.
-  static let callsThatShowNoWords: [String: String] = [:]
+  static let callsThatShowNoWords = [
+    "SceneStorage": "The key that a window's saved place is kept under, as in @SceneStorage(\"WindowPlace\")"
+  ]
 
   /// In `WishboneUI`, any argument that is a string literal with a label, such as `prompt: "Search"`. SwiftUI
   /// reads it as a key in the main bundle too. Give the argument a `Text` with a bundle instead.
