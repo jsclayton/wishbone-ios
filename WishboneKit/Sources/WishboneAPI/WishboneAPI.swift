@@ -2,4 +2,4 @@
 // the version check, and the one `Logger` file. It builds on macOS and iOS. The app, the share extension, and the
 // widget extension link it.
 //
-// See "Modules" in docs/architecture.md. The module holds nothing yet.
+// See "Modules" in docs/architecture.md. The module holds only the minimum server version yet.

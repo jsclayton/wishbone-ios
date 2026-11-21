@@ -108,3 +108,31 @@ test('the count is the last end of the run, not a line a test printed', () => {
   const log = xctestLog({ 'Tests.OldTests/testA': 'pass' }).replace('Test Case', `${printed}Test Case`);
   assert.equal(readXCTestLog(log).tests, 1);
 });
+
+// `swift test` runs each test target in a process of its own, and each writes its run to the one stream.
+test('a stream with the runs of several test targets gives the sum of their counts', () => {
+  const first = eventStream({ 'APITests.Suite/a()/S.swift:1:2': 'pass', 'APITests.Suite/b()/S.swift:2:2': 'pass' });
+  const second = eventStream({ 'FitnessTests.Suite/c()/S.swift:1:2': 'pass' });
+  const reading = readEventStream(first + second);
+  assert.equal(reading.tests, 3);
+  assert.equal(judge(reading), null);
+});
+
+test('a failure in the run of an earlier test target fails, when the last run passes', () => {
+  const first = eventStream({ 'APITests.Suite/a()/S.swift:1:2': 'fail' });
+  const second = eventStream({ 'FitnessTests.Suite/c()/S.swift:1:2': 'pass' });
+  const reading = readEventStream(first + second);
+  assert.equal(reading.tests, 2);
+  assert.equal(reading.runFailed, true);
+  assert.equal(judge(reading), '1 failed: APITests.Suite/a()');
+});
+
+test('a stream where the run of one test target died has no summary', () => {
+  const died = eventStream({ 'APITests.Suite/a()/S.swift:1:2': 'pass' }, { ended: false });
+  const whole = eventStream({ 'FitnessTests.Suite/c()/S.swift:1:2': 'pass' });
+  for (const text of [died + whole, whole + died]) {
+    const reading = readEventStream(text);
+    assert.equal(reading.tests, null);
+    assert.equal(judge(reading), 'the test run has no summary');
+  }
+});

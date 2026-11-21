@@ -109,17 +109,24 @@ jobs:
         with:
           install_args: node just go actionlint shellcheck
           minimum_release_age: 3d
+      # Go builds the test server, so a change of Go builds it again.
+      - name: Read Go's version
+        id: go
+        run: echo "version=$(go env GOVERSION)" >> "$GITHUB_OUTPUT"
       # The three caches that docs/development.md names. Each is keyed on a
       # file, and is skipped until that file exists:
       # - The pin file is the one file named `server-pin` that holds the commit
-      #   of the test server. The server is built under build/server/.
+      #   of the test server. The server is built under build/server/. Its key
+      #   also holds Go's version, and the scripts that hold the build's recipe:
+      #   `just server` builds again when one of them changes, and a cache with
+      #   the old key would never get the new build.
       # - Package.resolved appears with the first remote package.
       - name: Cache the built test server
         if: hashFiles('**/server-pin*') != ''
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: build/server
-          key: server-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/server-pin*') }}
+          key: server-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.version }}-${{ hashFiles('**/server-pin*', 'scripts/server/build.mjs', 'scripts/server/pin.mjs') }}
       - name: Cache Go's caches
         if: hashFiles('**/server-pin*') != ''
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

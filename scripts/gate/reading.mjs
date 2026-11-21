@@ -17,9 +17,13 @@ function testName(id) {
 /**
  * Reads an event stream.
  *
- * Returns `{ tests, failed, known, skipped, strayIssues, summary }`. `tests` is the count in Swift Testing's
- * summary, or null when the stream has no summary: the run didn't finish. The lists hold test names. `skipped`
- * holds each test that was skipped, that cancelled itself, or that had a case cancelled.
+ * `swift test` runs each test target in a process of its own, and each writes its run to the one stream. So a
+ * stream can hold several runs, and the reading is of them all.
+ *
+ * Returns `{ tests, runFailed, failed, known, skipped, strayIssues, summary }`. `tests` is the sum of the counts
+ * in Swift Testing's summaries, or null when a run has no summary: it didn't finish. `runFailed` says whether a
+ * run's summary says that it failed, and `summary` is that summary, or else the last one. The lists hold test
+ * names. `skipped` holds each test that was skipped, that cancelled itself, or that had a case cancelled.
  */
 export function readEventStream(text) {
   const kinds = new Map();
@@ -27,7 +31,8 @@ export function readEventStream(text) {
   const known = new Set();
   const skipped = new Set();
   let strayIssues = 0;
-  let summary = null;
+  let started = 0;
+  const summaries = [];
 
   for (const line of text.split('\n')) {
     if (line.trim() === '') continue;
@@ -62,16 +67,25 @@ export function readEventStream(text) {
         // A suite that is skipped reports each of its tests too.
         if (kinds.get(payload.testID) !== 'suite') skipped.add(testName(payload.testID));
         break;
+      case 'runStarted':
+        started += 1;
+        break;
       case 'runEnded':
-        summary = (payload.messages ?? []).map((message) => message.text).join(' ');
+        summaries.push((payload.messages ?? []).map((message) => message.text).join(' '));
         break;
     }
   }
 
-  const count = summary?.match(/^Test run with (\d+) tests? in \d+ suites? (passed|failed)\b/);
+  const runs = summaries.map((text) => {
+    const count = text.match(/^Test run with (\d+) tests? in \d+ suites? (passed|failed)\b/);
+    return count ? { text, tests: Number(count[1]), failed: count[2] === 'failed' } : null;
+  });
+  // Every run that started must have a summary that reads.
+  const whole = runs.length > 0 && runs.length >= started && !runs.includes(null);
+  const summary = (whole ? runs.find((run) => run.failed)?.text : undefined) ?? summaries.at(-1) ?? null;
   return {
-    tests: count ? Number(count[1]) : null,
-    runFailed: count ? count[2] === 'failed' : null,
+    tests: whole ? runs.reduce((sum, run) => sum + run.tests, 0) : null,
+    runFailed: whole ? runs.some((run) => run.failed) : null,
     failed: [...failed].sort(),
     known: [...known].sort(),
     skipped: [...skipped].sort(),

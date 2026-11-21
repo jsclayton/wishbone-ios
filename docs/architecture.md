@@ -35,6 +35,7 @@ Where each rule lives in the code, and the rules that hold the code together. Wh
 | The storefront check for the support row | The app target's UI | The one file that imports StoreKit. Never in an extension. |
 | The widget's file | `WishboneSession` writes it, the widget reads it | A JSON file of occasions only, in the shared container. |
 | The accent color | Each thin target's `AccentColor` | A test holds the three equal. |
+| The pinned test server | `WishboneKit/Server/` | The pin file and the copy of the server's OpenAPI document. The contract test holds them against `minimumServerVersion` in `WishboneAPI`. See [A real server](development.md#a-real-server). |
 | Permission strings | Each target's `InfoPlist.xcstrings` | |
 
 ## State: the session model

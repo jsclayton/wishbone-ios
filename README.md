@@ -17,7 +17,7 @@ Gifts stay a surprise on the device too. The widget, reminders, and every other 
 ## Requirements
 
 - An iPhone or iPad with iOS or iPadOS 27 or later.
-- A Wishbone server that is new enough for this app. The app tells you if yours is too old.
+- A Wishbone server at version 2.2.0 or later. The app tells you if yours is older.
 
 ## Sign in
 
