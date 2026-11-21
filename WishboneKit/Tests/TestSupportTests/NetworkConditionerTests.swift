@@ -140,6 +140,21 @@ struct NetworkConditionerTests {
     #expect(try await TestHTTP.send("GET", conditioner.url("/health")).status == 503)
   }
 
+  @Test("A wait for a request that never comes ends when its task is cancelled")
+  func waitEndsWhenCancelled() async throws {
+    let hold = conditioner.hold(Route("GET", "/health"))
+    let waiting = Task { await hold.waitUntilHeld() }
+    // The time limit of a test cancels the test's task, as this does.
+    waiting.cancel()
+    await waiting.value
+
+    // The hold still holds: a request that comes later is held, and a wait for it returns.
+    async let held = TestHTTP.send("GET", conditioner.url("/health"))
+    await hold.waitUntilHeld()
+    hold.release()
+    #expect(try await held.status == 200)
+  }
+
   @Test("It answers a route with a canned response, and the request never reaches the server")
   func answersARoute() async throws {
     conditioner.answer(
