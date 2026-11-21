@@ -1,20 +1,26 @@
-// The simulator tier: the hosted test bundle, then the journeys, one at a time, on the gate's own simulator.
-// `just simulator` runs it, and it is step 5 of the gate. See "The simulator tier" in docs/development.md.
+// The simulator tier: the hosted test bundle, then the journeys, on the gate's own simulator. `just simulator`
+// runs it, and it is step 5 of the gate. See "The simulator tier" in docs/development.md.
 //
-// The journeys run once in each setting of `settings`. A journey can't change the simulator's settings from
-// inside the simulator, so this script changes them between the runs, with `simctl`.
+// It builds as `just build` does, with the same arguments, and runs the tests from that build's `.xctestrun`
+// file. Under the gate (`--no-build`), it doesn't build: step 4 is `just build`, so it runs step 4's build.
+//
+// The journeys run twice. In the first run, each journey audits each screen in the four settings of the audit:
+// the journey asks this script's settings helper, a small HTTP server on the Mac, to put the simulator in each
+// setting with `simctl`. The second run is in the double-length pseudo-language, which needs a new launch.
 //
 // Every `xcodebuild` writes its log, and its result bundle, to the results folder. The script prints one line for
 // each run.
 
 import { execFileSync, spawn } from 'node:child_process';
-import { createWriteStream, mkdirSync, rmSync } from 'node:fs';
+import { createWriteStream, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { createServer } from 'node:http';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { duration } from './gate.mjs';
 import { judge } from './reading.mjs';
+import { inSlot, slotDirectory } from './slot.mjs';
 import { readResultBundle } from './xcresult.mjs';
 
 /** The name of the gate's own simulator. The gate makes it when the machine has none. */
@@ -24,24 +30,67 @@ export const simulatorName = 'Wishbone gate';
 const preferredDevice = 'iPhone 18 Pro';
 
 /**
- * The settings that the journeys run in, with their accessibility audit: the default, the largest accessibility
- * text size, dark mode, and Increase Contrast. The last run is in the double-length pseudo-language, which shows
- * text that is cut short, and text that is not in the String Catalog.
+ * The arguments of the one build of the app and its test bundles, for the simulator, in `xcodebuild`'s order.
+ * `just build` (step 4 of the gate) builds with these, and so does this script, so the simulator step reuses
+ * step 4's build. A gate test holds the justfile to them.
+ */
+export const buildArguments = [
+  'build-for-testing',
+  '-project',
+  'Wishbone.xcodeproj',
+  '-scheme',
+  'Wishbone',
+  '-configuration',
+  'Debug',
+  '-destination',
+  'generic/platform=iOS Simulator',
+  '-derivedDataPath',
+  'build/DerivedData',
+  'ARCHS=arm64',
+];
+
+/**
+ * The settings of the accessibility audit: the default, the largest accessibility text size, dark mode, and
+ * Increase Contrast. A journey audits each screen in each of them, in one run. It asks the settings helper for
+ * each one by its name, and the helper puts the simulator in it, with every other setting at its default.
  */
 export const settings = [
   { name: 'default', label: 'the default settings' },
   { name: 'largest-text', label: 'the largest text size', contentSize: 'accessibility-extra-extra-extra-large' },
   { name: 'dark-mode', label: 'dark mode', appearance: 'dark' },
   { name: 'increase-contrast', label: 'Increase Contrast', increaseContrast: 'enabled' },
+];
+
+/**
+ * The runs of the journeys. In the first, each journey audits in each of the settings. The second is in the
+ * double-length pseudo-language, which shows text that is cut short, and text that is not in the String Catalog.
+ * It audits in the default settings.
+ */
+export const journeyRuns = [
+  { name: 'settings', label: 'the four settings of the audit', helper: true },
   { name: 'double-length', label: 'the double-length pseudo-language', doubleLength: true },
 ];
 
-/** The result bundles of a run, for `checkResultBundles`: the hosted tests, and the journeys in each setting. */
+/** The result bundles of a run, for `checkResultBundles`: the hosted tests, and each run of the journeys. */
 export function resultBundles(directory) {
   return {
     hosted: [{ path: path.join(directory, 'hosted.xcresult'), label: 'the hosted tests' }],
-    ui: settings.map((setting) => ({ path: path.join(directory, `journeys-${setting.name}.xcresult`), label: `the journeys in ${setting.label}` })),
+    ui: journeyRuns.map((run) => ({ path: path.join(directory, `journeys-${run.name}.xcresult`), label: `the journeys in ${run.label}` })),
   };
+}
+
+/** The number of Swift files that the build in the log compiled. */
+export function compiledFiles(log) {
+  return readFileSync(log, 'utf8')
+    .split('\n')
+    .filter((line) => /^(SwiftCompile|CompileSwift) /.test(line)).length;
+}
+
+/** The `.xctestrun` file that the build wrote to the products folder. The build writes one. */
+export function findTestRun(productsDirectory) {
+  const found = readdirSync(productsDirectory).filter((name) => name.endsWith('.xctestrun'));
+  if (found.length !== 1) throw new Error(`the build left ${found.length} .xctestrun files in ${productsDirectory}, not one`);
+  return path.join(productsDirectory, found[0]);
 }
 
 /** The numbers of a version, such as `27.2`, for a comparison. */
@@ -113,11 +162,60 @@ export function shutDownSimulator() {
   }
 }
 
+/** The `simctl` calls that put the simulator in the setting, with every other setting at its default. */
+export function settingCommands(setting, simulator) {
+  return [
+    ['ui', simulator, 'appearance', setting.appearance ?? 'light'],
+    ['ui', simulator, 'increase_contrast', setting.increaseContrast ?? 'disabled'],
+    ['ui', simulator, 'content_size', setting.contentSize ?? 'large'],
+  ];
+}
+
 /** Puts the simulator in the setting, and every other setting back to its default. */
 function apply(setting, simulator) {
-  simctl(['ui', simulator, 'appearance', setting.appearance ?? 'light']);
-  simctl(['ui', simulator, 'increase_contrast', setting.increaseContrast ?? 'disabled']);
-  simctl(['ui', simulator, 'content_size', setting.contentSize ?? 'large']);
+  for (const command of settingCommands(setting, simulator)) simctl(command);
+}
+
+/**
+ * The settings helper: an HTTP server on the Mac's loopback, at a free port, that a journey asks to put the
+ * simulator in a setting. `POST /settings/<name>` applies the setting of that name with `applySetting`, and
+ * answers 204 when it is applied. A name that is not a setting gets 404. The journey gets the helper's address in
+ * its environment, because a test can't change text size or Increase Contrast from inside the simulator.
+ *
+ * Resolves with `{ address, close }`.
+ */
+export function startSettingsHelper(applySetting) {
+  const server = createServer((request, response) => {
+    const match = /^\/settings\/([a-z-]+)$/.exec(request.url ?? '');
+    const setting = settings.find((one) => one.name === match?.[1]);
+    if (request.method !== 'POST' || setting === undefined) {
+      response.writeHead(404).end();
+      return;
+    }
+    Promise.resolve()
+      .then(() => applySetting(setting))
+      .then(
+        () => response.writeHead(204).end(),
+        (error) => response.writeHead(500, { 'Content-Type': 'text/plain' }).end(String(error?.message ?? error)),
+      );
+  });
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      resolve({
+        address: `http://127.0.0.1:${server.address().port}`,
+        close: () => new Promise((done) => server.close(() => done())),
+      });
+    });
+  });
+}
+
+/**
+ * A screenshot shows the status bar, and its clock moves. The journey waits for the screen to show a setting by
+ * comparing screenshots, so the clock and the rest of the bar are held still.
+ */
+function holdStatusBar(simulator) {
+  simctl(['status_bar', simulator, 'override', '--time', '9:41', '--dataNetwork', 'wifi', '--wifiBars', '3', '--batteryState', 'charged', '--batteryLevel', '100']);
 }
 
 /** Runs `xcodebuild` with its output in a log file. Resolves with its exit code. */
@@ -133,20 +231,23 @@ function xcodebuild(args, { root, log, env = {} }) {
 }
 
 /**
- * Builds the app and the test bundles, and runs the hosted tests and then the journeys in each setting. The
- * first run that fails ends it. Returns true when every run passed.
+ * Builds the app and the test bundles, and runs the hosted tests and then the journeys. The first run that fails
+ * ends it. Returns true when every run passed.
+ *
+ * With `build: false`, it doesn't build: it runs the tests that `just build` built. The gate asks for that, because
+ * its step 4 has just built them. On CI, a build next to a newly booted simulator took minutes, even with nothing
+ * to compile.
  */
-export async function runSimulatorTier({ root, directory, say = console.log }) {
+export async function runSimulatorTier({ root, directory, build = true, say = console.log }) {
   rmSync(directory, { recursive: true, force: true });
   mkdirSync(directory, { recursive: true });
   const simulator = findOrMakeSimulator();
-  const shared = ['-project', 'Wishbone.xcodeproj', '-scheme', 'Wishbone', '-destination', `platform=iOS Simulator,id=${simulator}`, '-derivedDataPath', 'build/DerivedData'];
   const relative = (file) => path.relative(root, file);
 
   /** One `xcodebuild` run, with its line. `bundle` is the result bundle that the run writes, if it runs tests. */
   const run = async (what, args, { log, bundle, env }) => {
     const started = Date.now();
-    const exit = await xcodebuild([...args, ...shared], { root, log: path.join(directory, log), env });
+    const exit = await xcodebuild(args, { root, log: path.join(directory, log), env });
     const problem = bundle === undefined ? null : judge(readResultBundle(bundle));
     const ok = exit === 0 && problem === null;
     const why = problem ?? `xcodebuild ended with ${exit}`;
@@ -154,26 +255,53 @@ export async function runSimulatorTier({ root, directory, say = console.log }) {
     return ok;
   };
 
+  let helper = null;
   try {
+    const bootStarted = Date.now();
     simctl(['bootstatus', simulator, '-b'], { stdio: 'ignore' });
-    if (!(await run('Built the app and the test bundles for the simulator', ['build-for-testing', '-configuration', 'Debug'], { log: 'build.log' }))) return false;
+    say(`✓ Booted the gate's simulator (${duration(Date.now() - bootStarted)})`);
+    if (build) {
+      if (!(await run('Built the app and the test bundles for the simulator', buildArguments, { log: 'build.log' }))) return false;
+      // After `just build`, the build has nothing to compile. The line says so.
+      say(`  It compiled ${compiledFiles(path.join(directory, 'build.log'))} Swift files.`);
+    }
+    const testRun = findTestRun(path.join(root, 'build', 'DerivedData', 'Build', 'Products'));
+    if (!build) say(`✓ Took the app and the test bundles from the gate's build step (${relative(testRun)})`);
+    holdStatusBar(simulator);
+    apply(settings[0], simulator);
 
     const bundles = resultBundles(directory);
-    const test = (only, bundle) => ['test-without-building', `-only-testing:${only}`, '-resultBundlePath', bundle, '-parallel-testing-enabled', 'NO'];
-    apply(settings[0], simulator);
+    const test = (only, bundle) => [
+      'test-without-building',
+      '-xctestrun',
+      testRun,
+      '-destination',
+      `platform=iOS Simulator,id=${simulator}`,
+      `-only-testing:${only}`,
+      '-resultBundlePath',
+      bundle,
+      '-parallel-testing-enabled',
+      'NO',
+    ];
     if (!(await run('The hosted tests', test('HostedTests', bundles.hosted[0].path), { log: 'hosted.log', bundle: bundles.hosted[0].path }))) return false;
 
-    for (const [index, setting] of settings.entries()) {
-      apply(setting, simulator);
+    helper = await startSettingsHelper((setting) => apply(setting, simulator));
+    for (const [index, journeys] of journeyRuns.entries()) {
+      apply(settings[0], simulator);
       // xcodebuild gives the test runner each variable that starts with TEST_RUNNER_, without that start.
-      const env = { TEST_RUNNER_WISHBONE_AUDIT_SETTING: setting.label, TEST_RUNNER_WISHBONE_DOUBLE_LENGTH: setting.doubleLength ? 'YES' : 'NO' };
+      const env = {
+        TEST_RUNNER_WISHBONE_SETTINGS_HELPER: journeys.helper ? helper.address : '',
+        TEST_RUNNER_WISHBONE_DOUBLE_LENGTH: journeys.doubleLength ? 'YES' : 'NO',
+      };
       const bundle = bundles.ui[index].path;
-      if (!(await run(`The journeys in ${setting.label}`, test('JourneyTests', bundle), { log: `journeys-${setting.name}.log`, bundle, env }))) return false;
+      if (!(await run(`The journeys in ${journeys.label}`, test('JourneyTests', bundle), { log: `journeys-${journeys.name}.log`, bundle, env }))) return false;
     }
     return true;
   } finally {
+    await helper?.close();
     try {
       apply(settings[0], simulator);
+      simctl(['status_bar', simulator, 'clear']);
     } catch {
       // The simulator is gone. The next run starts it, and sets it again.
     }
@@ -183,9 +311,18 @@ export async function runSimulatorTier({ root, directory, say = console.log }) {
 
 if (import.meta.main) {
   const root = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8', cwd: path.dirname(fileURLToPath(import.meta.url)) }).trim();
-  const directory = path.resolve(root, process.argv[2] ?? path.join('build', 'simulator'));
+  const [results, ...flags] = process.argv.slice(2);
+  const directory = path.resolve(root, results ?? path.join('build', 'simulator'));
+  const build = !flags.includes('--no-build');
   try {
-    process.exit((await runSimulatorTier({ root, directory })) ? 0 : 1);
+    // Under the gate, the gate holds the slot. By itself, the run takes it, so it never breaks another
+    // checkout's gate on the one simulator.
+    const passed = await inSlot(() => runSimulatorTier({ root, directory, build }), {
+      directory: slotDirectory(),
+      owner: `just simulator in ${root} (process ${process.pid})`,
+      onWait: (holder) => console.log(`── waiting for the gate slot${holder === '' ? '' : `, which ${holder} holds`}`),
+    });
+    process.exit(passed ? 0 : 1);
   } catch (error) {
     console.error(`✗ The simulator tests: ${error.message}`);
     process.exit(1);

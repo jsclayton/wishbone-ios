@@ -2,7 +2,8 @@
 //
 // A step is `{ name, command, limitMs }`, with these optional parts:
 // - `skip`: the reason why the step doesn't run yet. A skipped step is named in the result.
-// - `slot`: true when the step takes the machine-wide gate slot.
+// - `slot`: true when the step takes the machine-wide gate slot. The step runs with `WISHBONE_GATE_SLOT_HELD=1`
+//   in its environment, so a script that takes the slot by itself (`just simulator`) knows that the gate holds it.
 // - `counts`: the test counts that the step gives, such as `['package']`. Each is held against the floor.
 // - `check({ exit, logPath })`: reads the step's own results after it ends, and its log. It returns
 //   `{ fail, counts }`: `fail` is the reason why the step fails, and `counts` are its test counts.
@@ -12,7 +13,7 @@
 import { appendFileSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 
-import { takeSlot } from './slot.mjs';
+import { slotHeldVariable, takeSlot } from './slot.mjs';
 import { runStep } from './step.mjs';
 
 export const countNames = ['package', 'hosted', 'ui'];
@@ -111,7 +112,8 @@ export async function runGate({
       const logName = path.relative(root, logPath);
       let result;
       try {
-        result = await runStep({ command: step.command, limitMs: step.limitMs, logPath, cwd: root, signal, echo: out, onStart: (pid) => slot?.watch(pid) });
+        const env = step.slot ? { ...process.env, [slotHeldVariable]: '1' } : undefined;
+        result = await runStep({ command: step.command, limitMs: step.limitMs, logPath, cwd: root, env, signal, echo: out, onStart: (pid) => slot?.watch(pid) });
       } finally {
         await step.after?.();
       }

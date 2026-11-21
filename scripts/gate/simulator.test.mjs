@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { test } from 'node:test';
 
-import { gateSimulators, pickDevice, resultBundles, settings } from './simulator.mjs';
+import { buildArguments, compiledFiles, gateSimulators, journeyRuns, pickDevice, resultBundles, settingCommands, settings, startSettingsHelper } from './simulator.mjs';
 
 const iPhone = (name) => ({ name, identifier: `type.${name.replaceAll(' ', '-')}`, productFamily: 'iPhone' });
 const iPad = (name) => ({ name, identifier: `type.${name.replaceAll(' ', '-')}`, productFamily: 'iPad' });
@@ -46,15 +49,91 @@ test("the gate's simulators are the ones with its name, on any iOS", () => {
   assert.deepEqual(gateSimulators({}), []);
 });
 
-test('the journeys run in the four settings of the audit, and then in the double-length pseudo-language', () => {
-  assert.deepEqual(settings.map((setting) => setting.name), ['default', 'largest-text', 'dark-mode', 'increase-contrast', 'double-length']);
-  // The first setting is the default of each, so applying it puts the simulator back.
+test('the audit has four settings, and the first is the default of each', () => {
+  assert.deepEqual(settings.map((setting) => setting.name), ['default', 'largest-text', 'dark-mode', 'increase-contrast']);
+  // Applying the first setting puts the simulator back.
   assert.deepEqual(Object.keys(settings[0]), ['name', 'label']);
+  assert.deepEqual(settingCommands(settings[0], 'SIM'), [
+    ['ui', 'SIM', 'appearance', 'light'],
+    ['ui', 'SIM', 'increase_contrast', 'disabled'],
+    ['ui', 'SIM', 'content_size', 'large'],
+  ]);
 });
 
-test('a run has one result bundle for the hosted tests, and one for the journeys in each setting', () => {
+test('each setting changes one thing, and puts the others back to their default', () => {
+  const changed = (setting) => settingCommands(setting, 'SIM').filter((command, index) => command[3] !== settingCommands(settings[0], 'SIM')[index][3]);
+  assert.deepEqual(changed(settings[1]), [['ui', 'SIM', 'content_size', 'accessibility-extra-extra-extra-large']]);
+  assert.deepEqual(changed(settings[2]), [['ui', 'SIM', 'appearance', 'dark']]);
+  assert.deepEqual(changed(settings[3]), [['ui', 'SIM', 'increase_contrast', 'enabled']]);
+});
+
+test('the journeys run twice: once with the settings helper, for the four settings, and once in double length', () => {
+  assert.deepEqual(journeyRuns.map((run) => [run.name, run.helper === true, run.doubleLength === true]), [
+    ['settings', true, false],
+    ['double-length', false, true],
+  ]);
+});
+
+test('a run has one result bundle for the hosted tests, and one for each run of the journeys', () => {
   const bundles = resultBundles('/run/simulator');
   assert.deepEqual(bundles.hosted, [{ path: '/run/simulator/hosted.xcresult', label: 'the hosted tests' }]);
-  assert.equal(bundles.ui.length, settings.length);
-  assert.deepEqual(bundles.ui[2], { path: '/run/simulator/journeys-dark-mode.xcresult', label: 'the journeys in dark mode' });
+  assert.deepEqual(bundles.ui, [
+    { path: '/run/simulator/journeys-settings.xcresult', label: 'the journeys in the four settings of the audit' },
+    { path: '/run/simulator/journeys-double-length.xcresult', label: 'the journeys in the double-length pseudo-language' },
+  ]);
+});
+
+test("`just build` is the simulator step's build: the same action, destination, folder and architecture", () => {
+  const justfile = readFileSync(new URL('../../justfile', import.meta.url), 'utf8');
+  const recipe = justfile.slice(justfile.indexOf('\nbuild:\n'), justfile.indexOf('> build/xcodebuild.log'));
+  const derivedData = /^derived_data := "(.*)"$/m.exec(justfile)[1];
+  // The recipe's `xcodebuild` call as its words, with the justfile's variable filled in.
+  const words = recipe
+    .slice(recipe.indexOf('xcodebuild '))
+    .replaceAll('\\\n', ' ')
+    .replaceAll('{{derived_data}}', derivedData)
+    .match(/'[^']*'|\S+/g)
+    .map((word) => word.replace(/^'(.*)'$/, '$1'));
+  assert.deepEqual(words, ['xcodebuild', ...buildArguments]);
+  assert.equal(buildArguments[0], 'build-for-testing');
+  assert.ok(buildArguments.includes('ARCHS=arm64'));
+});
+
+test('the settings helper applies the setting that a journey names, and answers when it is applied', async (t) => {
+  const applied = [];
+  const helper = await startSettingsHelper(async (setting) => {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    applied.push(setting.name);
+  });
+  t.after(() => helper.close());
+  assert.match(helper.address, /^http:\/\/127\.0\.0\.1:\d+$/);
+  const post = (name) => fetch(`${helper.address}/settings/${name}`, { method: 'POST' });
+  assert.equal((await post('largest-text')).status, 204);
+  assert.deepEqual(applied, ['largest-text']);
+  assert.equal((await post('dark-mode')).status, 204);
+  assert.equal((await post('default')).status, 204);
+  assert.deepEqual(applied, ['largest-text', 'dark-mode', 'default']);
+  assert.equal((await post('double-length')).status, 404);
+  assert.equal((await fetch(`${helper.address}/settings/dark-mode`)).status, 404);
+  assert.deepEqual(applied, ['largest-text', 'dark-mode', 'default']);
+});
+
+test('the settings helper answers 500, with the reason, when a setting fails to apply', async (t) => {
+  const helper = await startSettingsHelper(() => {
+    throw new Error('simctl ended with 1');
+  });
+  t.after(() => helper.close());
+  const response = await fetch(`${helper.address}/settings/increase-contrast`, { method: 'POST' });
+  assert.equal(response.status, 500);
+  assert.equal(await response.text(), 'simctl ended with 1');
+});
+
+test("the build's line counts the Swift files that it compiled, and a build with nothing to do compiled none", (t) => {
+  const folder = mkdtempSync(path.join(tmpdir(), 'wishbone-gate-test-'));
+  t.after(() => rmSync(folder, { recursive: true, force: true }));
+  const log = path.join(folder, 'build.log');
+  writeFileSync(log, 'SwiftCompile normal arm64 /a.swift\n    cd /\nSwiftCompile normal arm64 /b.swift\nCompileSwift normal arm64 /c.swift\nCodeSign /x.app\n');
+  assert.equal(compiledFiles(log), 3);
+  writeFileSync(log, 'Copy /a /b\nCodeSign /x.app\nProcessInfoPlistFile /x/Info.plist\n');
+  assert.equal(compiledFiles(log), 0);
 });

@@ -23,12 +23,16 @@ gate:
 # Build
 # ============================================================================
 
-# Build the app and both extensions for the simulator, then add new strings to the String Catalog, and make the Acknowledgements
+# The build is also the simulator tier's build: the gate's simulator step runs the tests that it built, and
+# `just simulator` by itself builds with the same arguments (`buildArguments` in scripts/gate/simulator.mjs). A
+# gate test holds the two to one build.
+
+# Build the app, both extensions and the test bundles for the simulator, then add new strings to the String Catalog, and make the Acknowledgements
 build:
     #!/usr/bin/env bash
     set -euo pipefail
     mkdir -p build
-    xcodebuild build \
+    xcodebuild build-for-testing \
         -project Wishbone.xcodeproj \
         -scheme Wishbone \
         -configuration Debug \
@@ -50,7 +54,7 @@ build:
     fi
     just sync-strings
     just acknowledgements
-    echo "✓ Built Wishbone, ShareExtension and WidgetExtension for the simulator (log: build/xcodebuild.log)"
+    echo "✓ Built Wishbone, ShareExtension, WidgetExtension and the test bundles for the simulator (log: build/xcodebuild.log)"
 
 # Xcode adds new strings to the catalog when it builds. A build from the command line only writes
 # what the compiler found, so this recipe adds it to the catalog.
@@ -100,10 +104,10 @@ server-openapi:
 test *args: server
     swift test --package-path WishboneKit "$@"
 
-# Run the hosted tests and the journeys on the gate's own simulator. The results go to the folder
+# Run the hosted tests and the journeys on the gate's own simulator, in the gate slot. The results go to the folder. `--no-build` runs what `just build` built
 [positional-arguments]
-simulator results="build/simulator": server
-    node scripts/gate/simulator.mjs "$1"
+simulator results="build/simulator" *flags: server
+    node scripts/gate/simulator.mjs "$@"
 
 # ============================================================================
 # Lint and format

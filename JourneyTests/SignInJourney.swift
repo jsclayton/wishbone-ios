@@ -5,7 +5,8 @@ import XCTest
 /// screen, against a real test server. See "The simulator tier" in `docs/development.md`.
 ///
 /// It runs the accessibility audit on each screen that it reaches, and attaches a screenshot of each as evidence
-/// for a person. A screenshot is never compared. The gate runs the journey once in each of the four settings.
+/// for a person. A screenshot is never compared with a reference. Under the gate, it audits each screen in the four
+/// settings, in one run.
 nonisolated final class SignInJourney: XCTestCase {
   @MainActor
   func testSignIn() async {
@@ -35,7 +36,7 @@ nonisolated final class SignInJourney: XCTestCase {
     app.launch()
     let scan = app.buttons[Audit.words("Scan QR code")]
     XCTAssertTrue(scan.waitForExistence(timeout: 60), "The signed-out screen didn't show.")
-    try Audit.run(on: app, showing: "the signed-out screen", in: self)
+    try await Audit.run(on: app, showing: "the signed-out screen", in: self)
     app.terminate()
 
     // The same launch, with a login link passed in as if pasted.
@@ -44,7 +45,7 @@ nonisolated final class SignInJourney: XCTestCase {
     XCTAssertTrue(app.staticTexts["Kite"].waitForExistence(timeout: 60), "The list didn't show after the sign-in.")
     XCTAssertTrue(app.staticTexts["Puzzle"].exists)
     XCTAssertTrue(app.navigationBars[robin.name].exists)
-    try Audit.run(on: app, showing: "the list after the sign-in", in: self)
+    try await Audit.run(on: app, showing: "the list after the sign-in", in: self)
     app.terminate()
   }
 }

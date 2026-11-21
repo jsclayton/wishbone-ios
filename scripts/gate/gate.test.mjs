@@ -212,6 +212,15 @@ test('two gates at once take turns at the slot', async (t) => {
   assert.ok(Math.max(...waited) >= 400, `one gate waited for the other (${waited} ms)`);
 });
 
+test('a step in the slot is told that the gate holds it, and a step outside it is not', async (t) => {
+  const { root, options } = gateIn(t);
+  const seen = path.join(root, 'seen');
+  const say = (name) => ['sh', '-c', `echo "${name}=\${WISHBONE_GATE_SLOT_HELD:-unset}" >> "${seen}"`];
+  const result = await runGate({ ...options, steps: [{ name: 'lint', command: say('lint'), limitMs: 10_000 }, { name: 'build', slot: true, command: say('build'), limitMs: 10_000 }] });
+  assert.equal(result.ok, true);
+  assert.deepEqual(readFileSync(seen, 'utf8').trim().split('\n'), ['lint=unset', 'build=1']);
+});
+
 test('an interrupt stops the gate at the step that runs', async (t) => {
   const { options } = gateIn(t);
   const interrupt = new AbortController();
