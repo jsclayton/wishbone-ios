@@ -289,6 +289,12 @@ A flake that the gate retries is named here, with its signature. Each other fail
 - What the gate does: the settings helper waits 5 seconds, reads the setting back, and runs the call again, until the change has used its 3 minutes. See [Accessibility checks](#accessibility-checks).
 - What shows: the line after the journeys in the four settings says how many calls hung, and names this flake. A call that hangs for the whole 3 minutes still fails the journey, with the call and how many times it hung.
 
+**The app's launch gets no process ID on a busy machine.** Signature: a run of the journeys fails, and each test that failed has only the message `Application '<bundle ID>' does not have a process ID`, except a test that Xcode names `<runner> (<pid>) encountered an error`. XCTest's `launch()` waited for the app's process and gave up, so the app's code never ran. Seen on 2026-11-21 twice on the maintainer's Mac, with a load average of about 534 (the sign-in journey, and then both journeys about 67 s in, at `SignInJourney.swift:37` and `SignOutJourney.swift:36`), and once on CI (run 44925735621 attempt 2: the sign-in journey's `launch()` took about 190 s, then the test runner failed). Part of the cure is a machine under its limit.
+
+- What the gate does: `just simulator` runs that run of the journeys again, once, with a new settings helper. The first run's result bundle and log stay beside the second's, with `-first` at the end of their names. The gate reads only the second run, so a second failure of any kind is red. The second run is inside the step's 30 minutes: on CI, with 9 audited screens, the run in the four settings takes about 7m30s and the step about 20 minutes, so a second run fits, but a second run of both runs of the journeys may not.
+- What shows: the run's `✗` line, then a line that names each journey whose launch failed and this flake, and says where the first run is.
+- What stays red: a launch that gets its process ID and then crashes has another message. The test runner's error with no launch that failed, a journey that failed somewhere else too, and a failed test with no message all stay red.
+
 ### CI
 
 - GitHub Actions runs the same `just gate`, on a macOS runner with the pinned Xcode, for every pull request and on `main`. The runner is GitHub's `xcode-27` image.

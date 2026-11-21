@@ -10,10 +10,11 @@
 // double-length pseudo-language, which needs a new launch.
 //
 // Every `xcodebuild` writes its log, and its result bundle, to the results folder. The script prints one line for
-// each run.
+// each run. A run of the journeys that fails with the named flake "the app's launch gets no process ID on a busy
+// machine" runs again, once (`runAgainOnLaunchFlake`).
 
 import { execFile, execFileSync, spawn } from 'node:child_process';
-import { createWriteStream, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync } from 'node:fs';
 import { createServer } from 'node:http';
 import path from 'node:path';
 import process from 'node:process';
@@ -422,6 +423,64 @@ export async function prepareSimulator({ say = console.log } = {}) {
   return { simulator, applier };
 }
 
+/**
+ * The named flake "the app's launch gets no process ID on a busy machine" in docs/development.md. XCTest's
+ * `launch()` waits for the app's process, and on a machine under very high load it gives up with "Application
+ * '<bundle ID>' does not have a process ID". The app's code never ran. On CI, the test runner then failed too, and
+ * Xcode reports that as a test of its own, named "<runner> (<pid>) encountered an error".
+ */
+export const launchFlake = {
+  name: "the app's launch gets no process ID on a busy machine",
+  message: /Application '[^']+' does not have a process ID/,
+  runner: /-Runner \(\d+\) encountered an error$/,
+};
+
+/**
+ * Whether a reading of a run of the journeys failed with the launch flake's signature, and nothing else: at least
+ * one test failed, and each of its failure messages is the launch that got no process ID, and every other failure
+ * is the test runner's error. A launch that got its process ID and then crashed has another message, so it stays
+ * red, and so does a runner's error with no launch that failed.
+ *
+ * Returns the names of the tests whose launch failed, or null when the failure isn't the flake.
+ */
+export function launchFlakeIn(reading) {
+  if (reading.tests === null || reading.failed.length === 0) return null;
+  const messages = (name) => reading.messages?.[name] ?? [];
+  const launches = reading.failed.filter((name) => messages(name).length > 0 && messages(name).every((message) => launchFlake.message.test(message)));
+  if (launches.length === 0) return null;
+  const others = reading.failed.filter((name) => !launches.includes(name));
+  return others.every((name) => launchFlake.runner.test(name)) ? launches : null;
+}
+
+/**
+ * Runs `runOnce` (a run of the journeys, which resolves with `{ passed, reading }`), and runs it again once when it
+ * failed with the launch flake's signature (`launchFlakeIn`). Before the second run, `keep()` moves the first
+ * run's files aside, and returns where they are, for the line. Any other failure, and a second run that fails in
+ * any way, is red. Resolves with whether the last run passed.
+ */
+export async function runAgainOnLaunchFlake(runOnce, { keep, say = console.log }) {
+  const first = await runOnce();
+  const launches = first.passed ? null : launchFlakeIn(first.reading);
+  if (launches === null) return first.passed;
+  const kept = keep();
+  say(`  ${launches.join(', ')}: the launch got no process ID (the named flake "${launchFlake.name}"), so these journeys run again, once. The first run is in ${kept.join(' and ')}.`);
+  return (await runOnce()).passed;
+}
+
+/**
+ * Moves the result bundle and the log of a run that the gate runs again to names of their own, `<name>-first`, so
+ * the second run writes its own at the run's paths. Returns the new paths.
+ */
+export function keepFirstTry(directory, bundle, log) {
+  const keptBundle = bundle.replace(/\.xcresult$/, '-first.xcresult');
+  const keptLog = path.join(directory, log.replace(/\.log$/, '-first.log'));
+  rmSync(keptBundle, { recursive: true, force: true });
+  rmSync(keptLog, { force: true });
+  if (existsSync(bundle)) renameSync(bundle, keptBundle);
+  if (existsSync(path.join(directory, log))) renameSync(path.join(directory, log), keptLog);
+  return [keptBundle, keptLog];
+}
+
 /** Runs `xcodebuild` with its output in a log file. Resolves with its exit code. */
 function xcodebuild(args, { root, log, env = {} }) {
   return new Promise((resolve, reject) => {
@@ -447,11 +506,15 @@ export async function runSimulatorTier({ root, directory, build = true, say = co
   mkdirSync(directory, { recursive: true });
   const relative = (file) => path.relative(root, file);
 
-  /** One `xcodebuild` run, with its line. `bundle` is the result bundle that the run writes, if it runs tests. */
-  const run = async (what, args, { log, bundle, env }) => {
+  /**
+   * One `xcodebuild` run, with its line. `bundle` is the result bundle that the run writes, if it runs tests.
+   * Resolves with whether it passed. `onReading`, if given, gets the reading of its bundle.
+   */
+  const run = async (what, args, { log, bundle, env, onReading }) => {
     const started = Date.now();
     const exit = await xcodebuild(args, { root, log: path.join(directory, log), env });
     const reading = bundle === undefined ? null : readResultBundle(bundle);
+    onReading?.(reading);
     const problem = reading === null ? null : judge(reading);
     const ok = exit === 0 && problem === null;
     const why = problem ?? `xcodebuild ended with ${exit}`;
@@ -489,26 +552,38 @@ export async function runSimulatorTier({ root, directory, build = true, say = co
     ];
     if (!(await run('The hosted tests', test('HostedTests', bundles.hosted[0].path), { log: 'hosted.log', bundle: bundles.hosted[0].path }))) return false;
 
-    const helperCalls = applier.calls();
-    const helperHangs = applier.hangs();
-    const helperMs = applier.ms();
     for (const [index, journeys] of journeyRuns.entries()) {
-      await applier.apply(settings[0]);
-      // Only the run in the four settings has a helper, so the screens that it remembers are that run's.
-      await helper?.close();
-      helper = journeys.helper ? await startSettingsHelper((setting) => applier.apply(setting)) : null;
-      // xcodebuild gives the test runner each variable that starts with TEST_RUNNER_, without that start.
-      const env = {
-        TEST_RUNNER_WISHBONE_SETTINGS_HELPER: helper?.address ?? '',
-        TEST_RUNNER_WISHBONE_DOUBLE_LENGTH: journeys.doubleLength ? 'YES' : 'NO',
-      };
       const bundle = bundles.ui[index].path;
-      const passed = await run(`The journeys in ${journeys.label}`, test('JourneyTests', bundle), { log: `journeys-${journeys.name}.log`, bundle, env });
-      if (journeys.helper) {
-        const hung = applier.hangs() - helperHangs;
-        const again = hung === 0 ? '' : `, and ${hung} of them hung (the named flake "a \`simctl ui\` call hangs on a CI runner")`;
-        say(`  The settings helper made ${applier.calls() - helperCalls} simctl calls, in ${duration(applier.ms() - helperMs)}${again}.`);
-      }
+      const log = `journeys-${journeys.name}.log`;
+      /** One run of these journeys, with a new helper. Resolves with whether it passed, and its reading. */
+      const runJourneys = async () => {
+        await applier.apply(settings[0]);
+        const helperCalls = applier.calls();
+        const helperHangs = applier.hangs();
+        const helperMs = applier.ms();
+        // Only the run in the four settings has a helper, so the screens that it remembers are that run's.
+        await helper?.close();
+        helper = journeys.helper ? await startSettingsHelper((setting) => applier.apply(setting)) : null;
+        // xcodebuild gives the test runner each variable that starts with TEST_RUNNER_, without that start.
+        const env = {
+          TEST_RUNNER_WISHBONE_SETTINGS_HELPER: helper?.address ?? '',
+          TEST_RUNNER_WISHBONE_DOUBLE_LENGTH: journeys.doubleLength ? 'YES' : 'NO',
+        };
+        let reading = null;
+        const passed = await run(`The journeys in ${journeys.label}`, test('JourneyTests', bundle), { log, bundle, env, onReading: (one) => (reading = one) });
+        if (journeys.helper) {
+          const hung = applier.hangs() - helperHangs;
+          const again = hung === 0 ? '' : `, and ${hung} of them hung (the named flake "a \`simctl ui\` call hangs on a CI runner")`;
+          say(`  The settings helper made ${applier.calls() - helperCalls} simctl calls, in ${duration(applier.ms() - helperMs)}${again}.`);
+        }
+        return { passed, reading };
+      };
+      const passed = await runAgainOnLaunchFlake(runJourneys, {
+        // The first run's bundle and log stay, under other names, for a person to look at. The gate reads only the
+        // second run's bundle, at the run's own path.
+        keep: () => keepFirstTry(directory, bundle, log).map(relative),
+        say,
+      });
       if (!passed) return false;
       if (journeys.helper) {
         // The result bundle must have each screen that the helper audited, in the four settings, once, and no other.
