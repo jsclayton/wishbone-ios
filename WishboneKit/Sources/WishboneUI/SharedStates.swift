@@ -86,23 +86,35 @@ private struct CantReachLine: View {
 }
 
 /// The unreachable state of a screen with no rows yet: never an empty state. Try again is Sync now.
+///
+/// As the version block does, the view grows to its words in a scroll view, and Try again is under it: the
+/// unavailable view's own actions cut a larger text short.
 private struct CantReachView: View {
   let address: InstanceAddress
   let tryAgain: @MainActor () async -> Void
 
   var body: some View {
-    ContentUnavailableView {
-      Label {
-        Text(CantReach.words(for: address))
-      } icon: {
-        Image(systemName: "wifi.slash")
-      }
-    } actions: {
-      Button {
-        Task { await tryAgain() }
-      } label: {
-        Text("Try again", bundle: #bundle)
-          .frame(minHeight: 44)
+    GeometryReader { window in
+      ScrollView {
+        VStack(spacing: 16) {
+          ContentUnavailableView {
+            Label {
+              Text(CantReach.words(for: address))
+            } icon: {
+              Image(systemName: "wifi.slash")
+            }
+          }
+          .fixedSize(horizontal: false, vertical: true)
+
+          Button {
+            Task { await tryAgain() }
+          } label: {
+            Text("Try again", bundle: #bundle)
+              .frame(minHeight: 44)
+          }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, minHeight: window.size.height)
       }
     }
   }
