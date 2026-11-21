@@ -74,7 +74,11 @@ nonisolated final class SignInJourney: XCTestCase {
     let privacyPolicy = app.descendants(matching: .any)
       .matching(NSPredicate(format: "label BEGINSWITH %@", Audit.words("Privacy policy"))).firstMatch
     XCTAssertTrue(privacyPolicy.exists, "The Share diagnostics sheet has no link to the privacy policy.")
-    try await Audit.run(on: app, showing: "the Share diagnostics sheet", in: self)
+    // The Dynamic Type check reports the web link row as "partially unsupported" in the default settings, where the
+    // row is on the screen whole, as it does the help sheet's link row. It is allowed as there, and never at the
+    // largest text size, where the check measures every row that shows.
+    try await Audit.run(
+      on: app, showing: "the Share diagnostics sheet", in: self, rowsThatLeaveTheScreen: ["Privacy policy"])
     app.navigationBars[Audit.words("Share diagnostics")].buttons[Audit.words("Done")].tap()
     XCTAssertTrue(scan.waitForExistence(timeout: 10))
     XCTAssertFalse(share.exists, "The Share diagnostics sheet didn't close.")
