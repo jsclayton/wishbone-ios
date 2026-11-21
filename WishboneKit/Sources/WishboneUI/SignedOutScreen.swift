@@ -4,12 +4,14 @@ import WishboneSession
 
 /// The signed-out screen: the way in. See `docs/screens/signed-out.md`.
 ///
-/// Scan and paste sign in. "I don't have a link" opens the help sheet. The diagnostics screen is not built yet, so
-/// its control is in place and does nothing.
+/// Scan and paste sign in. "I don't have a link" opens the help sheet. The notice line at the foot opens Share
+/// diagnostics as a sheet. Diagnostics start only once this screen has shown the notice.
 public struct SignedOutScreen: View {
   @Environment(Device.self) private var device
+  @Environment(\.diagnostics) private var diagnostics
 
   @State private var isShowingHelp = false
+  @State private var isShowingDiagnostics = false
 
   /// The width of the column that holds the content. It grows with the text size.
   @ScaledMetric(relativeTo: .body) private var columnWidth: CGFloat = 440
@@ -46,6 +48,14 @@ public struct SignedOutScreen: View {
     .sheet(isPresented: $isShowingHelp) {
       LoginLinkHelpSheet()
     }
+    .sheet(isPresented: $isShowingDiagnostics) {
+      NavigationStack {
+        ShareDiagnosticsScreen(place: .sheet)
+      }
+    }
+    // The screen has shown the notice, so a person can turn diagnostics off before anything is sent. See "The
+    // notice and the switch" in `docs/spec.md`.
+    .onAppear { diagnostics?.noticeShown() }
     .task(id: device.signInState) {
       // "Signed in as {name}" shows briefly, then the next screen.
       guard case .signedIn = device.signInState else { return }
@@ -171,6 +181,7 @@ public struct SignedOutScreen: View {
       .multilineTextAlignment(.center)
 
       Button {
+        isShowingDiagnostics = true
       } label: {
         Text("Diagnostics settings", bundle: #bundle)
           .frame(minHeight: 44)

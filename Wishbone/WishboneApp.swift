@@ -1,5 +1,6 @@
 import SwiftUI
 import WishboneAPI
+import WishboneDiagnostics
 import WishboneSession
 import WishboneUI
 
@@ -8,6 +9,15 @@ struct WishboneApp: App {
   /// The one device of the app. Every window scene reads it from the environment.
   @State private var device = Device(.app)
 
+  /// The device's diagnostics. They start here at launch, when the rule allows: the notice was shown at an earlier
+  /// launch, the switch is on, and the build has a DSN. See "On by default, for each device, after a notice" in
+  /// `docs/spec.md`.
+  @State private var diagnostics: DiagnosticsSettings = {
+    let diagnostics = Diagnostics.app()
+    diagnostics.start()
+    return DiagnosticsSettings(diagnostics)
+  }()
+
   /// The phase of the whole app: active while any window is in the foreground.
   @Environment(\.scenePhase) private var scenePhase
 
@@ -15,6 +25,7 @@ struct WishboneApp: App {
     WindowGroup {
       WindowRoot()
         .environment(device)
+        .environment(\.diagnostics, diagnostics)
         #if DEBUG
           .task { await Journey.pasteLoginLink(into: device) }
         #endif
@@ -25,6 +36,25 @@ struct WishboneApp: App {
       guard phase == .active, let session = device.session else { return }
       Task { await session.cameToForeground() }
     }
+  }
+}
+
+/// The diagnostics switch that the screens see. `WishboneUI` can't import `WishboneDiagnostics`, because the share
+/// extension links `WishboneUI`, so the app joins the two.
+final class DiagnosticsSettings: DiagnosticsSwitch {
+  private let diagnostics: Diagnostics
+
+  init(_ diagnostics: Diagnostics) {
+    self.diagnostics = diagnostics
+  }
+
+  var isOn: Bool {
+    get { diagnostics.isOn }
+    set { diagnostics.isOn = newValue }
+  }
+
+  func noticeShown() {
+    diagnostics.noticeShown()
   }
 }
 

@@ -28,6 +28,7 @@ Every target takes its build settings from `Config/Shared.xcconfig`, which is in
 | `WISHBONE_BUNDLE_PREFIX` | `com.codemonkeylabs.wishbone` | Every identifier comes from it (see below) |
 | `CODE_SIGN_STYLE` | `Automatic` | |
 | `WISHBONE_SENTRY_DSN` | Empty | Where diagnostics go. Empty means that diagnostics never start |
+| `WISHBONE_SENTRY_ENVIRONMENT` | `local` | The environment tag of diagnostics. A release build sets `testflight` or `appstore` |
 | `WISHBONE_SOURCE_URL` | This repo | The "Source code" row in Settings |
 | `WISHBONE_PRIVACY_URL` | This repo's `PRIVACY.md` on GitHub | The privacy policy link on the Share diagnostics screen |
 | `WISHBONE_SUPPORT_URL` | The maintainer's Buy Me a Coffee page | The support row in Settings. Empty means no row |
@@ -59,7 +60,7 @@ The maintainer's team has registered every identifier under `com.codemonkeylabs.
 
 3. Build and run on your device.
 
-Don't set `WISHBONE_SENTRY_DSN`: keep it empty, so your build sends no diagnostics. To give a build to other people, also read [`TRADEMARKS.md`](../TRADEMARKS.md).
+Don't set `WISHBONE_SENTRY_DSN`: keep it empty, so your build sends no diagnostics. With a DSN, a Debug build still sends nothing unless it is launched with the argument `-WishboneSendDiagnostics`. To give a build to other people, also read [`TRADEMARKS.md`](../TRADEMARKS.md).
 
 An xcconfig file treats `//` as the start of a comment. To write a URL in one, split the slashes: `https:/$()/example.com`.
 

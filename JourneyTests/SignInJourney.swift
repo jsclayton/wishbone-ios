@@ -2,8 +2,9 @@ import TestSupport
 import XCTest
 
 /// The sign-in journey: the app, launched with a login link as if pasted, reaches the tabs behind the signed-out
-/// screen, against a real test server. Then it visits each tab, and the Add screen that the plus opens. See "The
-/// simulator tier" in `docs/development.md`.
+/// screen, against a real test server. Before it signs in, it opens the help sheet and the Share diagnostics sheet.
+/// Then it visits each tab, and the Add screen that the plus opens. See "The simulator tier" in
+/// `docs/development.md`.
 ///
 /// It runs the accessibility audit on each screen that it reaches, and attaches a screenshot of each as evidence
 /// for a person. A screenshot is never compared with a reference. Under the gate, it audits each screen in the four
@@ -63,6 +64,24 @@ nonisolated final class SignInJourney: XCTestCase {
     app.navigationBars.firstMatch.buttons.firstMatch.tap()
     XCTAssertTrue(scan.waitForExistence(timeout: 10))
     XCTAssertFalse(help.exists, "The help sheet didn't close.")
+
+    // The notice line opens Share diagnostics as a sheet: the switch, on by default, what is sent, and the link to
+    // the privacy policy. The journey doesn't turn the switch, which is the device's, or follow the link.
+    app.buttons[Audit.words("Diagnostics settings")].tap()
+    let share = app.switches[Audit.words("Share diagnostics")]
+    XCTAssertTrue(share.waitForExistence(timeout: 10), "The Share diagnostics sheet didn't show.")
+    XCTAssertEqual(share.value as? String, "1", "Diagnostics are not on by default.")
+    let privacyPolicy = app.descendants(matching: .any)
+      .matching(NSPredicate(format: "label BEGINSWITH %@", Audit.words("Privacy policy"))).firstMatch
+    XCTAssertTrue(privacyPolicy.exists, "The Share diagnostics sheet has no link to the privacy policy.")
+    // The Dynamic Type check reports the web link row as "partially unsupported" in the default settings, where the
+    // row is on the screen whole, as it does the help sheet's link row. It is allowed as there, and never at the
+    // largest text size, where the check measures every row that shows.
+    try await Audit.run(
+      on: app, showing: "the Share diagnostics sheet", in: self, rowsThatLeaveTheScreen: ["Privacy policy"])
+    app.navigationBars.buttons[Audit.words("Done")].tap()
+    XCTAssertTrue(scan.waitForExistence(timeout: 10))
+    XCTAssertFalse(share.exists, "The Share diagnostics sheet didn't close.")
     app.terminate()
 
     // The same launch, with a login link passed in as if pasted.

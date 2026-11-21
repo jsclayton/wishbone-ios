@@ -44,6 +44,9 @@
     "If Wishbone crashes, it sends a report to its developer, never anything from your family's lists." : {
 
     },
+    "It never sends anything from your family's lists, names, birthdays, or the address of your Wishbone." : {
+
+    },
     "Lists" : {
 
     },
@@ -71,6 +74,9 @@
     "Point the camera at the QR code of your login link." : {
 
     },
+    "Privacy policy" : {
+
+    },
     "Running your own Wishbone" : {
 
     },
@@ -78,6 +84,9 @@
 
     },
     "Settings" : {
+
+    },
+    "Share diagnostics" : {
 
     },
     "Sign out" : {
@@ -122,6 +131,9 @@
     "This is gone, or it isn't shared with you." : {
 
     },
+    "This setting is for this device, whoever signs in." : {
+
+    },
     "Too many tries. Wait a minute, then try again." : {
 
     },
@@ -132,6 +144,9 @@
 
     },
     "Wishbone needs the camera to scan a QR code. You can turn it on in Settings, or paste a link." : {
+
+    },
+    "Wishbone sends crash and fault reports to its developer, with the versions of the app and of Wishbone, the device model, and the iOS version." : {
 
     },
     "You need a new login link to sign in again." : {

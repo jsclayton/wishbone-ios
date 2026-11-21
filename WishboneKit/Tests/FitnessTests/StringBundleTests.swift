@@ -29,6 +29,7 @@ enum StringBundle {
     "systemName": "The name of an SF Symbol, as in Image(systemName:)",
     "systemImage": "The name of an SF Symbol, as in Label(_:systemImage:)",
     "string": "A web address, as in URL(string:), which a web link opens and never shows",
+    "forInfoDictionaryKey": "The key of a build setting in Info.plist, as in Bundle.object(forInfoDictionaryKey:)",
   ]
 
   private static let bundle = #"\bbundle\s*:\s*#bundle\b"#
