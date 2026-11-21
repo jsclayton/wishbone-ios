@@ -171,6 +171,7 @@ To move the pin:
   - drop everything (offline)
   - hold a matching request until the test releases it (an answer in flight that races a pull)
   - answer a matching route with a canned response (a 5xx, a 410 `api_version_removed`, or a `/health` below the minimum version)
+  - serve HTTPS with a self-signed certificate that no device trusts (`tls: .untrustedCertificate`). The conditioner makes the certificate with `openssl`, so this works only on macOS, in the package tests.
 - The conditioner is a small HTTP server on your Mac, in front of the test server. A test gives the conditioner's address to the code under test as its instance address, so the code needs no seam of its own.
 - A hold is at the answer by default: the request reaches the server at once, and the answer waits. A hold at the request keeps the request from the server until the release. A test waits for the hold to catch a request, never for a length of time.
 - A request that a drop cuts off before it reached the server never reaches it, also after the network is back.

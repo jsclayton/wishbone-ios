@@ -19,10 +19,11 @@ struct Instance {
   /// The device's session keychain. A second device with the same one stands for a relaunch.
   let keychain = InMemorySessionKeychain()
 
-  init(server: TestServer? = nil) async throws {
+  /// `tls` is how the conditioner, and so the instance address, takes a connection.
+  init(server: TestServer? = nil, tls: NetworkConditioner.TLS = .none) async throws {
     if let server { self.server = server } else { self.server = try await TestServer.shared() }
     let server = self.server
-    conditioner = try await NetworkConditioner(to: server.address)
+    conditioner = try await NetworkConditioner(to: server.address, tls: tls)
     builder = try await FixtureBuilder(server: server)
   }
 

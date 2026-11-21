@@ -26,11 +26,14 @@ public enum APIError: Error, Sendable, Equatable {
   /// An answer of the API that the client can't decode.
   case undecodable(Undecodable)
 
-  /// The two ways that an instance is unreachable. They differ only before sign-in, where an answer from
-  /// something else means that the login link points somewhere else.
+  /// The ways that an instance is unreachable. They differ only before sign-in, where an answer from something
+  /// else means that the login link points somewhere else, and a certificate gets its own message.
   public enum Unreachable: Sendable, Equatable {
-    /// No network, a timeout, a DNS or TLS failure, or a 5xx.
+    /// No network, a timeout, a DNS or TLS failure other than the certificate, or a 5xx.
     case noAnswer
+    /// The device doesn't trust the instance's certificate: it is self-signed, from a certificate authority that
+    /// the device doesn't have, out of date, or not yet valid. There is no way around it.
+    case untrustedCertificate
     /// An answer that is not the API's own: from a reverse proxy, an access gateway, a captive portal, or another
     /// site. A redirect is one too, because the token goes only to the instance address.
     case notTheAPI

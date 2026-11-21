@@ -26,6 +26,9 @@
     "Diagnostics settings" : {
 
     },
+    "Getting a login link" : {
+
+    },
     "Gifts" : {
 
     },
@@ -42,6 +45,9 @@
 
     },
     "No Wishbone found at %@" : {
+
+    },
+    "Nobody in your family runs Wishbone yet." : {
 
     },
     "Not here" : {
@@ -62,6 +68,9 @@
     "Point the camera at the QR code of your login link." : {
 
     },
+    "Running your own Wishbone" : {
+
+    },
     "Scan QR code" : {
 
     },
@@ -74,6 +83,9 @@
     "Some fields need another look." : {
 
     },
+    "Someone in your family runs Wishbone. Ask them, or your parent, for a login link." : {
+
+    },
     "Something went wrong in Wishbone. Try again." : {
 
     },
@@ -84,6 +96,9 @@
 
     },
     "The camera is turned off on this device, so Wishbone can't scan. Paste a link." : {
+
+    },
+    "This device doesn't trust the certificate of %@. Ask the person who runs Wishbone." : {
 
     },
     "This device has no camera to scan with. Paste a link." : {
@@ -104,7 +119,16 @@
     "Wishbone needs the camera to scan a QR code. You can turn it on in Settings, or paste a link." : {
 
     },
+    "You use Wishbone in a browser. Open your sign-in screen there. It shows a QR code for you." : {
+
+    },
+    "You're signed in to the app on another device. Open Wishbone there, and use Sign in on another device." : {
+
+    },
     "Your lists" : {
+
+    },
+    "opens in browser" : {
 
     }
   },

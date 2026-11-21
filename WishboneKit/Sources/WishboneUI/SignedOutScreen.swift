@@ -4,10 +4,12 @@ import WishboneSession
 
 /// The signed-out screen: the way in. See `docs/screens/signed-out.md`.
 ///
-/// Scan and paste sign in. The help sheet and the diagnostics screen are not built yet, so their controls are in
-/// place and do nothing.
+/// Scan and paste sign in. "I don't have a link" opens the help sheet. The diagnostics screen is not built yet, so
+/// its control is in place and does nothing.
 public struct SignedOutScreen: View {
   @Environment(Device.self) private var device
+
+  @State private var isShowingHelp = false
 
   /// The width of the column that holds the content. It grows with the text size.
   @ScaledMetric(relativeTo: .body) private var columnWidth: CGFloat = 440
@@ -35,6 +37,9 @@ public struct SignedOutScreen: View {
     .onChange(of: device.signInState) {
       // The message is announced when it appears, and so is "Signed in as {name}".
       if let words { AccessibilityNotification.Announcement(words).post() }
+    }
+    .sheet(isPresented: $isShowingHelp) {
+      LoginLinkHelpSheet()
     }
     .task(id: device.signInState) {
       // "Signed in as {name}" shows briefly, then the next screen.
@@ -93,6 +98,12 @@ public struct SignedOutScreen: View {
     case .unreachable(let address):
       String(
         localized: "Can't reach \(address.text). Your link is kept. Try again when you're connected.", bundle: #bundle)
+    case .tooManyTries:
+      String(localized: "Too many tries. Wait a minute, then try again.", bundle: #bundle)
+    case .certificateNotTrusted(let address):
+      String(
+        localized: "This device doesn't trust the certificate of \(address.text). Ask the person who runs Wishbone.",
+        bundle: #bundle)
     case .noWishbone(let address):
       String(localized: "No Wishbone found at \(address.text)", bundle: #bundle)
     case .instanceTooOld(let address, let version, let minimum):
@@ -126,6 +137,7 @@ public struct SignedOutScreen: View {
       }
 
       Button {
+        isShowingHelp = true
       } label: {
         Text("I don't have a link", bundle: #bundle)
           .frame(minHeight: 44)
