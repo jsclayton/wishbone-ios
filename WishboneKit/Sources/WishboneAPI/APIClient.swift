@@ -151,6 +151,11 @@ public struct APIClient: Sendable {
     try await versioned(.item(id))
   }
 
+  /// `DELETE /users/me/sessions/current`: signs out. The server revokes the session, and the token works no more.
+  public func revokeCurrentSession() async throws(APIError) {
+    _ = try await load(.revokeCurrentSession)
+  }
+
   // MARK: - Collections
 
   /// How many rows the client asks for in a page of a collection. It is the most that the server gives.
@@ -273,6 +278,11 @@ public struct APIClient: Sendable {
     let contentType = (answer.value(forHTTPHeaderField: "Content-Type") ?? "")
       .prefix { $0 != ";" }.trimmingCharacters(in: .whitespaces).lowercased()
     switch status {
+    case 204 where Response.self == NoContent.self:
+      // A route that answers with no body. Its answer is the status alone.
+      Log.request(route, "ok", status: status)
+      guard let none = NoContent() as? Response else { throw .undecodable(.init(route: route, keyPath: "")) }
+      return Answer(body: none, etag: nil)
     case 200..<300:
       guard contentType == "application/json" else {
         Log.request(route, "answer is not the API's", status: status)

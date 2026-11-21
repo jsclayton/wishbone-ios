@@ -25,6 +25,11 @@ func fields<Key: CodingKey & CaseIterable>(
   }
 }
 
+/// The answer of a route that answers 204, with no body.
+public struct NoContent: Model, Equatable {
+  public static let fields: [String] = []
+}
+
 /// The answer of `GET /health`.
 public struct Health: Model, Equatable {
   /// The instance's Wishbone version, such as `2.2.0+7773ada`. A development build reports `dev`.

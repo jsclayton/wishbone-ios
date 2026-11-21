@@ -48,6 +48,10 @@ public enum SignInState: Sendable, Equatable {
 
   /// A fault of the app.
   case failed
+
+  /// The device signed out, and the instance could not be reached to revoke the session. So the device still shows
+  /// in the user's Devices list.
+  case signedOutUnreachable(InstanceAddress)
 }
 
 /// The device: it holds one session at most. It signs in with a login link, and it holds the session model while
@@ -91,6 +95,9 @@ public final class Device {
   public private(set) var signInState = SignInState.plain
 
   private let setup: Setup
+
+  /// Whether a sign-out is under way: the device is asking the instance to revoke the session.
+  public private(set) var isSigningOut = false
 
   /// The link that the device keeps while the instance can't be reached, or after too many tries, for Try again.
   private var keptLink: LoginLink?
@@ -154,9 +161,10 @@ public final class Device {
     if case .signedIn = signInState { signInState = .plain }
   }
 
-  /// The app never redeems a login link while it is signed in, and one sign-in runs at a time.
+  /// The app never redeems a login link while it is signed in, or while a sign-out still clears the device, and
+  /// one sign-in runs at a time.
   private var canStartSignIn: Bool {
-    session == nil && signInState != .signingIn
+    session == nil && !isSigningOut && signInState != .signingIn
   }
 
   private func signIn(with link: LoginLink) async {
@@ -215,6 +223,40 @@ public final class Device {
     signInState = .signedIn(name: redeemed.name)
     await model.sync()
     await model.reportTimeZone()
+  }
+
+  // MARK: - Signing out
+
+  /// Signs out: asks the instance once to revoke the session, then forgets it on the device, whatever the answer.
+  /// See "Sign out" in `docs/spec.md`.
+  ///
+  /// The device then has no session, so every window shows the signed-out screen. When the instance could not be
+  /// reached, that screen says the device still shows in the Devices list. The device keeps no token to try again
+  /// with.
+  ///
+  /// It returns when the device is cleared.
+  public func signOut() async {
+    guard let model = session, !isSigningOut else { return }
+    isSigningOut = true
+    defer { isSigningOut = false }
+    let wasReached = await model.revokeOnServer()
+    session = nil
+    await forget(model)
+    keptLink = nil
+    signInState = wasReached ? .plain : .signedOutUnreachable(model.session.instance)
+  }
+
+  /// Forgets everything of the session on the device: its session model, the session keychain's item, and the
+  /// local databases. Nothing of the session is left.
+  private func forget(_ model: SessionModel) async {
+    await model.end()
+    do {
+      try setup.keychain.delete()
+    } catch {
+      // The next launch finds the item, and its token, which the server has revoked if it could be reached.
+      Log.fault(.session, "The session keychain can't forget the session.", detail: "\(error.status)")
+    }
+    LocalDatabase.removeAll(in: setup.storage)
   }
 
   /// The session model of a session, with its local database and its client.

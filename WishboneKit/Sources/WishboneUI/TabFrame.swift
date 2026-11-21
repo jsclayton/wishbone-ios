@@ -13,6 +13,9 @@ public struct TabFrame: View {
   /// The text in the Add screen's field. Each window has its own.
   @State private var search = ""
 
+  /// Whether this window shows Settings. Each window can show its own.
+  @State private var isShowingSettings = false
+
   public init(session: SessionModel, place: Binding<WindowPlace>) {
     self.session = session
     _place = place
@@ -30,7 +33,7 @@ public struct TabFrame: View {
   public var body: some View {
     TabView(selection: tab) {
       Tab(value: WindowTab.home) {
-        stack(on: .home) { HomeStandInScreen(session: session) }
+        stack(on: .home) { HomeStandInScreen(session: session).toolbar { avatar } }
       } label: {
         Label {
           Text("Home", bundle: #bundle)
@@ -40,7 +43,7 @@ public struct TabFrame: View {
       }
 
       Tab(value: WindowTab.lists) {
-        stack(on: .lists) { ListsStandInScreen() }
+        stack(on: .lists) { ListsStandInScreen().toolbar { avatar } }
       } label: {
         Label {
           Text("Lists", bundle: #bundle)
@@ -50,7 +53,7 @@ public struct TabFrame: View {
       }
 
       Tab(value: WindowTab.gifts) {
-        stack(on: .gifts) { GiftsStandInScreen() }
+        stack(on: .gifts) { GiftsStandInScreen().toolbar { avatar } }
       } label: {
         Label {
           Text("Gifts", bundle: #bundle)
@@ -74,6 +77,16 @@ public struct TabFrame: View {
     // The plus opens the Add screen with its field ready.
     .tabViewSearchActivation(.searchTabSelection)
     .tabViewSidebarFooter { shortcuts }
+    .sheet(isPresented: $isShowingSettings) {
+      SettingsSheet(session: session)
+    }
+  }
+
+  /// The user's avatar, at the top trailing corner of Home, Lists, and Gifts. It opens Settings.
+  private var avatar: some ToolbarContent {
+    ToolbarItem(placement: .primaryAction) {
+      AvatarButton(session: session) { isShowingSettings = true }
+    }
   }
 
   /// The sidebar's shortcuts: your lists, then People. They are rows under the tabs, in the sidebar only, so a

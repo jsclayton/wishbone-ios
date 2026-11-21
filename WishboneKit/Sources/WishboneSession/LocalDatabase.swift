@@ -69,6 +69,33 @@ struct LocalDatabase: Sendable {
     }
   }
 
+  /// Removes every session's files under the storage, as a sign-out does. A device holds one session at most, so
+  /// this also removes what an earlier session could have left. The database must be closed first.
+  static func removeAll(in storage: SessionStorage) {
+    guard case .folder(let base) = storage else { return }
+    let sessions = base.appending(path: "Sessions", directoryHint: .isDirectory)
+    do {
+      try FileManager.default.removeItem(at: sessions)
+    } catch CocoaError.fileNoSuchFile {
+      // Nothing to remove.
+    } catch {
+      Log.fault(.session, "The local database can't be removed.", detail: "\(error)")
+    }
+  }
+
+  /// Closes the database. Any later use of it throws.
+  func close() {
+    do {
+      if let pool = writer as? DatabasePool {
+        try pool.close()
+      } else if let queue = writer as? DatabaseQueue {
+        try queue.close()
+      }
+    } catch {
+      Log.fault(.session, "The local database can't be closed.", detail: "\(error)")
+    }
+  }
+
   private static func open(in folder: URL) throws -> LocalDatabase {
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     // The folder is left out of backups: the copy comes from the instance again. Its files keep iOS's default

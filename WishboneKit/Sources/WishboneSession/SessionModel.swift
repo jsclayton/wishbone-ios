@@ -61,6 +61,10 @@ public final class SessionModel {
   private var recordedTimeZone: String??
   private var isReportingTimeZone = false
 
+  /// Whether the session is over: the device signed out. An ended session model publishes nothing, and asks the
+  /// instance nothing.
+  private var hasEnded = false
+
   /// Stops when the session model goes.
   private var observation: AnyDatabaseCancellable?
   private var syncing: Task<Void, Never>?
@@ -116,6 +120,7 @@ public final class SessionModel {
   ///
   /// A call during a sync waits for that sync, and starts no second one.
   public func sync() async {
+    guard !hasEnded else { return }
     if let syncing { return await syncing.value }
     let task = Task {
       // Nothing is sent yet: the unsent changes come with their journal.
@@ -154,9 +159,52 @@ public final class SessionModel {
           .session, "An answer of the pull can't be decoded.",
           detail: "\(answer.route.method) \(answer.route.template) \(answer.keyPath)")
       }
+    } catch is CancellationError {
+      // A sign-out cancels the pull, and the database can throw this from a write that sees it. It is no fault of
+      // the copy, so it is not logged as one.
     } catch {
       Log.fault(.session, "The copy can't be read or written.", detail: "\(error)")
     }
+  }
+
+  // MARK: - The end of the session
+
+  /// Asks the instance once to revoke the session: `DELETE /users/me/sessions/current`. True when the instance
+  /// answered that the session is over, false when it could not be reached or refused.
+  ///
+  /// Diagnostics: never. A failed revoke is not captured, and not a breadcrumb: the device is cleared anyway, and
+  /// the client has logged the request's outcome.
+  func revokeOnServer() async -> Bool {
+    do {
+      try await client.revokeCurrentSession()
+      return true
+    } catch .unauthorized {
+      // The server had already ended the session.
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /// Ends the session model, as a sign-out does: it cancels a sync under way and waits for it to stop, stops
+  /// reading the copy, publishes nothing more, and closes the local database. Any later sync does nothing.
+  func end() async {
+    hasEnded = true
+    syncing?.cancel()
+    await syncing?.value
+    observation?.cancel()
+    observation = nil
+    user = nil
+    primaryList = nil
+    primaryListItems = []
+    lists = [:]
+    users = []
+    usersByID = [:]
+    groups = []
+    occasions = []
+    memberships = []
+    isInstanceUnreachable = false
+    database.close()
   }
 
   // MARK: - The app comes to the foreground
@@ -164,6 +212,7 @@ public final class SessionModel {
   /// What the app does each time it comes to the foreground: it syncs, and then reports the time zone. Only the app
   /// calls this, never an extension.
   public func cameToForeground() async {
+    guard !hasEnded else { return }
     await sync()
     await reportTimeZone()
   }
@@ -176,7 +225,7 @@ public final class SessionModel {
   /// It shows nothing. A failure changes nothing, and the next foreground tries again. It reports only the
   /// session's own user, never a child.
   func reportTimeZone() async {
-    guard !isReportingTimeZone, case .some(let recorded) = recordedTimeZone else { return }
+    guard !hasEnded, !isReportingTimeZone, case .some(let recorded) = recordedTimeZone else { return }
     let zone = timeZone.identifier()
     guard zone != recorded else { return }
     isReportingTimeZone = true
