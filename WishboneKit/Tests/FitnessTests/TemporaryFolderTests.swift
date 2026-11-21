@@ -23,8 +23,10 @@ enum TemporaryFolders {
 struct TemporaryFolderTests {
   @Test("Only ScratchDirectory names a temporary folder")
   func onlyScratchDirectory() throws {
-    let files = try Repo.swiftFiles(under: Repo.shipped + ["WishboneKit/Tests"])
+    let files = try Repo.swiftFiles(under: Repo.shipped + Repo.tests)
     #expect(files.contains { $0.path == TemporaryFolders.allowed })
+    #expect(files.contains { $0.path.hasPrefix("HostedTests/") })
+    #expect(files.contains { $0.path.hasPrefix("JourneyTests/") })
     let findings = TemporaryFolders.findings(in: files)
     #expect(findings.isEmpty, "\(findings.report)")
   }
@@ -42,12 +44,14 @@ struct TemporaryFolderTests {
     #expect(TemporaryFolders.findings(in: [SourceFile(path: "Planted.swift", source: source)]).count == 1)
   }
 
-  @Test("The scan allows ScratchDirectory's own file, and words in comments and strings")
+  @Test("The scan allows ScratchDirectory's own file, the hosted tests' folder, and words in comments and strings")
   func scanAllows() {
     let source = """
       // FileManager.default.temporaryDirectory is banned.
       let message = "Use ScratchDirectory, not NSTemporaryDirectory() or mkdtemp()."
       let folder = try ScratchDirectory()
+      let storage = URL.cachesDirectory.appending(path: "Test-\\(UUID().uuidString)", directoryHint: .isDirectory)
+      defer { try? FileManager.default.removeItem(at: storage) }
       """
     #expect(TemporaryFolders.findings(in: [SourceFile(path: "Planted.swift", source: source)]).isEmpty)
     let named = SourceFile(path: TemporaryFolders.allowed, source: "let base = FileManager.default.temporaryDirectory")
