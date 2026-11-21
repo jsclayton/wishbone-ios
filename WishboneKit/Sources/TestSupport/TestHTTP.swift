@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// The plain HTTP that the harness and the fixture builder speak to a test server. It keeps no cookies and no
 /// cache, and follows no redirect.
@@ -8,7 +9,12 @@ import Foundation
 /// carried no request for 10 seconds, and a reverse proxy closes an idle one. `URLSession` then sends a `GET`
 /// again, but fails a `POST`, `PATCH`, `PUT` or `DELETE` with `networkConnectionLost`, and the test fails on
 /// something that it doesn't test. See `alone(_:)` for what keeps a new connection for each request cheap.
+///
+/// At most `inFlight` of its requests are on their way at once, in the whole test process. See `slots`.
 public enum TestHTTP {
+  /// How many requests of the harness can be on their way at once.
+  static let inFlight = 16
+
   /// One answer from a server.
   public struct Answer: Sendable {
     public let method: String
@@ -66,6 +72,8 @@ public enum TestHTTP {
 
   /// Sends the request as it is.
   public static func send(_ request: URLRequest) async throws -> Answer {
+    await slots.take()
+    defer { slots.give() }
     let session = newSession()
     defer { session.finishTasksAndInvalidate() }
     let (body, response) = try await session.data(for: alone(request), delegate: NoRedirects())
@@ -108,6 +116,56 @@ public enum TestHTTP {
     configuration.urlCache = nil
     configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
     return URLSession(configuration: configuration)
+  }
+
+  /// The slots of the requests on their way. A new connection waits in the server's listen queue until the server
+  /// accepts it, and the queue holds at most `kern.ipc.somaxconn` connections: 128 on macOS. The kernel resets one
+  /// more, and `URLSession` fails its request with `networkConnectionLost` at once, a `GET` too, because the
+  /// connection is new. A test server on a busy machine accepts late, and a test can send 200 requests at once, to
+  /// make a group of more than one page. So the harness keeps few of them in flight, well under the queue, with
+  /// room left for the conditioner's forwards. The conditioner takes no slot, so a request that the harness sends
+  /// through it never waits for its own forward.
+  static let slots = Slots(inFlight)
+
+  /// A fixed number of slots, which tasks take in the order that they ask.
+  final class Slots: Sendable {
+    private struct State {
+      var free: Int
+      var waiting: [CheckedContinuation<Void, Never>] = []
+    }
+
+    private let state: Mutex<State>
+
+    init(_ count: Int) {
+      state = Mutex(State(free: count))
+    }
+
+    /// Waits until a slot is free, and takes it.
+    func take() async {
+      await withCheckedContinuation { continuation in
+        let now = state.withLock { state in
+          guard state.free > 0 else {
+            state.waiting.append(continuation)
+            return false
+          }
+          state.free -= 1
+          return true
+        }
+        if now { continuation.resume() }
+      }
+    }
+
+    /// Gives a slot back: to the task that has waited longest, if one waits.
+    func give() {
+      let next = state.withLock { state in
+        guard !state.waiting.isEmpty else {
+          state.free += 1
+          return CheckedContinuation<Void, Never>?.none
+        }
+        return state.waiting.removeFirst()
+      }
+      next?.resume()
+    }
   }
 
   /// An answer that redirects is the answer. Nothing follows it.
