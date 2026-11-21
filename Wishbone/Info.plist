@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>NSCameraUsageDescription</key>
-	<string>Wishbone uses the camera to scan the QR code of a login link.</string>
+	<string>Wishbone uses the camera to scan the QR code of a login link, and to take your profile photo.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>

@@ -60,6 +60,7 @@ Every window shows the gate until the profile is confirmed. The form stays in a 
 | The photo's menu | "Take a photo", "Choose a photo", "Remove photo". With a photo, the control reads "Photo" |
 | The birthday's rows | "Month", "Day", and "Year (optional)", whose picker starts with "No year" |
 | A field that a 422 names | "Check your name.", "Check your last name.", "Check your birthday." |
+| The camera's permission string | The one that the [signed-out](signed-out.md) screen's scanner uses, which names the profile photo too |
 | Continue with no connection | "Can't reach {address}", and the button reads "Try again" |
 
 ## Accessibility
