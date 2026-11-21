@@ -11,7 +11,7 @@
 // Every `xcodebuild` writes its log, and its result bundle, to the results folder. The script prints one line for
 // each run.
 
-import { execFileSync, spawn } from 'node:child_process';
+import { execFile, execFileSync, spawn } from 'node:child_process';
 import { createWriteStream, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { createServer } from 'node:http';
 import path from 'node:path';
@@ -185,33 +185,74 @@ export function settingCommands(setting, simulator) {
   ];
 }
 
+/** How long one `simctl` call that changes a setting may take, before it counts as hung. */
+export const settingCallLimitMs = 20_000;
+
 /**
- * Puts the simulator in a setting, and every other setting back to its default, with `run` (a `simctl` call). It
- * remembers what it set, and runs only the calls that change something: a change from the default to one setting,
- * and back, is one call each way, not three. Its first `apply` runs every call, because the simulator can be in
- * any setting from an earlier run.
- *
- * Returns `{ apply(setting), calls(), ms() }`: the number of calls that it ran, and the time that they took.
+ * Runs `xcrun simctl <args>`, and stops it when it passes `limitMs`. Resolves when it ends well. Rejects when it
+ * fails, and with an error whose `timedOut` is true when it passed its limit.
  */
-export function settingsApplier(simulator, run = simctl) {
+export function simctlWithLimit(args, limitMs = settingCallLimitMs, { file = 'xcrun', prefix = ['simctl'] } = {}) {
+  return new Promise((resolve, reject) => {
+    execFile(file, [...prefix, ...args], { timeout: limitMs, killSignal: 'SIGKILL', encoding: 'utf8' }, (error, stdout, stderr) => {
+      if (error === null) {
+        resolve(stdout);
+        return;
+      }
+      const failure = new Error(error.killed ? `didn't return within ${duration(limitMs)}` : (stderr.trim() || error.message));
+      failure.timedOut = error.killed === true;
+      reject(failure);
+    });
+  });
+}
+
+/**
+ * Puts the simulator in a setting, and every other setting back to its default, with `run(command, limitMs)` (a
+ * `simctl` call with a time limit, `simctlWithLimit`). It remembers what it set, and runs only the calls that
+ * change something: a change from the default to one setting, and back, is one call each way, not three. Its first
+ * `apply` runs every call, because the simulator can be in any setting from an earlier run.
+ *
+ * A call that passes its limit is hung. It is run once more, and a second hang fails the setting, with an error
+ * that names the setting and the call. So a hang in CI shows as itself, not as a journey's request that timed out.
+ *
+ * Returns `{ apply(setting), calls(), retries(), ms() }`: the number of calls that it ran, how many of them hung
+ * and were run again, and the time that they took.
+ */
+export function settingsApplier(simulator, { run = simctlWithLimit, limitMs = settingCallLimitMs } = {}) {
   const set = new Map();
   let calls = 0;
+  let retries = 0;
   let ms = 0;
   return {
-    apply(setting) {
+    async apply(setting) {
       for (const command of settingCommands(setting, simulator)) {
         const [, , name, value] = command;
         if (set.get(name) === value) continue;
         const started = Date.now();
         // A call that fails leaves the setting unknown, so the next `apply` runs it again.
         set.delete(name);
-        run(command);
+        try {
+          for (let attempt = 1; ; attempt += 1) {
+            calls += 1;
+            try {
+              await run(command, limitMs);
+              break;
+            } catch (error) {
+              if (!error.timedOut || attempt === 2) throw error;
+              retries += 1;
+            }
+          }
+        } catch (error) {
+          const twice = error.timedOut ? ', twice' : '';
+          throw new Error(`simctl ${command.join(' ')} ${error.message}${twice}, so the simulator isn't in ${setting.label}`);
+        } finally {
+          ms += Date.now() - started;
+        }
         set.set(name, value);
-        calls += 1;
-        ms += Date.now() - started;
       }
     },
     calls: () => calls,
+    retries: () => retries,
     ms: () => ms,
   };
 }
@@ -263,18 +304,18 @@ function holdStatusBar(simulator) {
  * each part and its time. Returns `{ simulator, applier }`: the
  * simulator's ID, and the `settingsApplier` that knows its settings.
  */
-export function prepareSimulator({ say = console.log } = {}) {
-  const timed = (what, work) => {
+export async function prepareSimulator({ say = console.log } = {}) {
+  const timed = async (what, work) => {
     const started = Date.now();
-    const result = work();
+    const result = await work();
     say(`✓ ${what} (${duration(Date.now() - started)})`);
     return result;
   };
-  const simulator = timed("Found the gate's simulator", findOrMakeSimulator);
-  timed("Booted the gate's simulator", () => simctl(['bootstatus', simulator, '-b'], { stdio: 'ignore' }));
-  timed("Held the simulator's status bar still", () => holdStatusBar(simulator));
+  const simulator = await timed("Found the gate's simulator", findOrMakeSimulator);
+  await timed("Booted the gate's simulator", () => simctl(['bootstatus', simulator, '-b'], { stdio: 'ignore' }));
+  await timed("Held the simulator's status bar still", () => holdStatusBar(simulator));
   const applier = settingsApplier(simulator);
-  timed('Put the simulator in the default settings', () => applier.apply(settings[0]));
+  await timed('Put the simulator in the default settings', () => applier.apply(settings[0]));
   return { simulator, applier };
 }
 
@@ -321,7 +362,7 @@ export async function runSimulatorTier({ root, directory, build = true, say = co
   let simulator = null;
   let applier = null;
   try {
-    ({ simulator, applier } = prepareSimulator({ say }));
+    ({ simulator, applier } = await prepareSimulator({ say }));
     if (build) {
       if (!(await run('Built the app and the test bundles for the simulator', buildArguments, { log: 'build.log' }))) return false;
       // After `just build`, the build has nothing to compile. The line says so.
@@ -347,11 +388,12 @@ export async function runSimulatorTier({ root, directory, build = true, say = co
 
     helper = await startSettingsHelper((setting) => applier.apply(setting));
     const helperCalls = applier.calls();
+    const helperRetries = applier.retries();
     const helperMs = applier.ms();
     // DIAGNOSTIC, to be removed: the journeys three times over, to see their cost once the simulator has settled.
     for (let pass = 0; pass < 3; pass += 1)
     for (const [index, journeys] of journeyRuns.entries()) {
-      applier.apply(settings[0]);
+      await applier.apply(settings[0]);
       // xcodebuild gives the test runner each variable that starts with TEST_RUNNER_, without that start.
       const env = {
         TEST_RUNNER_WISHBONE_SETTINGS_HELPER: journeys.helper ? helper.address : '',
@@ -359,7 +401,11 @@ export async function runSimulatorTier({ root, directory, build = true, say = co
       };
       const bundle = pass === 0 ? bundles.ui[index].path : path.join(directory, `pass-${pass}-journeys-${journeys.name}.xcresult`);
       const passed = await run(`Pass ${pass + 1}: the journeys in ${journeys.label}`, test('JourneyTests', bundle), { log: `pass-${pass}-journeys-${journeys.name}.log`, bundle, env });
-      if (index === 0) say(`  The settings helper made ${applier.calls() - helperCalls} simctl calls, in ${duration(applier.ms() - helperMs)}.`);
+      if (index === 0) {
+        const retried = applier.retries() - helperRetries;
+        const again = retried === 0 ? '' : `, and ran ${retried} that hung once more`;
+        say(`  The settings helper made ${applier.calls() - helperCalls} simctl calls, in ${duration(applier.ms() - helperMs)}${again}.`);
+      }
       if (!passed) return false;
     }
     return true;
@@ -367,7 +413,7 @@ export async function runSimulatorTier({ root, directory, build = true, say = co
     await helper?.close();
     try {
       if (simulator !== null) {
-        applier.apply(settings[0]);
+        await applier.apply(settings[0]);
         simctl(['status_bar', simulator, 'clear']);
       }
     } catch {
