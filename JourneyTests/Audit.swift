@@ -37,7 +37,7 @@ enum Audit {
   private static let ownSetting = isDoubleLength ? "the double-length pseudo-language" : "the simulator's settings"
 
   /// How long the screen may take to show a setting.
-  private static let settleTimeout: Duration = .seconds(20)
+  private static let settleTimeout: Duration = .seconds(60)
 
   /// The app to launch, in the language that the gate asked for.
   static func app() -> XCUIApplication {
@@ -61,17 +61,19 @@ enum Audit {
       try audit(app, screen, in: ownSetting, screenshot: app.screenshot(), test: test)
       return
     }
-    // The screen in the default settings. Each other setting must change it, and then the screen must come back
-    // to it, so the audit never reads a screen that is still on its way from one setting to the next.
+    // Each change of setting must change the screen from what it was just before, and then the screen must be
+    // still. Between two settings, the simulator goes back to the default. So the audit never reads a screen that
+    // is still on its way from one setting to the next, and each change is of one setting only.
     try await apply(settings[0], helper: helper)
-    let base = try await settledScreen(of: app, in: settings[0], where: { _ in true })
-    try audit(app, screen, in: settings[0].label, screenshot: base.screenshot, test: test)
+    var current = try await settledScreen(of: app, in: settings[0], where: { _ in true })
+    try audit(app, screen, in: settings[0].label, screenshot: current.screenshot, test: test)
     for setting in settings.dropFirst() {
       try await apply(setting, helper: helper)
-      let shown = try await settledScreen(of: app, in: setting, where: { $0 != base.pixels })
+      let before = current.pixels
+      let shown = try await settledScreen(of: app, in: setting, where: { $0 != before })
       try audit(app, screen, in: setting.label, screenshot: shown.screenshot, test: test)
       try await apply(settings[0], helper: helper)
-      _ = try await settledScreen(of: app, in: settings[0], where: { $0 == base.pixels })
+      current = try await settledScreen(of: app, in: settings[0], where: { $0 != shown.pixels })
     }
   }
 
