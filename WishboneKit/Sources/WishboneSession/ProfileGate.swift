@@ -103,7 +103,7 @@ extension SessionModel {
         let image = try await client.uploadImage(file)
         changes.avatarImageID = .some(image.id)
       } catch {
-        return outcome(of: error, photo: true)
+        return await outcome(of: error, photo: true)
       }
     }
     do {
@@ -113,7 +113,7 @@ extension SessionModel {
       try await keep(try await client.confirmProfile())
       return .confirmed
     } catch let error as APIError {
-      return outcome(of: error, photo: false)
+      return await outcome(of: error, photo: false)
     } catch is CancellationError {
       // A sign-out ended the session during Continue. It is no fault of the copy.
       return .failed
@@ -134,15 +134,19 @@ extension SessionModel {
     try await database.save([user])
   }
 
-  private func outcome(of error: APIError, photo: Bool) -> ProfileOutcome {
+  private func outcome(of error: APIError, photo: Bool) async -> ProfileOutcome {
     switch error {
     case .unreachable:
-      .unreachable
+      return .unreachable
     case .refused(let refusal):
-      photo ? .photoRefused(refusal) : .refused(refusal)
-    case .cancelled, .unauthorized, .appTooOld, .undecodable:
-      // The API's own 401 and 410 have screens of their own, which are not built yet.
-      .failed
+      return photo ? .photoRefused(refusal) : .refused(refusal)
+    case .unauthorized:
+      // The API's own 401 ends the session, as it does for a sync: every window shows the signed-out screen.
+      await endedByServer(self)
+      return .failed
+    case .cancelled, .appTooOld, .undecodable:
+      // The API's own 410 has a screen of its own, which is not built yet.
+      return .failed
     }
   }
 }

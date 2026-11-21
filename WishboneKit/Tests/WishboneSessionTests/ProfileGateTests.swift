@@ -259,6 +259,21 @@ final class ProfileGateTests {
     #expect(session.needsProfileGate)
   }
 
+  @Test("The API's own 401 during Continue signs the device out, as a sync does")
+  func endedByServer() async throws {
+    let robin = try await instance.person("Robin")
+    let device = try await signedIn(as: robin)
+    let session = try #require(device.session)
+    let kept = try #require(instance.keychain.read())
+    try await APIClient(session: kept, userAgent: UserAgent(version: "1.0", isPad: false)).revokeCurrentSession()
+
+    #expect(await session.confirmProfile(ProfileDraft(try #require(session.user))) == .failed)
+
+    #expect(device.session == nil)
+    #expect(device.signInState == .signedOutByServer(try instance.address))
+    #expect(instance.keychain.read() == nil)
+  }
+
   @Test("Sign out works from the gate")
   func signOutFromTheGate() async throws {
     let robin = try await instance.person("Robin")

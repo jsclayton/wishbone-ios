@@ -79,7 +79,7 @@ public final class SessionModel {
 
   /// What the session model calls when a request gets the API's own 401: the device forgets the session. It returns
   /// when the device is cleared, and this session model has ended.
-  private let endedByServer: @MainActor (SessionModel) async -> Void
+  let endedByServer: @MainActor (SessionModel) async -> Void
 
   /// The zone on the user's record, as the instance last gave it in this launch: in the copy's user after a pull
   /// that ended, or in the answer of a report. The outer nil means that no answer has come yet in this launch, so
