@@ -1,0 +1,26 @@
+// The build settings that every target shares. See docs/development.md, "Signing and build settings".
+// To change one on your machine, set it in Config/Local.xcconfig, which git ignores.
+//
+// An xcconfig file treats `//` as the start of a comment. To write a URL, split the slashes: https:/$()/example.com
+
+// The team that signs the app, and the prefix that every identifier comes from.
+DEVELOPMENT_TEAM = 99C27774ZU
+WISHBONE_BUNDLE_PREFIX = com.codemonkeylabs.wishbone
+CODE_SIGN_STYLE = Automatic
+
+// Where diagnostics go. Empty means that diagnostics never start.
+WISHBONE_SENTRY_DSN =
+
+// The "Source code" row in Settings.
+WISHBONE_SOURCE_URL = https:/$()/github.com/jsclayton/wishbone-ios
+
+// The privacy policy link on the Share diagnostics screen.
+WISHBONE_PRIVACY_URL = https:/$()/github.com/jsclayton/wishbone-ios/blob/main/PRIVACY.md
+
+// The support row in Settings. Empty means no row.
+WISHBONE_SUPPORT_URL = https:/$()/buymeacoffee.com/jsclayton
+
+// Local builds are build 1, so diagnostics can tell them from release builds.
+CURRENT_PROJECT_VERSION = 1
+
+#include? "Local.xcconfig"
