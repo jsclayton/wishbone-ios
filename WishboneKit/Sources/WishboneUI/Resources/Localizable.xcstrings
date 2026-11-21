@@ -17,6 +17,12 @@
     "A photo is optional." : {
 
     },
+    "About" : {
+
+    },
+    "Acknowledgements" : {
+
+    },
     "Add" : {
 
     },
@@ -176,6 +182,9 @@
     "Something went wrong in Wishbone. Try again." : {
 
     },
+    "Source code" : {
+
+    },
     "Take a photo" : {
 
     },
@@ -212,6 +221,9 @@
     "This version of Wishbone is too old for %@. Update the app." : {
 
     },
+    "To keep your gifts private on a shared device, touch and hold Wishbone on the Home Screen and choose Require Face ID." : {
+
+    },
     "Too many tries. Wait a minute, then try again." : {
 
     },
@@ -220,6 +232,16 @@
     },
     "Update Wishbone" : {
 
+    },
+    "Version %@ (%@)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Version %1$@ (%2$@)"
+          }
+        }
+      }
     },
     "Wishbone" : {
 
@@ -231,6 +253,9 @@
 
     },
     "Wishbone sends crash and fault reports to its developer, with the versions of the app and of Wishbone, the device model, and the iOS version." : {
+
+    },
+    "Wishbone uses these open source packages." : {
 
     },
     "With a year, your family sees the age you're turning." : {
