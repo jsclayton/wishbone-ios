@@ -42,6 +42,29 @@ struct ClientContractTests {
     }
   }
 
+  @Test("Every query parameter that the client sends is one that the route takes", arguments: Route.allCases)
+  func queryParametersAreInTheCopy(route: Route) throws {
+    let taken = try parameters(of: route, in: "query")
+    for name in route.queryParameters {
+      #expect(taken.contains(name), "\(route.method) \(route.template) takes no \(name) in its query")
+    }
+  }
+
+  @Test("GET /versions is in the copy with its 304 and its If-None-Match, and the client's request has no query")
+  func versions() throws {
+    let operation = try operation(of: .versions)
+    #expect(operation["responses"]["304"] != .null)
+    #expect(try parameters(of: .versions, in: "header").contains("If-None-Match"))
+    // The server refuses this route with any query parameter, whatever its name. So the copy gives it none, and
+    // the client must send none.
+    #expect(try parameters(of: .versions, in: "query").isEmpty)
+    #expect(Route.versions.queryParameters.isEmpty)
+    // The answer is one response, with no pages to follow.
+    let answer = operation["responses"]["200"]["content"]["application/json"]["schema"]
+    #expect(schema(at: "data[].kind", in: answer) != nil)
+    #expect(schema(at: "next_cursor", in: answer) == nil)
+  }
+
   @Test("The check finds what is missing: a route, and a field")
   func checkFindsWhatIsMissing() throws {
     #expect(throws: NotInTheCopy.self) { try operation(method: "GET", template: "/wishes/{id}") }
@@ -65,6 +88,12 @@ struct ClientContractTests {
 
   private func operation(of route: Route) throws -> JSON {
     try operation(method: route.method, template: route.template)
+  }
+
+  /// The names of the parameters that the copy gives the route in one place: `query`, `header`, or `path`.
+  private func parameters(of route: Route, in place: String) throws -> [String] {
+    let parameters = try operation(of: route)["parameters"].array ?? []
+    return parameters.filter { $0["in"].string == place }.compactMap { $0["name"].string }
   }
 
   /// The operation of a method and a path template. In a template, `me` stands for a user's ID and `current` for

@@ -154,7 +154,9 @@ public final class NetworkConditioner: Sendable {
     private struct State {
       var held = 0
       var isReleased = false
-      var arrivals: [CheckedContinuation<Void, Never>] = []
+      var nextWaiter = 0
+      /// The callers of `waitUntilHeld()` that still wait, each by its own number.
+      var arrivals: [Int: CheckedContinuation<Void, Never>] = [:]
       var releases: [CheckedContinuation<Void, Never>] = []
     }
 
@@ -171,14 +173,26 @@ public final class NetworkConditioner: Sendable {
 
     /// Returns when the conditioner holds a request, or has held one. At `.answer`, the server has answered it by
     /// then. A test waits here, and never for a length of time.
+    ///
+    /// It also returns when its task is cancelled. So the time limit of a test ends a wait for a request that
+    /// never comes, and the test fails by its name.
     public func waitUntilHeld() async {
-      await withCheckedContinuation { continuation in
-        let isHeld = state.withLock { state in
-          if state.held > 0 { return true }
-          state.arrivals.append(continuation)
-          return false
+      let waiter = state.withLock { state in
+        defer { state.nextWaiter += 1 }
+        return state.nextWaiter
+      }
+      await withTaskCancellationHandler {
+        await withCheckedContinuation { continuation in
+          let isOver = state.withLock { state in
+            // A cancel that came before this point found no one to wake.
+            if state.held > 0 || Task.isCancelled { return true }
+            state.arrivals[waiter] = continuation
+            return false
+          }
+          if isOver { continuation.resume() }
         }
-        if isHeld { continuation.resume() }
+      } onCancel: {
+        state.withLock { $0.arrivals.removeValue(forKey: waiter) }?.resume()
       }
     }
 
@@ -197,9 +211,9 @@ public final class NetworkConditioner: Sendable {
       await withCheckedContinuation { continuation in
         let (arrivals, isReleased) = state.withLock { state in
           state.held += 1
-          defer { state.arrivals = [] }
+          defer { state.arrivals = [:] }
           if !state.isReleased { state.releases.append(continuation) }
-          return (state.arrivals, state.isReleased)
+          return (Array(state.arrivals.values), state.isReleased)
         }
         arrivals.forEach { $0.resume() }
         if isReleased { continuation.resume() }

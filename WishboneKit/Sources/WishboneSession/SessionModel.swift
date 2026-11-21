@@ -29,8 +29,9 @@ public final class SessionModel {
   private let database: LocalDatabase
   private let timeZone: TimeZoneSource
 
-  /// The zone on the user's record, from the last answer of the instance that held the record. The outer nil means
-  /// that no answer has come yet in this launch, so the app doesn't know the record and reports nothing.
+  /// The zone on the user's record, as the instance last gave it in this launch: in the copy's user after a pull
+  /// that ended, or in the answer of a report. The outer nil means that no answer has come yet in this launch, so
+  /// the app doesn't know the record and reports nothing.
   private var recordedTimeZone: String??
   private var isReportingTimeZone = false
 
@@ -58,39 +59,51 @@ public final class SessionModel {
     )
   }
 
-  /// Brings the copy up to date with the instance: it pulls the session's user and their primary list.
+  /// Brings the instance and the copy in step: a sync sends the unsent changes, then pulls. See "When the app
+  /// syncs" in `docs/spec.md`.
   ///
   /// A call during a sync waits for that sync, and starts no second one.
   public func sync() async {
     if let syncing { return await syncing.value }
-    let task = Task { await pull() }
+    let task = Task {
+      // Nothing is sent yet: the unsent changes come with their journal.
+      await pull()
+    }
     syncing = task
     await task.value
     syncing = nil
   }
 
+  /// Runs one pull, and publishes whether the instance could be reached.
+  ///
+  /// Diagnostics, for each way that a pull stops:
+  /// - An unreachable instance, a cancelled request, and a 404: never.
+  /// - An answer that can't be decoded: captured, as the path template and the key path, never a value.
+  /// - A copy that can't be read or written: captured, by its code only.
+  ///
+  /// Nothing is captured yet: the app has no diagnostics until `WishboneDiagnostics` holds them.
   private func pull() async {
-    let user: User
-    let items: [Item]
     do {
-      user = try await client.me()
-      items = if let list = user.primaryList { try await client.items(ofList: list.id) } else { [] }
-    } catch .unreachable {
-      // Unreachable never ends the session.
-      isInstanceUnreachable = true
-      return
-    } catch {
-      // The instance answered. What the answer asks of the app (the API's own 401, a version block) is not built
-      // yet, so the copy stays as it is.
+      let user = try await Pull(client: client, database: database, userID: session.userID).run()
       isInstanceUnreachable = false
-      return
-    }
-    isInstanceUnreachable = false
-    recordedTimeZone = .some(user.timezone)
-    do {
-      try await database.save(user: user, primaryListItems: items)
+      // The instance has just said that the copy's user is the user's record, also when it said so with a 304
+      // and the pull fetched nothing.
+      if let user { recordedTimeZone = .some(user.timezone) }
+    } catch APIError.unreachable {
+      // Unreachable never ends the session. The copy keeps what the pull wrote before it stopped.
+      isInstanceUnreachable = true
+    } catch let error as APIError {
+      // The instance answered. What the answer asks of the app is not built yet: the API's own 401 ends the
+      // session, and a 404 for the versions is an instance below the minimum server version, which the version
+      // check tells the person. The copy keeps what the pull wrote before it stopped.
+      isInstanceUnreachable = false
+      if case .undecodable(let answer) = error {
+        Log.fault(
+          .session, "An answer of the pull can't be decoded.",
+          detail: "\(answer.route.method) \(answer.route.template) \(answer.keyPath)")
+      }
     } catch {
-      Log.fault(.session, "The copy can't be written.", detail: "\(error)")
+      Log.fault(.session, "The copy can't be read or written.", detail: "\(error)")
     }
   }
 

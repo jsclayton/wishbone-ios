@@ -4,8 +4,12 @@ import Testing
 import WishboneAPI
 import WishboneSession
 
-/// What a test of the session model starts from: the shared test server, a network conditioner in front of it,
-/// and a device that knows the instance only by the conditioner's address.
+/// What a test of the session model starts from: a test server, a network conditioner in front of it, and a device
+/// that knows the instance only by the conditioner's address.
+///
+/// The server is the shared one, unless the test gives a private one. On the shared server, a row for the whole
+/// instance that another test makes, such as an occasion for everyone, changes what every user sees. So a test
+/// that needs `GET /versions` to answer 304 starts a private server.
 @MainActor
 struct Instance {
   let server: TestServer
@@ -15,8 +19,9 @@ struct Instance {
   /// The device's session keychain. A second device with the same one stands for a relaunch.
   let keychain = InMemorySessionKeychain()
 
-  init() async throws {
-    server = try await TestServer.shared()
+  init(server: TestServer? = nil) async throws {
+    if let server { self.server = server } else { self.server = try await TestServer.shared() }
+    let server = self.server
     conditioner = try await NetworkConditioner(to: server.address)
     builder = try await FixtureBuilder(server: server)
   }
