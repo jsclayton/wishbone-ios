@@ -7,7 +7,7 @@ import WishboneUI
 @Suite("The camera's state, on the signed-out screen", .timeLimit(.minutes(1)))
 @MainActor
 struct CameraAccessTests {
-  @Test("Allowed opens the scanner, denied says why and offers Open Settings, and not available says so")
+  @Test("Allowed opens the scanner, denied says why and offers Open Settings, and restricted and not available say so")
   func whatScanShows() {
     // Allowed, or not asked yet: the system asks at the first tap.
     for status in [AVAuthorizationStatus.authorized, .notDetermined] {
@@ -18,15 +18,20 @@ struct CameraAccessTests {
       #expect(!allowed.offersSettings)
     }
 
-    for status in [AVAuthorizationStatus.denied, .restricted] {
-      let denied = CameraAccess(authorization: status, isSupported: true)
-      #expect(denied == .denied)
-      #expect(!denied.canScan)
-      #expect(
-        denied.reason
-          == "Wishbone needs the camera to scan a QR code. You can turn it on in Settings, or paste a link.")
-      #expect(denied.offersSettings)
-    }
+    let denied = CameraAccess(authorization: .denied, isSupported: true)
+    #expect(denied == .denied)
+    #expect(!denied.canScan)
+    #expect(
+      denied.reason
+        == "Wishbone needs the camera to scan a QR code. You can turn it on in Settings, or paste a link.")
+    #expect(denied.offersSettings)
+
+    // A restriction, such as Screen Time, says why, and offers no Open Settings: the app's page there can't help.
+    let restricted = CameraAccess(authorization: .restricted, isSupported: true)
+    #expect(restricted == .restricted)
+    #expect(!restricted.canScan)
+    #expect(restricted.reason == "The camera is turned off on this device, so Wishbone can't scan. Paste a link.")
+    #expect(!restricted.offersSettings)
 
     // A device with no camera to scan with, whatever the permission says. Settings can't help.
     for status in [AVAuthorizationStatus.authorized, .notDetermined, .denied] {

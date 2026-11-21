@@ -62,6 +62,9 @@
     "That link was already used, or it has expired. Ask for a new one." : {
 
     },
+    "The camera is turned off on this device, so Wishbone can't scan. Paste a link." : {
+
+    },
     "This device has no camera to scan with. Paste a link." : {
 
     },

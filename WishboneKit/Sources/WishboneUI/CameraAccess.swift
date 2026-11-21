@@ -12,8 +12,12 @@
     /// The person allowed the camera, or the system has not asked yet. Scan QR code opens the scanner.
     case allowed
 
-    /// The person denied the camera, or a restriction such as Screen Time holds it back.
+    /// The person denied the camera. Settings can turn it on.
     case denied
+
+    /// A restriction, such as Screen Time or a device manager, holds the camera back. The app's page in Settings
+    /// can't turn it on, so the screen offers no Open Settings.
+    case restricted
 
     /// The device has no camera that the system's data scanner can use, as in the simulator.
     case notAvailable
@@ -27,8 +31,10 @@
       switch authorization {
       case .authorized, .notDetermined:
         self = .allowed
-      case .denied, .restricted:
+      case .denied:
         self = .denied
+      case .restricted:
+        self = .restricted
       @unknown default:
         self = .denied
       }
@@ -57,6 +63,9 @@
           localized: "Wishbone needs the camera to scan a QR code. You can turn it on in Settings, or paste a link.",
           bundle: #bundle
         )
+      case .restricted:
+        String(
+          localized: "The camera is turned off on this device, so Wishbone can't scan. Paste a link.", bundle: #bundle)
       case .notAvailable:
         String(localized: "This device has no camera to scan with. Paste a link.", bundle: #bundle)
       }
