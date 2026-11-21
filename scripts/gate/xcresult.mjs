@@ -134,9 +134,14 @@ export function readAttachmentNames(bundle) {
  * adds its own ending to each name. Each screen that the run reached must be audited in each setting once: a
  * later journey that reaches a screen again doesn't audit it again. Other attachments don't count.
  *
- * Returns `{ screens, problem }`: the number of screens that the run audited, and what is wrong, or null.
+ * `audited` is the names of the screens that the settings helper answered 201 for: the screens that the run
+ * audited. The bundle's screens must be exactly those. So a name that the check can't read, a label in
+ * `Audit.swift` that differs from the gate's, or a screen with none of its screenshots fails, and doesn't pass as
+ * a run that audited fewer screens.
+ *
+ * Returns `{ screens, problem }`: the number of screens in the bundle, and what is wrong, or null.
  */
-export function checkAuditScreenshots(names, labels) {
+export function checkAuditScreenshots(names, labels, audited) {
   const screens = new Map();
   for (const attached of names) {
     const name = attached.replace(/_\d+_[0-9A-Za-z-]+\.[a-z]+$/, '');
@@ -153,6 +158,12 @@ export function checkAuditScreenshots(names, labels) {
     }
     const missing = [...counts].filter(([, count]) => count === 0).map(([label]) => label);
     if (missing.length > 0) return { screens: screens.size, problem: `${screen} was not audited in ${missing.join(', ')}` };
+  }
+  const absent = audited.filter((screen) => !screens.has(screen));
+  if (absent.length > 0) return { screens: screens.size, problem: `the result bundle has no screenshot of ${absent.join(', ')}, which the settings helper audited` };
+  const extra = [...screens.keys()].filter((screen) => !audited.includes(screen));
+  if (extra.length > 0) {
+    return { screens: screens.size, problem: `the result bundle has screenshots of ${extra.join(', ')}, which the settings helper did not audit` };
   }
   return { screens: screens.size, problem: null };
 }

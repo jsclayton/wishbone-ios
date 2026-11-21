@@ -79,8 +79,9 @@ const steps = [
     // A first run starts a new simulator. Then come the hosted tests, and the journeys twice: with the audit in
     // the four settings, and in the double-length pseudo-language. On a new CI runner, the step's fixed part (the
     // simulator's first boot, up to about 6 minutes, and the hosted tests) takes about 5m40s to 8 minutes. Each
-    // screen that the journeys audit takes about 1 minute in the four settings, once in the run, and about 15
-    // seconds in double length. So the step holds about 19 to 22 audited screens.
+    // screen that the journeys audit takes about 1 minute in the four settings, once in the run. Double length has
+    // no helper, so it pays its 15 seconds or so each time that a journey reaches a screen. With both runs, about
+    // 1m15s for each screen, the step holds about 17 to 19 audited screens.
     limitMs: 30 * minute,
     slot: true,
     counts: ['hosted', 'ui'],

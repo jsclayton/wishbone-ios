@@ -123,13 +123,47 @@ const shots = (screen, settings = labels) => settings.map((label, index) => `${s
 
 test('the result bundle passes when it has each screen that the journeys reached in the four settings, once', () => {
   const names = [...shots('the signed-out screen'), ...shots('Home'), 'Kite, the screenshot of a failure_0_1.png', ...shots('Lists')];
-  assert.deepEqual(checkAuditScreenshots(names, labels), { screens: 3, problem: null });
-  assert.deepEqual(checkAuditScreenshots([], labels), { screens: 0, problem: null });
+  assert.deepEqual(checkAuditScreenshots(names, labels, ['the signed-out screen', 'Home', 'Lists']), { screens: 3, problem: null });
+  assert.deepEqual(checkAuditScreenshots([], labels, []), { screens: 0, problem: null });
+});
+
+test('the result bundle fails when it has fewer screens than the settings helper audited', () => {
+  const names = [...shots('the signed-out screen'), ...shots('Home')];
+  assert.deepEqual(checkAuditScreenshots(names, labels, ['the signed-out screen', 'Home', 'Lists']), {
+    screens: 2,
+    problem: 'the result bundle has no screenshot of Lists, which the settings helper audited',
+  });
+  assert.deepEqual(checkAuditScreenshots([], labels, ['Home']), {
+    screens: 0,
+    problem: 'the result bundle has no screenshot of Home, which the settings helper audited',
+  });
+});
+
+test("the result bundle fails when an audited screen's screenshots have names that the check can't read", () => {
+  // A label in Audit.swift that drifted from the gate's own: the screenshots of Home name no setting that the gate knows.
+  const names = [...shots('the signed-out screen'), ...shots('Home', ['the default settings', 'the biggest text', 'dark mode', 'Increase Contrast'])];
+  assert.deepEqual(checkAuditScreenshots(names, labels, ['the signed-out screen', 'Home']), {
+    screens: 2,
+    problem: 'Home was not audited in the largest text size',
+  });
+  const unreadable = [...shots('the signed-out screen'), 'Home in dark mode_0_1.png'];
+  assert.deepEqual(checkAuditScreenshots(unreadable, labels, ['the signed-out screen', 'Home']), {
+    screens: 1,
+    problem: 'the result bundle has no screenshot of Home, which the settings helper audited',
+  });
+});
+
+test('the result bundle fails when it has a screen that the settings helper did not audit', () => {
+  const names = [...shots('Home'), ...shots('Gifts')];
+  assert.deepEqual(checkAuditScreenshots(names, labels, ['Home']), {
+    screens: 2,
+    problem: 'the result bundle has screenshots of Gifts, which the settings helper did not audit',
+  });
 });
 
 test('the result bundle fails when a later journey audited a screen again', () => {
   const names = [...shots('the signed-out screen'), ...shots('Home'), ...shots('Home'), ...shots('Lists')];
-  assert.deepEqual(checkAuditScreenshots(names, labels), {
+  assert.deepEqual(checkAuditScreenshots(names, labels, ['the signed-out screen', 'Home', 'Lists']), {
     screens: 3,
     problem: 'Home was audited more than once in the run: 2 times in the default settings, 2 times in the largest text size, 2 times in dark mode, 2 times in Increase Contrast',
   });
@@ -137,7 +171,7 @@ test('the result bundle fails when a later journey audited a screen again', () =
 
 test('the result bundle fails when a screen is not in all four settings', () => {
   const names = [...shots('Home'), ...shots('Gifts', ['the default settings', 'dark mode'])];
-  assert.deepEqual(checkAuditScreenshots(names, labels), { screens: 2, problem: 'Gifts was not audited in the largest text size, Increase Contrast' });
+  assert.deepEqual(checkAuditScreenshots(names, labels, ['Home', 'Gifts']), { screens: 2, problem: 'Gifts was not audited in the largest text size, Increase Contrast' });
 });
 
 test("the screenshots' names are read from each test's activities, at any depth, in every run", () => {
