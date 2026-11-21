@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>WishbonePrivacyURL</key>
+	<string>$(WISHBONE_PRIVACY_URL)</string>
+	<key>WishboneSentryDSN</key>
+	<string>$(WISHBONE_SENTRY_DSN)</string>
+	<key>WishboneSourceURL</key>
+	<string>$(WISHBONE_SOURCE_URL)</string>
+	<key>WishboneSupportURL</key>
+	<string>$(WISHBONE_SUPPORT_URL)</string>
+</dict>
+</plist>

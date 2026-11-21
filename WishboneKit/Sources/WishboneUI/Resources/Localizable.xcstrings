@@ -1,0 +1,21 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "Diagnostics settings" : {
+
+    },
+    "I don't have a link" : {
+
+    },
+    "If Wishbone crashes, it sends a report to its developer, never anything from your family's lists." : {
+
+    },
+    "Scan QR code" : {
+
+    },
+    "Wishbone" : {
+
+    }
+  },
+  "version" : "1.0"
+}
