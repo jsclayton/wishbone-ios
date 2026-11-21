@@ -301,7 +301,7 @@ struct LocalDatabase: Sendable {
     removingUsers gone: [String] = []
   ) async throws {
     let rows = users.map { UserRow($0) }
-    let inBodies = Self.summaryRows(of: users.flatMap { $0.resource.parents + $0.resource.children }, named: summaries)
+    let inBodies = Self.summaryRows(in: users, named: summaries)
     try await change { database in
       try UserRow.deleteAll(database, keys: gone)
       for row in inBodies + rows {
@@ -310,9 +310,11 @@ struct LocalDatabase: Sendable {
     }
   }
 
-  /// The rows of the summaries that `GET /versions` named, each with the version that it named.
-  private static func summaryRows(of summaries: [UserSummary], named versions: [String: String]) -> [UserRow] {
-    summaries.compactMap { summary in
+  /// The rows of the summaries in the bodies that `GET /versions` named, each with the version that it named.
+  private static func summaryRows<Body: HoldsSummaries>(
+    in bodies: [Versioned<Body>], named versions: [String: String]
+  ) -> [UserRow] {
+    bodies.flatMap(\.resource.summaries).compactMap { summary in
       versions[summary.id].map { version in
         UserRow(id: summary.id, name: summary.name, avatar: summary.avatar, record: nil, version: version)
       }
@@ -339,7 +341,7 @@ struct LocalDatabase: Sendable {
     removingOccasions gone: [String] = []
   ) async throws {
     let rows = occasions.map { OccasionRow($0) }
-    let inBodies = Self.summaryRows(of: occasions.compactMap(\.resource.user), named: summaries)
+    let inBodies = Self.summaryRows(in: occasions, named: summaries)
     try await change { database in
       try OccasionRow.deleteAll(database, keys: gone)
       for row in inBodies {
@@ -372,7 +374,7 @@ struct LocalDatabase: Sendable {
     removingLists gone: [String] = []
   ) async throws {
     let rows = lists.map { ListRow($0) }
-    let inBodies = Self.summaryRows(of: lists.flatMap(\.resource.recipients), named: summaries)
+    let inBodies = Self.summaryRows(in: lists, named: summaries)
     try await change { database in
       try Self.removeLists(gone, in: database)
       for row in inBodies {
@@ -393,7 +395,7 @@ struct LocalDatabase: Sendable {
     removingRecipients gone: [String] = []
   ) async throws {
     let rows = recipients.map { RecipientRow($0, ofList: listID) }
-    let inBodies = Self.summaryRows(of: recipients.map(\.resource.user), named: summaries)
+    let inBodies = Self.summaryRows(in: recipients, named: summaries)
     try await change { database in
       for userID in gone {
         try RecipientRow.deleteOne(database, key: ["listID": listID, "userID": userID])
@@ -427,7 +429,7 @@ struct LocalDatabase: Sendable {
         StoreLinkRow(link, ofItem: item.resource.id, at: position, version: versions[link.id] ?? "")
       }
     }
-    let inBodies = Self.summaryRows(of: items.compactMap(\.resource.addedBy), named: summaries)
+    let inBodies = Self.summaryRows(in: items, named: summaries)
     try await change { database in
       try Self.removeItems(gone + items.map(\.resource.id), in: database)
       for row in inBodies {
@@ -450,8 +452,7 @@ struct LocalDatabase: Sendable {
     removingInvitations gone: [String] = []
   ) async throws {
     let rows = invitations.map { InvitationRow($0) }
-    let users = invitations.flatMap { [$0.resource.user] + ($0.resource.invitedBy.map { [$0] } ?? []) }
-    let inBodies = Self.summaryRows(of: users, named: summaries)
+    let inBodies = Self.summaryRows(in: invitations, named: summaries)
     try await change { database in
       try InvitationRow.deleteAll(database, keys: gone)
       for row in inBodies {
@@ -472,12 +473,7 @@ struct LocalDatabase: Sendable {
     removingGifts gone: [String] = []
   ) async throws {
     let rows = gifts.map { GiftRow($0) }
-    let users = gifts.flatMap { gift in
-      let resource = gift.resource
-      return (resource.giver.map { [$0] } ?? []) + (resource.recipients.value ?? [])
-        + (resource.flags.value ?? []).flatMap(\.users)
-    }
-    let inBodies = Self.summaryRows(of: users, named: summaries)
+    let inBodies = Self.summaryRows(in: gifts, named: summaries)
     try await change { database in
       try GiftRow.deleteAll(database, keys: gone)
       for row in inBodies {
@@ -681,6 +677,44 @@ extension Session {
 }
 
 // MARK: - A row from the API's model
+
+/// A body of the API that holds users as summaries. Each save keeps them, with the body, as the summaries that
+/// `GET /versions` names.
+protocol HoldsSummaries: Sendable {
+  /// The users that the body holds as summaries.
+  var summaries: [UserSummary] { get }
+}
+
+extension User: HoldsSummaries {
+  var summaries: [UserSummary] { parents + children }
+}
+
+extension Occasion: HoldsSummaries {
+  var summaries: [UserSummary] { user.map { [$0] } ?? [] }
+}
+
+extension ListResource: HoldsSummaries {
+  var summaries: [UserSummary] { recipients }
+}
+
+extension Recipient: HoldsSummaries {
+  var summaries: [UserSummary] { [user] }
+}
+
+extension Item: HoldsSummaries {
+  var summaries: [UserSummary] { addedBy.map { [$0] } ?? [] }
+}
+
+extension Invitation: HoldsSummaries {
+  var summaries: [UserSummary] { [user] + (invitedBy.map { [$0] } ?? []) }
+}
+
+extension Gift: HoldsSummaries {
+  /// The giver, the recipients, and the users that the flags name (see `GiftFlag.users`).
+  var summaries: [UserSummary] {
+    (giver.map { [$0] } ?? []) + (recipients.value ?? []) + (flags.value ?? []).flatMap(\.users)
+  }
+}
 
 extension UserRow {
   /// The row of a user in full.

@@ -519,6 +519,7 @@ struct GiftsTests {
       ["field": "quantity", "old": 1, "new": 2],
       ["field": "is_unlimited", "old": false, "new": true],
       ["field": "primary_image"],
+      ["field": "price", "old": nil, "new": ["price_minor": 1000, "top_price_minor": 1500, "currency": "EUR"]],
       [
         "field": "store_link_price", "url": "https://shop.example/kite",
         "old": ["price_minor": 900, "top_price_minor": nil, "currency": "USD"], "new": nil,
@@ -533,6 +534,7 @@ struct GiftsTests {
       ["code": "occasion_moved"],
       ["code": "no_longer_shared"],
       ["code": "restored", "by": robin],
+      ["code": "restored", "by": nil],
       ["code": "recipients_changed", "old_recipients": [robin, sam], "new_recipients": nil],
       ["code": "gift_wrapped", "paper": "gold"],
     ]
@@ -566,6 +568,9 @@ struct GiftsTests {
           GiftChange(field: .isUnlimited, old: .shown(.boolean(false)), new: .shown(.boolean(true))),
           GiftChange(field: .primaryImage),
           GiftChange(
+            field: .price, old: .shown(nil),
+            new: .shown(.price(.init(priceMinor: 1000, topPriceMinor: 1500, currency: "EUR")))),
+          GiftChange(
             field: .storeLinkPrice, url: "https://shop.example/kite", old: .shown(price(900)), new: .shown(nil)),
           GiftChange(field: .storeLinkRemoved, url: "https://gone.example/kite"),
           GiftChange(field: .unknown("colour"), old: .shown(.unknown), new: .shown(.text("green"))),
@@ -575,6 +580,7 @@ struct GiftsTests {
         .occasionMoved,
         .noLongerShared,
         .restored(byUserID: family.child.id),
+        .restored(byUserID: nil),
         .recipientsChanged(oldUserIDs: [family.child.id, family.deactivatedChild.id], newUserIDs: nil),
         .unknown("gift_wrapped"),
       ])
