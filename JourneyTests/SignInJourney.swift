@@ -96,10 +96,23 @@ nonisolated final class SignInJourney: XCTestCase {
     let field = app.searchFields[Audit.words("Paste a link or type what you want")]
     XCTAssertTrue(field.waitForExistence(timeout: 10), "The Add screen's field didn't show.")
     // The field is ready: the words go in with no tap on it first. The keyboard's Search key ends the typing,
-    // and the keyboard goes. The audit is of the app's screen, and takes too long with the system keyboard on it.
+    // and the keyboard goes.
     field.typeText("Kite\n")
     XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 10), "The keyboard didn't go.")
     XCTAssertEqual(field.value as? String, "Kite")
+    // The audit is of the app's screen, not of the system keyboard. Once the keyboard has shown in a launch, it
+    // stays in the app when it hides, and the audit lays it out again hundreds of times: on a slow runner, past
+    // the audit's time limit. The app gives up the keyboard when it leaves the foreground, so the journey sends it
+    // to the Home Screen and back first. The screen comes back as it was, with the words in the field.
+    XCUIDevice.shared.press(.home)
+    let left = XCTNSPredicateExpectation(
+      predicate: NSPredicate { _, _ in app.state != .runningForeground }, object: nil)
+    XCTAssertEqual(XCTWaiter.wait(for: [left], timeout: 10), .completed, "The app didn't leave the foreground.")
+    app.activate()
+    XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10), "The app didn't come back.")
+    XCTAssertTrue(field.waitForExistence(timeout: 10), "The Add screen didn't come back.")
+    XCTAssertEqual(field.value as? String, "Kite")
+    XCTAssertFalse(app.keyboards.firstMatch.exists, "The keyboard came back with the app.")
     try await Audit.run(on: app, showing: "the Add screen", in: self)
     app.terminate()
   }
