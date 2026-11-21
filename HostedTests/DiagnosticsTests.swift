@@ -240,6 +240,83 @@ struct DiagnosticsTests {
     }
   }
 
+  @Test("An event names no install folder: each image's path is its path inside the app's bundle")
+  func noInstallFolder() async throws {
+    let receiver = try await EnvelopeReceiver.start()
+    let place = try Place()
+    let diagnostics = place.diagnostics(
+      Diagnostics.Build(dsn: receiver.dsn, environment: "test", isDebug: false, hasLaunchArgument: false))
+    diagnostics.noticeShown()
+    let id = try #require(diagnostics.diagnosticsID)
+    // The probe carries the stack of the thread that sends it, with the images of its frames.
+    diagnostics.sendProbe()
+    await diagnostics.flush()
+    diagnostics.isOn = false
+
+    let envelope = try #require(receiver.envelopes.first { !$0.events.isEmpty })
+    let event = try #require(envelope.events.first)
+    let images = try #require((event["debug_meta"] as? [String: Any])?["images"] as? [[String: Any]])
+    let files = images.compactMap { $0["code_file"] as? String }
+    // Sentry's JSON holds the threads and the exceptions each in `values`.
+    let stacks = ["threads", "exception"].flatMap {
+      (event[$0] as? [String: Any])?["values"] as? [[String: Any]] ?? []
+    }
+    let frames = stacks.flatMap { ($0["stacktrace"] as? [String: Any])?["frames"] as? [[String: Any]] ?? [] }
+    let packages = frames.compactMap { $0["package"] as? String }
+    // The app's own image is there, by its path inside the bundle.
+    #expect(files.contains { $0.hasPrefix("Wishbone") }, "\(files)")
+    #expect(packages.contains { $0.hasPrefix("Wishbone") }, "\(packages)")
+    #expect(!(files + packages).contains { $0.contains(".app/") }, "\(files + packages)")
+
+    // Nowhere in the envelope: the folder that iOS gives the app at install.
+    for folder in ["/containers/", "/var/containers/"] {
+      #expect(envelope.text.range(of: folder, options: .caseInsensitive) == nil, "The envelope names \(folder).")
+    }
+    // The only values shaped like a UUID are the diagnostics ID, the images' debug IDs, and the app's build ID,
+    // which is the same in every install of a build.
+    let debugIDs = images.compactMap { $0["debug_id"] as? String }
+    let appID = ((event["contexts"] as? [String: Any])?["app"] as? [String: Any])?["app_id"] as? String
+    let allowed = Set(([id] + debugIDs + [appID].compactMap(\.self)).map { $0.uppercased() })
+    let uuid = /[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}/
+    let found = Set(envelope.text.matches(of: uuid).map { String($0.output).uppercased() })
+    #expect(found.contains(id.uppercased()))
+    #expect(found.subtracting(allowed).isEmpty, "Other UUIDs in the envelope: \(found.subtracting(allowed))")
+  }
+
+  @Test("An event's device context has only the device's model and memory, and no state of the device")
+  func deviceContext() async throws {
+    let receiver = try await EnvelopeReceiver.start()
+    let place = try Place()
+    let diagnostics = place.diagnostics(
+      Diagnostics.Build(dsn: receiver.dsn, environment: "test", isDebug: false, hasLaunchArgument: false))
+    diagnostics.noticeShown()
+    diagnostics.sendProbe()
+    await diagnostics.flush()
+    diagnostics.isOn = false
+
+    let envelope = try #require(receiver.envelopes.first { !$0.events.isEmpty })
+    let event = try #require(envelope.events.first)
+    let contexts = try #require(event["contexts"] as? [String: Any])
+    let device = try #require(contexts["device"] as? [String: Any])
+    let kept: Set = ["model", "model_id", "family", "arch", "simulator", "memory_size", "free_memory"]
+    #expect(Set(device.keys).isSubset(of: kept), "The device context holds \(Set(device.keys).subtracting(kept)).")
+    #expect(device["model"] != nil)
+    let dropped = [
+      "battery_level", "charging", "connection_type", "connection_effective_type", "orientation", "low_power_mode",
+      "thermal_state", "screen_width_pixels", "screen_height_pixels", "processor_count", "usable_memory",
+      "timezone", "locale",
+    ]
+    for field in dropped {
+      #expect(device[field] == nil, "The device context holds \(field).")
+      #expect(!envelope.text.contains("\"\(field)\""), "The envelope holds \(field).")
+    }
+    #expect((contexts["os"] as? [String: Any])?["rooted"] == nil)
+    #expect((contexts["app"] as? [String: Any])?["view_names"] == nil)
+    for field in ["rooted", "view_names"] {
+      #expect(!envelope.text.contains("\"\(field)\""), "The envelope holds \(field).")
+    }
+  }
+
   /// The user of an event, as its fields.
   private func user(_ event: [String: Any]) -> [String: String] {
     (event["user"] as? [String: Any] ?? [:]).compactMapValues { $0 as? String }

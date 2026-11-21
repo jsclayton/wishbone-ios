@@ -87,6 +87,8 @@ enum SentryReporter {
     options.enableNetworkBreadcrumbs = false
     options.enableCaptureFailedRequests = false
     options.enableSwizzling = false
+    // Off: the swizzling of `Data` for file tracing, which is off too.
+    options.enableDataSwizzling = false
 
     // Off: memory near the stack at a crash, which can hold anything that the app had in memory.
     options.enableMemoryIntrospection = false
@@ -103,17 +105,51 @@ enum SentryReporter {
   /// - The diagnostics ID is the only ID of the device. The SDK's `device_app_hash` is a hash of the vendor ID, which
   ///   would outlive turning diagnostics off and on, so it is dropped.
   /// - The time zone goes only to the family's server, so the culture context, which holds the zone and the
-  ///   locale, is dropped, and so are the zone and the locale of the device context.
+  ///   locale, is dropped.
+  /// - The device context keeps only ``deviceFields``: the device's model, and its memory for the out-of-memory
+  ///   reports. The device's state (battery, connection, orientation, power, heat, screen) is never sent, nor is the
+  ///   SDK's jailbreak check, nor the names of the app's view types, which are not from the app's vocabulary.
+  /// - An image's path names the folder that iOS gives the app at install, with a UUID that outlives turning
+  ///   diagnostics off and on. So each image of the debug meta, and each frame's image, keeps only its path inside
+  ///   the app's bundle. Symbols are found by the image's debug ID and the address, not by its path.
   private nonisolated static func scrub(_ event: Event, diagnosticsID: String) -> Event? {
     event.user = User(userId: diagnosticsID)
+    for image in event.debugMeta ?? [] {
+      image.codeFile = image.codeFile.map(pathInsideBundle)
+    }
+    let stacktraces = (event.threads ?? []).compactMap(\.stacktrace) + (event.exceptions ?? []).compactMap(\.stacktrace)
+    for frame in stacktraces.flatMap(\.frames) {
+      frame.package = frame.package.map(pathInsideBundle)
+      frame.fileName = frame.fileName.map(pathInsideBundle)
+    }
     if var context = event.context {
       context["culture"] = nil
-      context["device"]?["timezone"] = nil
-      context["device"]?["locale"] = nil
+      context["device"] = context["device"]?.filter { deviceFields.contains($0.key) }
+      context["os"]?["rooted"] = nil
       context["app"]?["device_app_hash"] = nil
+      context["app"]?["view_names"] = nil
       event.context = context
     }
     return event
+  }
+
+  /// The fields of the device context that an event keeps. See "What may be sent" in `docs/spec.md`, and
+  /// `PRIVACY.md`: the device's model, and its memory.
+  nonisolated static let deviceFields: Set<String> = [
+    "model", "model_id", "family", "arch", "simulator", "memory_size", "free_memory",
+  ]
+
+  /// The part of a file's path inside the app's bundle: `Frameworks/Sentry.framework/Sentry` for
+  /// `/private/var/containers/Bundle/Application/<UUID>/Wishbone.app/Frameworks/Sentry.framework/Sentry`. A path in
+  /// any other container keeps only its last part. A system path, which is the same on every device, stays.
+  nonisolated static func pathInsideBundle(_ path: String) -> String {
+    if let bundle = path.range(of: ".app/") {
+      return String(path[bundle.upperBound...])
+    }
+    if path.range(of: "/containers/", options: .caseInsensitive) != nil {
+      return (path as NSString).lastPathComponent
+    }
+    return path
   }
 
   /// Each feature of the SDK, on or off, read back from the options that ``start(dsn:environment:diagnosticsID:folder:)``
@@ -142,6 +178,7 @@ enum SentryReporter {
       "network breadcrumbs": options.enableNetworkBreadcrumbs,
       "failed requests": options.enableCaptureFailedRequests,
       "swizzling": options.enableSwizzling,
+      "data swizzling": options.enableDataSwizzling,
       "memory introspection": options.enableMemoryIntrospection,
       "spotlight": options.enableSpotlight,
     ]

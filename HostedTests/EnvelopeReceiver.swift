@@ -31,6 +31,9 @@ nonisolated final class EnvelopeReceiver: Sendable {
 
     let items: [Item]
 
+    /// The whole envelope as it arrived, unzipped: its header, and every item.
+    let text: String
+
     /// The events of the envelope.
     var events: [[String: Any]] {
       items.filter { $0.type == "event" }.compactMap(\.json)
@@ -161,14 +164,15 @@ nonisolated final class EnvelopeReceiver: Sendable {
 
   /// The items of an envelope: a header line, then for each item its header line and its payload.
   private static func envelope(_ body: Data) -> Envelope {
+    let text = String(decoding: body, as: UTF8.self)
     var lines = body.split(separator: UInt8(ascii: "\n"), omittingEmptySubsequences: false).map { Data($0) }
-    guard !lines.isEmpty else { return Envelope(items: []) }
+    guard !lines.isEmpty else { return Envelope(items: [], text: text) }
     lines.removeFirst()
     var items: [Envelope.Item] = []
     while lines.count >= 2 {
       let header = (try? JSONSerialization.jsonObject(with: lines.removeFirst())) as? [String: Any] ?? [:]
       items.append(Envelope.Item(header: header, payload: lines.removeFirst()))
     }
-    return Envelope(items: items)
+    return Envelope(items: items, text: text)
   }
 }
