@@ -1,6 +1,10 @@
-// Conventional commits. Used by the commit-msg hook (lefthook.yml). The rules
-// match the Wishbone server's (jsclayton/wishbone), so both repos read alike.
-// The local subject-no-leading-uppercase rule replaces subject-case, which is off.
+// Conventional commits. Used by the commit-msg hook (lefthook.yml) and by
+// .github/workflows/commitlint.yml on main (through
+// .github/commitlint.main.config.js). The rules match the Wishbone server's
+// (jsclayton/wishbone), so both repos read alike. Keep them in step with the PR
+// title check in .github/workflows/pr-title.yml. Its subjectPattern
+// `^(?![A-Z]).+$` is mirrored by the local subject-no-leading-uppercase rule,
+// so subject-case is off.
 export default {
   extends: ['@commitlint/config-conventional'],
   plugins: [

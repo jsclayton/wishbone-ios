@@ -1,0 +1,163 @@
+name: CI
+
+# Cost notes (macOS runners cost more than Linux runners, so CI avoids needless
+# runs and keeps a hung job from running for hours):
+# - Draft PRs don't run CI. Mark the PR ready for review to run it.
+# - Title and body edits don't run CI. See pr-title.yml.
+# - Docs-only changes skip the Gate job, the only one on a macOS runner.
+# - On a PR, a new push cancels the older run.
+# - Every job has timeout-minutes, so a hung step ends the job. The gate also
+#   stops each of its own steps at a limit.
+# - The ruleset requires only "PR Title" and "CI OK". CI OK fails if a job it
+#   needs failed or was cancelled. A skipped job counts as passed.
+# - Every job runs on a GitHub-hosted runner. Don't use a self-hosted runner:
+#   it would run code from fork PRs.
+# - CI builds unsigned and uses no secrets, so a fork's PR runs the whole gate.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [main]
+
+# On a PR, a new push cancels the older run. On main, every push has a group of
+# its own, so each commit gets its own run and none is cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  # The Xcode version that the project pins. It moves by hand, with
+  # docs/development.md.
+  XCODE_VERSION: "27.2"
+
+jobs:
+  changes:
+    name: Changes
+    if: github.event_name == 'push' || !github.event.pull_request.draft
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.detect.outputs.code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Fail if private files are tracked
+        run: |
+          if git ls-files | grep -E '^(\.agent|\.claude|\.beads)/|\.local\.md$'; then
+            echo "::error::Private files must not be committed."
+            exit 1
+          fi
+      - name: Detect changed areas
+        id: detect
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$EVENT" = pull_request ]; then
+            # On a PR, HEAD is the test merge commit and HEAD^1 is the base.
+            base=HEAD^1
+          else
+            # On main, compare with the commit that main was at before the push.
+            base=$BEFORE
+            if ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+              echo "Can't read the commit before the push ($base). Running everything."
+              echo "code=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          files=$(git diff --name-only "$base" HEAD)
+          printf 'Changed files:\n%s\n' "$files"
+
+          docs_only='^(docs/|LICENSE$|\.github/ISSUE_TEMPLATE/|\.github/pull_request_template\.md$)|\.md$'
+
+          # An empty list is not docs only: when in doubt, run the gate.
+          code=false
+          if printf '%s\n' "$files" | grep -Evq "$docs_only"; then code=true; fi
+          echo "code=$code"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
+  gate:
+    name: Gate
+    env:
+      MISE_ENABLE_TOOLS: node,just,go,actionlint,shellcheck
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: xcode-27
+    # Above the sum of the limits of the gate's steps, so that a hung step is
+    # stopped by the gate, which says which step it was.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Select Xcode
+        run: |
+          sudo xcode-select --switch "/Applications/Xcode_${XCODE_VERSION}.app"
+          xcodebuild -version
+      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+        with:
+          install_args: node just go actionlint shellcheck
+          minimum_release_age: 3d
+      # The three caches that docs/development.md names. Each is keyed on a
+      # file, and is skipped until that file exists:
+      # - The pin file is the one file named `server-pin` that holds the commit
+      #   of the test server. The server is built under build/server/.
+      # - Package.resolved appears with the first remote package.
+      - name: Cache the built test server
+        if: hashFiles('**/server-pin*') != ''
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/server
+          key: server-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/server-pin*') }}
+      - name: Cache Go's caches
+        if: hashFiles('**/server-pin*') != ''
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/Library/Caches/go-build
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', '**/server-pin*') }}
+          restore-keys: go-${{ runner.os }}-${{ runner.arch }}-
+      - name: Cache SwiftPM's cache
+        if: hashFiles('**/Package.resolved') != ''
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/Library/Caches/org.swift.swiftpm
+          key: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Package.resolved') }}
+          restore-keys: swiftpm-${{ runner.os }}-${{ runner.arch }}-
+      - name: Gate
+        run: just gate
+      # The gate's logs and results, and the build's log. The gate keeps them
+      # inside the checkout.
+      - if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gate-results
+          path: |
+            build/gate/
+            build/xcodebuild.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+  ci-ok:
+    name: CI OK
+    needs: [changes, gate]
+    if: always() && (github.event_name == 'push' || !github.event.pull_request.draft)
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    steps:
+      - name: Check job results
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Results: $RESULTS"
+          for r in $RESULTS; do
+            case "$r" in
+              success|skipped) ;;
+              *) echo "::error::A required job ended with '$r'."; exit 1 ;;
+            esac
+          done

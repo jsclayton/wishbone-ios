@@ -78,11 +78,18 @@ test:
 # ============================================================================
 
 # Run every linter and the docs check. It reports, and changes nothing
-lint: lint-swift lint-docs
+lint: lint-swift lint-ci lint-docs
 
 # Lint the Swift files with swift-format
 lint-swift:
     xcrun swift-format lint --strict --recursive --parallel {{swift_dirs}}
+
+# actionlint also runs shellcheck on each `run:` script in a workflow, so shellcheck must be installed.
+
+# Lint the GitHub workflows with actionlint, and the shell scripts with shellcheck
+lint-ci:
+    actionlint
+    git ls-files -z --cached --others --exclude-standard -- '*.sh' | xargs -0 shellcheck
 
 # Check the links in the Markdown files, and the ADR and screen indexes
 lint-docs:
