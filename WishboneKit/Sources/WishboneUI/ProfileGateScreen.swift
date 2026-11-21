@@ -41,6 +41,11 @@ struct ProfileGateScreen: View {
     NavigationStack {
       Form {
         Section {
+          // The title is a row, where it wraps. In the bar, between Sign out and Continue, a long title is cut
+          // short.
+          Text("Finish your profile", bundle: #bundle)
+            .font(.largeTitle.bold())
+            .accessibilityAddTraits(.isHeader)
           Text("Check your name and birthday. Your family sees them.", bundle: #bundle)
         }
         if let message {
@@ -58,7 +63,9 @@ struct ProfileGateScreen: View {
       } action: {
         width = $0
       }
+      // The window's title. The bar doesn't draw it: the form's first row does.
       .navigationTitle(Text("Finish your profile", bundle: #bundle))
+      .toolbar(removing: .title)
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
           Button {

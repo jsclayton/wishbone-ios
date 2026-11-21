@@ -24,7 +24,7 @@ One form, filled with what the profile has:
 
 The form has no time zone and no good to know. The time zone is reported by the app, and good to know is in [Your profile](profile.md).
 
-**Provisional.** Plain default: one system form with the profile's fields. Continue is the form's main button, at the trailing end of the toolbar, and Sign out is a toolbar button at its leading end.
+**Provisional.** Plain default: one system form with the profile's fields. Continue is the form's main button, at the trailing end of the toolbar, and Sign out is a toolbar button at its leading end. The title is the form's first row, where it wraps.
 
 ## States
 

@@ -48,8 +48,10 @@ nonisolated final class SignInJourney: XCTestCase {
     app.launch()
 
     // The gate, in place of the tabs, with the profile's name in its field.
-    let gate = app.navigationBars[Audit.words("Finish your profile")]
-    XCTAssertTrue(gate.waitForExistence(timeout: 60), "The profile gate didn't show after the sign-in.")
+    // The gate's title is the form's first row, and its bar holds Sign out and Continue.
+    let title = app.staticTexts[Audit.words("Finish your profile")]
+    let gate = app.navigationBars.firstMatch
+    XCTAssertTrue(title.waitForExistence(timeout: 60), "The profile gate didn't show after the sign-in.")
     XCTAssertFalse(app.tabBars.firstMatch.exists, "The tabs show behind the profile gate.")
     XCTAssertTrue(app.staticTexts[Audit.words("Check your name and birthday. Your family sees them.")].exists)
     // The name field holds the profile's name.
@@ -65,14 +67,14 @@ nonisolated final class SignInJourney: XCTestCase {
     gate.buttons[Audit.words("Continue")].tap()
     XCTAssertTrue(app.staticTexts["Tent"].waitForExistence(timeout: 60), "Home didn't show after Continue.")
     XCTAssertTrue(app.tabBars.firstMatch.buttons[Audit.words("Home")].isSelected)
-    XCTAssertFalse(gate.exists)
+    XCTAssertFalse(title.exists)
     app.terminate()
 
     // A relaunch goes straight to the tabs.
     let relaunched = Audit.app()
     relaunched.launch()
     XCTAssertTrue(relaunched.staticTexts["Tent"].waitForExistence(timeout: 60), "The relaunch didn't show Home.")
-    XCTAssertFalse(relaunched.navigationBars[Audit.words("Finish your profile")].exists)
+    XCTAssertFalse(relaunched.staticTexts[Audit.words("Finish your profile")].exists)
     relaunched.terminate()
   }
 
