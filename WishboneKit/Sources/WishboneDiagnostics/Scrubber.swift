@@ -120,12 +120,25 @@ nonisolated enum Scrubber {
     var fields: [String: Any] = [:]
     for key in kind.fields {
       switch context[key] {
-      case let value as String: fields[key] = text(value)
+      case let value as String: fields[key] = isWord(value) ? text(value) : "(unreadable)"
       case let value as NSNumber: fields[key] = value
       default: break
       }
     }
     return fields
+  }
+
+  /// Whether the text is shaped like a word of the vocabulary: a code, a method, a path template, or a key path.
+  static func isWord(_ text: String) -> Bool {
+    text.count <= 128 && text.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || "_./{}[]()-".contains($0)) }
+  }
+
+  /// The tag of the Wishbone version, held to the shape of a version. Anything else goes as `unreadable`.
+  static func versionTag(_ tag: String?) -> String {
+    guard let tag else { return "unknown" }
+    let isShaped =
+      (1...32).contains(tag.count) && tag.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || ".-".contains($0)) }
+    return isShaped ? text(tag) : "unreadable"
   }
 
   /// A word that names a kind of crash or exception, such as `EXC_BAD_ACCESS` or `App Hanging`. Anything else, such
@@ -140,7 +153,6 @@ nonisolated enum Scrubber {
   /// The instance's Wishbone version as the tag gives it: the version that `GET /health` gave, or `unknown`.
   static func versionTag(_ version: ServerVersion?) -> String {
     guard let version else { return "unknown" }
-    let shaped = version.text.prefix(32).allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || ".-".contains($0)) }
-    return shaped ? text(String(version.text.prefix(32))) : "unreadable"
+    return versionTag(version.text)
   }
 }

@@ -268,7 +268,14 @@ struct DiagnosticsTests {
     #expect(packages.contains { $0.hasPrefix("Wishbone") }, "\(packages)")
     #expect(!(files + packages).contains { $0.contains(".app/") }, "\(files + packages)")
 
-    // Nowhere in the envelope: the folder that iOS gives the app at install.
+    // Nowhere in the envelope: the folder that iOS gives the app at install. The check can fail: the text of an
+    // envelope reads Sentry's `\/` as `/`.
+    let planted = EnvelopeReceiver.envelope(Data(#"{}\#n{"type":"event"}\#n{"code_file":"\/var\/containers\/A"}"#.utf8))
+    #expect(planted.text.contains("/var/containers/"))
+    // A path that ends at the container's folder keeps no UUID.
+    let container = "/private/var/containers/Bundle/Application/\(UUID().uuidString)"
+    #expect(Diagnostics.pathInsideBundle(container) == "")
+    #expect(Diagnostics.pathInsideBundle(container + "/Wishbone.app/Wishbone") == "Wishbone")
     for folder in ["/containers/", "/var/containers/"] {
       #expect(envelope.text.range(of: folder, options: .caseInsensitive) == nil, "The envelope names \(folder).")
     }
@@ -318,13 +325,13 @@ struct DiagnosticsTests {
   }
 
   /// The user of an event, as its fields.
-  private func user(_ event: [String: Any]) -> [String: String] {
+  func user(_ event: [String: Any]) -> [String: String] {
     (event["user"] as? [String: Any] ?? [:]).compactMapValues { $0 as? String }
   }
 }
 
 /// A test's own defaults and folder, which it removes when it goes.
-nonisolated private final class Place {
+nonisolated final class Place {
   let suite = "DiagnosticsTests-\(UUID().uuidString)"
   let defaults: UserDefaults
   let folder: URL

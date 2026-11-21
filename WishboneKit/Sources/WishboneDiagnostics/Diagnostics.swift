@@ -226,16 +226,22 @@ nonisolated private final class Recorder: DiagnosticsReporter {
 
 #if DEBUG
   extension Diagnostics {
-    /// For the tests only: an event and a breadcrumb with the text in every field that a caller of the SDK can set.
-    @_spi(Testing) public func sendPlanted(_ text: String) {
+    /// For the tests only: an event and a breadcrumb with the text in every field that a caller of the SDK can set,
+    /// and the words in each field of runtime free text.
+    @_spi(Testing) public func sendPlanted(_ text: String, words: String) {
       guard isRunning else { return }
-      SentryReporter.sendPlanted(text)
+      SentryReporter.sendPlanted(text, words: words)
     }
 
     /// For the tests only: sends a fixed probe event, with no words of its own, through the running SDK.
     @_spi(Testing) public func sendProbe() {
       guard isRunning else { return }
       SentryReporter.sendProbe()
+    }
+
+    /// For the tests only: the part of a file's path that an event keeps. See ``Scrubber/pathInsideBundle(_:)``.
+    @_spi(Testing) public nonisolated static func pathInsideBundle(_ path: String) -> String {
+      Scrubber.pathInsideBundle(path)
     }
 
     /// For the tests only: waits until the SDK has tried to send what it holds.

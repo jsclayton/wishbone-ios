@@ -139,7 +139,7 @@ enum SentryReporter {
       event.message = nil
     }
     event.fingerprint = fault.map { _ in (event.fingerprint ?? []).map(Scrubber.text) }
-    var tags = ["wishbone_version": event.tags?["wishbone_version"].map(Scrubber.text) ?? "unknown"]
+    var tags = ["wishbone_version": Scrubber.versionTag(event.tags?["wishbone_version"])]
     tags["fault"] = fault?.rawValue
     event.tags = tags
     event.extra = nil
@@ -341,75 +341,82 @@ enum SentryReporter {
       SentrySDK.capture(message: "diagnostics probe")
     }
 
-    /// For the tests only: an event and a breadcrumb with the text in every field that a caller of the SDK can set,
-    /// as runtime free text or a careless call could fill them. The scrubber must leave none of it.
-    static func sendPlanted(_ text: String) {
-      let crumb = Sentry.Breadcrumb(level: .info, category: text)
-      crumb.message = text
-      crumb.type = text
-      crumb.origin = text
-      crumb.setData(value: text, key: text)
-      crumb.setData(value: text, key: "kind")
+    /// For the tests only: an event and a breadcrumb with `text` in every field that a caller of the SDK can set, as
+    /// runtime free text or a careless call could fill them. The scrubber must leave no token, login link, host or
+    /// address of it.
+    ///
+    /// `words` stands for the runtime's free text, such as a `fatalError` message. It is in every field that the
+    /// scrubber holds to the vocabulary or drops, and never in the fields that come from the binary or the device
+    /// (a frame's symbol and file, and the app's, the system's and the device's own values), which only the rules
+    /// for text hold.
+    static func sendPlanted(_ text: String, words: String) {
+      let free = "\(words) \(text)"
+      let crumb = Sentry.Breadcrumb(level: .info, category: free)
+      crumb.message = free
+      crumb.type = free
+      crumb.origin = free
+      crumb.setData(value: free, key: free)
+      crumb.setData(value: free, key: "kind")
       SentrySDK.addBreadcrumb(crumb)
       // A breadcrumb of the app's own kind, with a field that the kind doesn't have.
       let request = Sentry.Breadcrumb(level: .info, category: WishboneAPI.Breadcrumb.Kind.request.rawValue)
-      for (key, value) in ["method": "GET", "path": "/users", "status_class": "2xx", "host": text] {
+      for (key, value) in ["method": "GET", "path": "/users", "status_class": "2xx", "host": free] {
         request.setData(value: value, key: key)
       }
       SentrySDK.addBreadcrumb(request)
 
       let event = Event(level: .fatal)
-      event.message = SentryMessage(formatted: text)
-      event.logger = text
-      event.serverName = text
-      event.transaction = text
+      event.message = SentryMessage(formatted: free)
+      event.logger = free
+      event.serverName = free
+      event.transaction = free
       event.dist = nil
-      event.tags = [text: text, "fault": text, "wishbone_version": text]
-      event.extra = [text: text]
-      event.modules = [text: text]
-      event.fingerprint = [text]
-      event.user = User(userId: text)
-      event.user?.email = text
-      event.user?.ipAddress = text
-      event.user?.username = text
-      let request2 = SentryRequest()
-      request2.url = text
-      request2.queryString = text
-      request2.headers = [text: text]
-      request2.cookies = text
-      event.request = request2
+      event.tags = [free: free, "fault": free, "wishbone_version": free]
+      event.extra = [free: free]
+      event.modules = [free: free]
+      event.fingerprint = [free]
+      event.user = User(userId: free)
+      event.user?.email = free
+      event.user?.ipAddress = free
+      event.user?.username = free
+      let httpRequest = SentryRequest()
+      httpRequest.url = free
+      httpRequest.queryString = free
+      httpRequest.headers = [free: free]
+      httpRequest.cookies = free
+      event.request = httpRequest
       event.context = [
-        text: [text: text],
-        "app": [text: text, "app_name": text],
-        "device": [text: text, "model": text],
-        "os": [text: text, "version": text],
-        "fault": [text: text, "code": text],
+        free: [free: free],
+        "app": [free: free, "app_name": text],
+        "device": [free: free, "model": text],
+        "os": [free: free, "version": text],
+        "fault": [free: free, "code": free],
       ]
       let frame = Frame()
       frame.function = text
       frame.package = text
       frame.fileName = text
       frame.module = text
-      frame.contextLine = text
-      frame.preContext = [text]
-      frame.postContext = [text]
-      frame.vars = [text: text]
-      let exception = Exception(value: text, type: text)
-      exception.module = text
-      let mechanism = Mechanism(type: text)
-      mechanism.desc = text
-      mechanism.data = [text: text]
-      mechanism.helpLink = text
+      frame.contextLine = free
+      frame.preContext = [free]
+      frame.postContext = [free]
+      frame.vars = [free: free]
+      let exception = Exception(value: free, type: free)
+      exception.module = free
+      let mechanism = Mechanism(type: free)
+      mechanism.desc = free
+      mechanism.data = [free: free]
+      mechanism.helpLink = free
       let meta = MechanismContext()
-      meta.signal = ["name": text, "number": 11]
-      meta.machException = ["name": text, "exception": 1]
-      meta.error = SentryNSError(domain: text, code: 1)
+      meta.signal = ["name": free, "number": 11]
+      meta.machException = ["name": free, "exception": 1]
+      meta.error = SentryNSError(domain: free, code: 1)
       mechanism.meta = meta
       exception.mechanism = mechanism
       exception.stacktrace = SentryStacktrace(frames: [frame], registers: [:])
       event.exceptions = [exception]
       let thread = SentryThread(threadId: 1)
-      thread.name = text
+      thread.name = free
       thread.stacktrace = SentryStacktrace(frames: [frame], registers: [:])
       event.threads = [thread]
       SentrySDK.capture(event: event)
