@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -66,4 +66,45 @@ test('an interrupt ends the wait', async (t) => {
   interrupt.abort();
   await assert.rejects(waiting, /interrupted/);
   await first.release();
+});
+
+function isAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+test('a gate that is killed outright holds the slot until its step is stopped', async (t) => {
+  const folder = scratch(t);
+  const pidFile = path.join(folder, 'pids');
+  const slotModule = fileURLToPath(new URL('./slot.mjs', import.meta.url));
+  const stepModule = fileURLToPath(new URL('./step.mjs', import.meta.url));
+  // The step ignores the request to stop, so it ends only when it is killed, a while after the gate dies.
+  const script = `trap '' TERM; echo $$ > "${pidFile}"; while true; do sleep 0.1; done`;
+  const gate = `
+    const { takeSlot } = await import(${JSON.stringify(slotModule)});
+    const { runStep } = await import(${JSON.stringify(stepModule)});
+    const slot = await takeSlot(${JSON.stringify(folder)});
+    await runStep({ command: ['sh', '-c', ${JSON.stringify(script)}], limitMs: 60_000, echo: null, onStart: (pid) => slot.watch(pid) });
+  `;
+  const other = spawn(process.execPath, ['--input-type=module', '-e', gate], { stdio: 'ignore' });
+  t.after(() => other.kill('SIGKILL'));
+  let pid = null;
+  for (let tries = 0; pid === null; tries += 1) {
+    assert.ok(tries < 250, "the gate's step didn't start");
+    await sleep(20);
+    try {
+      pid = Number(readFileSync(pidFile, 'utf8').trim()) || null;
+    } catch {
+      // Not written yet.
+    }
+  }
+  t.after(() => isAlive(pid) && process.kill(pid, 'SIGKILL'));
+  other.kill('SIGKILL');
+  const slot = await takeSlot(folder);
+  assert.equal(isAlive(pid), false, 'the step was stopped before the slot was free');
+  await slot.release();
 });

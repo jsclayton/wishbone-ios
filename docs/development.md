@@ -193,10 +193,11 @@ docs/               The spec, the ADRs, and the guides
 
 The gate reads its own results:
 
-- It counts the tests from Swift Testing's summary and from each result bundle.
+- It counts the tests from Swift Testing's summary, from XCTest's summary for an XCTest test in the package, and from each result bundle.
 - It fails on any failure or recorded issue, on a bundle with 0 tests, and on a skip that is not on a short named list.
 - A known issue is a recorded issue, so it fails too.
-- A test that cancels itself with `Test.cancel`, or that has a case cancelled, is a skip.
+- An issue recorded with the severity `.warning` (`Issue.record(_:severity:)`) is not a failure, so the gate passes it. Swift Testing leaves a warning out of the event stream that the gate reads.
+- A test that cancels itself with `Test.cancel`, or that has a case cancelled, is a skip. So is an XCTest test that throws `XCTSkip`.
 - It fails when a count falls below the **floor**: the counts (package, hosted, and UI) in a small file in git, `scripts/gate/floor.json`. A change that adds tests can raise the floor. A commit that lowers it must say why.
 - The named list of skips is `allowedSkips` in `scripts/gate/main.mjs`. Each entry has a comment that says why.
 - It ends with one line, for example `GATE PASS package=412 hosted=38 ui=7 · 4m12s`, or `GATE FAIL step 3 (package): 2 failed`, then the names of the failed tests. A pull request quotes that line.
@@ -212,6 +213,8 @@ What "zero warnings" means in the build step:
 Time and load:
 
 - Each step is stopped, with all its child processes, when it passes its time limit. A step past its limit is a hang, not a flake.
+- A process that a step leaves behind when it ends is stopped too.
+- A gate that is killed, even with `kill -9`, stops its running step. The slot is free only when that step's processes have stopped.
 - Each run logs its step times to a file that git ignores, `build/gate/times.jsonl`, so a slowdown shows as a trend. The last run's logs are beside it, in `build/gate/run/`.
 - **The budget is 5 minutes**, warm, on the maintainer's laptop. A gate over budget passes with a warning. If it stays over, open an issue to fix it. CI starts cold, so the gate gives no warning there.
 - The build and simulator steps take a machine-wide slot, so that gates from several checkouts don't overload the machine. A gate waits for its turn, and the wait is not part of its time. The slot's lock folder is `WISHBONE_GATE_SLOT_DIR`, which has a default under your user's cache folder: `~/Library/Caches/wishbone-gate`.

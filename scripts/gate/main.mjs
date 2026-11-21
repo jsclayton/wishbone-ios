@@ -40,7 +40,7 @@ const steps = [
     command: ['just', 'test', '--event-stream-output-path', packageEvents, '--event-stream-version', '0'],
     limitMs: 10 * minute,
     counts: ['package'],
-    check: ({ exit }) => checkEventStream(packageEvents, { exit, countName: 'package', allowedSkips }),
+    check: ({ exit, logPath }) => checkEventStream(packageEvents, { exit, countName: 'package', allowedSkips, xctestLog: logPath }),
   },
   {
     name: 'build',

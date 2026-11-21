@@ -1,7 +1,11 @@
 // Reads the results of a test run, and judges them.
 //
-// The package tests are read from Swift Testing's event stream (`--event-stream-output-path`, version 0), not
-// from the text on the terminal: a test can print anything there.
+// The package's Swift Testing tests are read from Swift Testing's event stream (`--event-stream-output-path`,
+// version 0), not from the text on the terminal: a test can print anything there.
+//
+// XCTest writes nothing but that text in `swift test` (its xUnit file, with `--parallel`, leaves out skips). So
+// the package's XCTest tests are read from XCTest's own lines in the step's log. Each is a whole line in a fixed
+// shape, and the count comes from the last end of the run, which XCTest writes after every test has ended.
 
 import { readFileSync } from 'node:fs';
 
@@ -41,6 +45,10 @@ export function readEventStream(text) {
     if (record.kind !== 'event') continue;
     switch (payload.kind) {
       case 'issueRecorded': {
+        // A warning (`Issue.record(_:severity: .warning)`) is not a failure. Swift Testing 6.4 leaves it out of a
+        // version 0 stream, and a later version that writes it puts its severity in the issue.
+        const severity = payload.issue?._severity ?? payload.issue?.severity;
+        if (severity === 'warning') break;
         const list = payload.issue?.isKnown === true ? known : failed;
         if (payload.testID === undefined) strayIssues += 1;
         else list.add(testName(payload.testID));
@@ -70,6 +78,43 @@ export function readEventStream(text) {
     strayIssues,
     summary,
   };
+}
+
+const xctestCase = /^Test Case '-\[(\S+) (\S+)\]' (passed|failed|skipped) \(/;
+const xctestRunStarted = /^Test Suite 'All tests' started at /;
+const xctestRunEnded = /^Test Suite 'All tests' (?:passed|failed) at /;
+const xctestExecuted = /^\s*Executed (\d+) tests?, with /;
+
+/**
+ * Reads XCTest's lines in the text of a `swift test` run.
+ *
+ * Returns `{ tests, ended, failed, skipped }`. A test's name is `Module.Class/method()`. `ended` is false when
+ * the run started and didn't end. A text with no XCTest run reads as 0 tests, ended.
+ */
+export function readXCTestLog(text) {
+  const failed = new Set();
+  const skipped = new Set();
+  let tests = 0;
+  let ended = true;
+  let ending = false;
+  for (const line of text.split('\n')) {
+    const testCase = line.match(xctestCase);
+    if (testCase) {
+      const name = `${testCase[1]}/${testCase[2]}()`;
+      if (testCase[3] === 'failed') failed.add(name);
+      if (testCase[3] === 'skipped') skipped.add(name);
+    } else if (xctestRunStarted.test(line)) {
+      ended = false;
+    } else if (xctestRunEnded.test(line)) {
+      ending = true;
+      continue;
+    } else if (ending && xctestExecuted.test(line)) {
+      tests = Number(line.match(xctestExecuted)[1]);
+      ended = true;
+    }
+    ending = false;
+  }
+  return { tests, ended, failed: [...failed].sort(), skipped: [...skipped].sort() };
 }
 
 /** Reads the event stream at `path`. A file that is missing reads as a run with no summary. */
@@ -107,14 +152,22 @@ export function judge(reading, allowedSkips = []) {
 }
 
 /**
- * The `check` of a step that runs Swift Testing with its event stream written to `file`.
+ * The `check` of a step that runs Swift Testing with its event stream written to `file`. With `xctestLog`, the
+ * path of the step's log, it adds the XCTest tests in that log to the reading.
  *
  * Returns the reason why the step fails, if it does, and its count of tests under `countName`.
  */
-export function checkEventStream(file, { exit, countName, allowedSkips = [] }) {
+export function checkEventStream(file, { exit, countName, allowedSkips = [], xctestLog }) {
   const reading = readEventStreamFile(file);
   // With no summary, the tests didn't run to the end: the build failed, or the run died. The step's exit code
   // and its log say which. A step that says it passed with no summary fails here.
   if (reading.tests === null) return exit === 0 ? { fail: judge(reading) } : {};
+  if (xctestLog !== undefined) {
+    const xctest = readXCTestLog(readFileSync(xctestLog, 'utf8'));
+    if (!xctest.ended) return { fail: exit === 0 ? 'the XCTest run has no summary' : undefined };
+    reading.tests += xctest.tests;
+    reading.failed = [...new Set([...reading.failed, ...xctest.failed])].sort();
+    reading.skipped = [...new Set([...reading.skipped, ...xctest.skipped])].sort();
+  }
   return { fail: judge(reading, allowedSkips) ?? undefined, counts: { [countName]: reading.tests } };
 }
