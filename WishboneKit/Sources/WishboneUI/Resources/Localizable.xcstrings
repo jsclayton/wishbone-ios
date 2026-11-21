@@ -11,7 +11,19 @@
         }
       }
     },
+    "A birthday is required." : {
+
+    },
+    "A photo is optional." : {
+
+    },
     "Add" : {
+
+    },
+    "Add a photo" : {
+
+    },
+    "Birthday" : {
 
     },
     "Can't reach %@" : {
@@ -23,10 +35,37 @@
     "Cancel" : {
 
     },
+    "Check your birthday." : {
+
+    },
+    "Check your last name." : {
+
+    },
+    "Check your name and birthday. Your family sees them." : {
+
+    },
+    "Check your name." : {
+
+    },
+    "Choose a photo" : {
+
+    },
+    "Continue" : {
+
+    },
+    "Day" : {
+
+    },
     "Diagnostics settings" : {
 
     },
     "Done" : {
+
+    },
+    "Enter your name." : {
+
+    },
+    "Finish your profile" : {
 
     },
     "Getting a login link" : {
@@ -47,10 +86,22 @@
     "It never sends anything from your family's lists, names, birthdays, or the address of your Wishbone." : {
 
     },
+    "Last name" : {
+
+    },
     "Lists" : {
 
     },
+    "Month" : {
+
+    },
+    "Name" : {
+
+    },
     "No Wishbone found at %@" : {
+
+    },
+    "No year" : {
 
     },
     "Nobody in your family runs Wishbone yet." : {
@@ -71,10 +122,19 @@
     "People" : {
 
     },
+    "Photo" : {
+
+    },
+    "Photo, %@" : {
+
+    },
     "Point the camera at the QR code of your login link." : {
 
     },
     "Privacy policy" : {
+
+    },
+    "Remove photo" : {
 
     },
     "Running your own Wishbone" : {
@@ -113,10 +173,19 @@
     "Something went wrong in Wishbone. Try again." : {
 
     },
+    "Take a photo" : {
+
+    },
     "That isn't a Wishbone login link" : {
 
     },
     "That link was already used, or it has expired. Ask for a new one." : {
+
+    },
+    "That photo is too large. Choose a smaller one." : {
+
+    },
+    "The admin can't have parents." : {
 
     },
     "The camera is turned off on this device, so Wishbone can't scan. Paste a link." : {
@@ -143,10 +212,22 @@
     "Wishbone" : {
 
     },
+    "Wishbone can't use that file. Choose a JPEG, PNG, GIF, or WebP photo." : {
+
+    },
     "Wishbone needs the camera to scan a QR code. You can turn it on in Settings, or paste a link." : {
 
     },
     "Wishbone sends crash and fault reports to its developer, with the versions of the app and of Wishbone, the device model, and the iOS version." : {
+
+    },
+    "With a year, your family sees the age you're turning." : {
+
+    },
+    "Year (optional)" : {
+
+    },
+    "You can't do this any more." : {
 
     },
     "You need a new login link to sign in again." : {

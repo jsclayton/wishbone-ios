@@ -47,8 +47,8 @@ nonisolated final class SignInJourney: XCTestCase {
     app.launchEnvironment["WISHBONE_JOURNEY_LOGIN_LINK"] = try await builder.loginLink(for: sam).absoluteString
     app.launch()
 
-    // The gate, in place of the tabs, with the profile's name in its field.
-    // The gate's title is the form's first row, and its bar holds Sign out and Continue.
+    // The gate, in place of the tabs, with the profile's name in its field. Its title is the form's first row, and
+    // its bar holds Sign out and Continue.
     let title = app.staticTexts[Audit.words("Finish your profile")]
     let gate = app.navigationBars.firstMatch
     XCTAssertTrue(title.waitForExistence(timeout: 60), "The profile gate didn't show after the sign-in.")
