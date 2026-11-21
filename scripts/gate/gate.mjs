@@ -9,6 +9,10 @@
 //   `{ fail, counts }`: `fail` is the reason why the step fails, and `counts` are its test counts.
 // - `after()`: runs when the step has ended, however it ended: it passed, it failed, it was stopped at its limit,
 //   or the gate was interrupted. It stops what the step started and doesn't own, such as a simulator.
+// - `warmUp`: `{ command, limitMs }`, a command that starts with the gate, in the background, and gets ready what
+//   the step needs, such as a booted simulator. It runs outside the slot. Before the step runs, the gate waits for
+//   the warm-up to end, and says how long it took. A warm-up that fails doesn't fail the gate: the step does the
+//   same work itself. When the gate ends before the step, it stops the warm-up, and runs the step's `after`.
 
 import { appendFileSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
@@ -65,6 +69,8 @@ export async function runGate({
   const counts = Object.fromEntries(countNames.map((name) => [name, 0]));
   const times = {};
   const skipped = [];
+  const warmUps = new Map();
+  const warmUpTimes = {};
   let waitedMs = 0;
   let slot = null;
   let failure = null;
@@ -73,6 +79,19 @@ export async function runGate({
   // The folder holds only the last run's logs and results, so nothing stale is read as this run's.
   rmSync(runDirectory, { recursive: true, force: true });
   mkdirSync(runDirectory, { recursive: true });
+
+  for (const [index, step] of steps.entries()) {
+    if (step.warmUp === undefined || step.skip !== undefined) continue;
+    const stop = new AbortController();
+    const onAbort = () => stop.abort();
+    signal?.addEventListener('abort', onAbort, { once: true });
+    const logPath = path.join(runDirectory, `${index + 1}-${step.name}-warm-up.log`);
+    const result = runStep({ command: step.warmUp.command, limitMs: step.warmUp.limitMs, logPath, cwd: root, signal: stop.signal, echo: null })
+      .catch((error) => ({ error }))
+      .finally(() => signal?.removeEventListener('abort', onAbort));
+    warmUps.set(step, { stop, result, logName: path.relative(root, logPath) });
+    say(`── ${step.name}'s warm-up started, for step ${index + 1} (log: ${path.relative(root, logPath)})`);
+  }
 
   try {
     for (const [index, step] of steps.entries()) {
@@ -107,6 +126,23 @@ export async function runGate({
         break;
       }
 
+      const warmUp = warmUps.get(step);
+      if (warmUp !== undefined) {
+        const ended = await warmUp.result;
+        if (ended.ms !== undefined) warmUpTimes[step.name] = ended.ms;
+        if (ended.exit === 0) say(`── ${step.name}'s warm-up passed in ${duration(ended.ms)}`);
+        else {
+          const why = ended.error?.message ?? (ended.timedOut ? `stopped at its limit of ${duration(step.warmUp.limitMs)}` : `exit ${ended.exit ?? 'on a signal'}`);
+          say(`── ${step.name}'s warm-up failed (${why}), so the step starts from nothing (log: ${warmUp.logName})`);
+        }
+      }
+      if (signal?.aborted) {
+        fail('interrupted');
+        break;
+      }
+      // From here, the step's own `after` covers what its warm-up started.
+      warmUps.delete(step);
+
       say(`── step ${number} of ${steps.length}: ${step.name} (limit ${duration(step.limitMs)})`);
       const logPath = path.join(runDirectory, `${number}-${step.name}.log`);
       const logName = path.relative(root, logPath);
@@ -135,6 +171,12 @@ export async function runGate({
   } catch (error) {
     failure ??= `${place}: ${error.message}`;
   } finally {
+    // A warm-up whose step didn't run is stopped, and what it started is stopped with the step's `after`.
+    for (const [step, warmUp] of warmUps) {
+      warmUp.stop.abort();
+      await warmUp.result;
+      await step.after?.();
+    }
     await slot?.release();
   }
 
@@ -145,7 +187,7 @@ export async function runGate({
 
   if (timesFile !== undefined) {
     mkdirSync(path.dirname(timesFile), { recursive: true });
-    const record = { at: new Date(started).toISOString(), result: ok ? 'pass' : 'fail', totalMs, waitedMs, steps: times, counts };
+    const record = { at: new Date(started).toISOString(), result: ok ? 'pass' : 'fail', totalMs, waitedMs, steps: times, warmUps: warmUpTimes, counts };
     appendFileSync(timesFile, `${JSON.stringify(record)}\n`);
   }
 

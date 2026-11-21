@@ -104,7 +104,7 @@ server-openapi:
 test *args: server
     swift test --package-path WishboneKit "$@"
 
-# Run the hosted tests and the journeys on the gate's own simulator, in the gate slot. The results go to the folder. `--no-build` runs what `just build` built
+# Run the hosted tests and the journeys on the gate's own simulator, in the gate slot. The results go to the folder. `--no-build`, before or after the folder, runs what `just build` built
 [positional-arguments]
 simulator results="build/simulator" *flags: server
     node scripts/gate/simulator.mjs "$@"

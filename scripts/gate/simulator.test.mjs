@@ -4,7 +4,19 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 
-import { buildArguments, compiledFiles, gateSimulators, journeyRuns, pickDevice, resultBundles, settingCommands, settings, startSettingsHelper } from './simulator.mjs';
+import {
+  buildArguments,
+  compiledFiles,
+  gateSimulators,
+  journeyRuns,
+  parseArguments,
+  pickDevice,
+  resultBundles,
+  settingCommands,
+  settings,
+  settingsApplier,
+  startSettingsHelper,
+} from './simulator.mjs';
 
 const iPhone = (name) => ({ name, identifier: `type.${name.replaceAll(' ', '-')}`, productFamily: 'iPhone' });
 const iPad = (name) => ({ name, identifier: `type.${name.replaceAll(' ', '-')}`, productFamily: 'iPad' });
@@ -136,4 +148,53 @@ test("the build's line counts the Swift files that it compiled, and a build with
   assert.equal(compiledFiles(log), 3);
   writeFileSync(log, 'Copy /a /b\nCodeSign /x.app\nProcessInfoPlistFile /x/Info.plist\n');
   assert.equal(compiledFiles(log), 0);
+});
+
+test('the results folder and the flags come in any order, and a flag is never the folder', () => {
+  const folder = path.join('build', 'simulator');
+  assert.deepEqual(parseArguments([]), { results: folder, build: true, warmUp: false });
+  assert.deepEqual(parseArguments(['--no-build']), { results: folder, build: false, warmUp: false });
+  assert.deepEqual(parseArguments(['out', '--no-build']), { results: 'out', build: false, warmUp: false });
+  assert.deepEqual(parseArguments(['--no-build', 'out']), { results: 'out', build: false, warmUp: false });
+  assert.deepEqual(parseArguments(['--warm-up']), { results: folder, build: true, warmUp: true });
+  assert.throws(() => parseArguments(['--nobuild']), /unknown flag --nobuild/);
+  assert.throws(() => parseArguments(['one', 'two']), /one results folder, not 2/);
+});
+
+test('the settings applier runs only the simctl calls that change something', () => {
+  const ran = [];
+  const applier = settingsApplier('SIM', (command) => ran.push(command.slice(2).join(' ')));
+  // The first apply sets everything: the simulator can be in any setting from an earlier run.
+  applier.apply(settings[0]);
+  assert.deepEqual(ran.splice(0), ['appearance light', 'increase_contrast disabled', 'content_size large']);
+  for (const setting of settings.slice(1)) {
+    applier.apply(setting);
+    applier.apply(settings[0]);
+  }
+  assert.deepEqual(ran.splice(0), [
+    'content_size accessibility-extra-extra-extra-large',
+    'content_size large',
+    'appearance dark',
+    'appearance light',
+    'increase_contrast enabled',
+    'increase_contrast disabled',
+  ]);
+  applier.apply(settings[0]);
+  assert.deepEqual(ran, []);
+  assert.equal(applier.calls(), 9);
+});
+
+test('a simctl call that fails leaves its setting unknown, so the next apply runs it again', () => {
+  const ran = [];
+  let failing = true;
+  const applier = settingsApplier('SIM', (command) => {
+    ran.push(command[2]);
+    if (failing && command[2] === 'appearance' && command[3] === 'dark') throw new Error('simctl ended with 1');
+  });
+  applier.apply(settings[0]);
+  assert.throws(() => applier.apply(settings[2]), /simctl ended with 1/);
+  failing = false;
+  ran.length = 0;
+  applier.apply(settings[0]);
+  assert.deepEqual(ran, ['appearance']);
 });
