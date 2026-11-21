@@ -23,12 +23,16 @@ public enum Route: String, Sendable, CaseIterable {
   case item
   case invitations
   case invitation
+  case gifts
+  case gift
+  case blockedStores
   case revokeCurrentSession
 
   public var method: String {
     switch self {
     case .health, .versions, .users, .user, .groups, .group, .groupUsers, .groupGroups, .occasions, .occasion,
-      .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation:
+      .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation, .gifts, .gift,
+      .blockedStores:
       "GET"
     case .redeemLoginLink: "POST"
     case .updateMe: "PATCH"
@@ -59,6 +63,9 @@ public enum Route: String, Sendable, CaseIterable {
     case .item: "/items/{id}"
     case .invitations: "/invitations"
     case .invitation: "/invitations/{id}"
+    case .gifts: "/gifts"
+    case .gift: "/gifts/{id}"
+    case .blockedStores: "/blocked-stores"
     case .revokeCurrentSession: "/users/me/sessions/current"
     }
   }
@@ -69,8 +76,8 @@ public enum Route: String, Sendable, CaseIterable {
     switch self {
     case .health, .redeemLoginLink: true
     case .versions, .updateMe, .users, .user, .groups, .group, .groupUsers, .groupGroups, .occasions, .occasion,
-      .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation,
-      .revokeCurrentSession:
+      .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation, .gifts, .gift,
+      .blockedStores, .revokeCurrentSession:
       false
     }
   }
@@ -83,11 +90,10 @@ public enum Route: String, Sendable, CaseIterable {
     switch self {
     // The two filters give the memberships: the users in a group with nesting, and the users of an occasion.
     case .users: Self.paging + ["group_id", "occasion_id"]
-    // The filter gives the lists that the session's user is a recipient of.
-    case .lists: Self.paging + ["recipient_id"]
-    case .groups, .groupUsers, .groupGroups, .occasions, .occasionGroups, .listRecipients, .listItems, .invitations:
+    case .groups, .groupUsers, .groupGroups, .occasions, .occasionGroups, .lists, .listRecipients, .listItems,
+      .invitations, .gifts, .blockedStores:
       Self.paging
-    case .health, .redeemLoginLink, .versions, .updateMe, .user, .group, .occasion, .list, .item, .invitation,
+    case .health, .redeemLoginLink, .versions, .updateMe, .user, .group, .occasion, .list, .item, .invitation, .gift,
       .revokeCurrentSession:
       []
     }
@@ -102,8 +108,8 @@ public enum Route: String, Sendable, CaseIterable {
     case .redeemLoginLink: fields(of: RedeemBody.CodingKeys.self)
     case .updateMe: fields(of: UserChanges.CodingKeys.self)
     case .health, .versions, .users, .user, .groups, .group, .groupUsers, .groupGroups, .occasions, .occasion,
-      .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation,
-      .revokeCurrentSession:
+      .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation, .gifts, .gift,
+      .blockedStores, .revokeCurrentSession:
       []
     }
   }
@@ -130,6 +136,9 @@ public enum Route: String, Sendable, CaseIterable {
     case .item: Item.fields
     case .invitations: Page<VersionedRow<Invitation>>.fields
     case .invitation: Invitation.fields
+    case .gifts: Page<VersionedRow<Gift>>.fields
+    case .gift: Gift.fields
+    case .blockedStores: Page<VersionedRow<BlockedStore>>.fields
     case .revokeCurrentSession: NoContent.fields
     }
   }
@@ -234,6 +243,12 @@ extension Endpoint where Response == Item {
 extension Endpoint where Response == Invitation {
   static func invitation(_ id: String) -> Endpoint {
     Endpoint(route: .invitation, parameters: ["id": id])
+  }
+}
+
+extension Endpoint where Response == Gift {
+  static func gift(_ id: String) -> Endpoint {
+    Endpoint(route: .gift, parameters: ["id": id])
   }
 }
 

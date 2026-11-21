@@ -280,19 +280,6 @@ struct Member: Model {
   static let fields = WishboneAPI.fields(of: CodingKeys.self)
 }
 
-/// A list by its name, inside another resource.
-public struct ListSummary: Model, Equatable {
-  public let id: String
-  public let name: String
-
-  enum CodingKeys: String, CodingKey, CaseIterable {
-    case id
-    case name
-  }
-
-  public static let fields = WishboneAPI.fields(of: CodingKeys.self)
-}
-
 /// A list, as `GET /lists/{id}` gives it, and as a row of `GET /lists`. Its name is not `List`, which is SwiftUI's.
 /// See "List fields" in the server's route table.
 public struct ListResource: Model, Equatable {
@@ -591,6 +578,277 @@ public struct StoreLink: Model, Equatable {
   public static let fields = WishboneAPI.fields(of: CodingKeys.self)
 }
 
+/// A gift, as `GET /gifts/{id}` gives it, and as a row of `GET /gifts`: every field that this caller gets. See
+/// "Gift fields" in the server's route table.
+///
+/// **An open gift is what the device must keep from its recipients.** Only its giver gets it. The fields that only
+/// the giver of an open gift sees are hidden for a recipient and their parent, who get only a given gift: the key
+/// is absent, and the model keeps it absent.
+public struct Gift: Model, Equatable {
+  public let id: String
+  public let state: GiftState
+  public let quantity: Int
+
+  /// The item the gift is of. A giver keeps the gift when the item is deleted, and nobody else sees the item then.
+  public let item: GiftItemSummary
+
+  /// The item's list.
+  public let list: ListSummary
+
+  /// The item's title, image and price: as they are now for an open gift, and as they were at reveal for a given
+  /// one.
+  public let title: String
+  public let image: ImageSummary?
+  public let priceMinor: Int?
+  public let topPriceMinor: Int?
+  public let currency: String?
+
+  /// The users the gift is for, never its giver: the list's recipients now for an open gift, and the recipients at
+  /// reveal for a given one. Hidden when the giver can't see the list, or couldn't at reveal.
+  public let recipients: Hideable<[UserSummary]>
+
+  /// The giver. Nil once they are deleted. `giverName` is their name as it was.
+  public let giver: UserSummary?
+  public let giverName: String
+  public let fromLabel: String?
+
+  /// The gift's occasion. Nil when the giver can't see it, or it isn't an occasion of a recipient whom the giver
+  /// can see: only the reveal date shows then.
+  public let occasion: OccasionSummary?
+
+  /// The occasion's name: as it is now for an open gift, and as it was at reveal for a given one.
+  public let occasionName: String?
+
+  /// The date the occasion fell on when the giver picked it, as `YYYY-MM-DD`.
+  public let occasionDate: String
+
+  /// When the gift is given.
+  public let revealAt: Date
+
+  /// When the gift was given. Nil while it is open.
+  public let givenAt: Date?
+
+  /// The giver's own mark that they bought it. Only the giver sees it.
+  public let isBought: Hideable<Bool>
+
+  /// The giver's private note. Only the giver sees it.
+  public let note: Hideable<String>
+
+  /// What happened to the gift that its giver should answer, oldest first. Only the giver of an open gift sees
+  /// them.
+  public let flags: Hideable<[GiftFlag]>
+
+  /// Whether the gift needs its giver's attention. Only the giver of an open gift sees it.
+  public let needsAttention: Hideable<Bool>
+
+  /// When the giver claimed the item. Only the giver sees it.
+  public let createdAt: Hideable<Date>
+
+  public let canEdit: Bool
+  public let canDelete: Bool
+  public let canRaiseQuantity: Bool
+  public let canAcknowledge: Bool
+  public let canRestore: Bool
+  public let canAddAgain: Bool
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case id
+    case state
+    case quantity
+    case item
+    case list
+    case title
+    case image
+    case priceMinor = "price_minor"
+    case topPriceMinor = "top_price_minor"
+    case currency
+    case recipients
+    case giver
+    case giverName = "giver_name"
+    case fromLabel = "from_label"
+    case occasion
+    case occasionName = "occasion_name"
+    case occasionDate = "occasion_date"
+    case revealAt = "reveal_at"
+    case givenAt = "given_at"
+    case isBought = "is_bought"
+    case note
+    case flags
+    case needsAttention = "needs_attention"
+    case createdAt = "created_at"
+    case canEdit = "can_edit"
+    case canDelete = "can_delete"
+    case canRaiseQuantity = "can_raise_quantity"
+    case canAcknowledge = "can_acknowledge"
+    case canRestore = "can_restore"
+    case canAddAgain = "can_add_again"
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    id = try container.decode(String.self, forKey: .id)
+    state = try container.decode(GiftState.self, forKey: .state)
+    quantity = try container.decode(Int.self, forKey: .quantity)
+    item = try container.decode(GiftItemSummary.self, forKey: .item)
+    list = try container.decode(ListSummary.self, forKey: .list)
+    title = try container.decode(String.self, forKey: .title)
+    image = try container.decodeIfPresent(ImageSummary.self, forKey: .image)
+    priceMinor = try container.decodeIfPresent(Int.self, forKey: .priceMinor)
+    topPriceMinor = try container.decodeIfPresent(Int.self, forKey: .topPriceMinor)
+    currency = try container.decodeIfPresent(String.self, forKey: .currency)
+    recipients = try container.hideable([UserSummary].self, forKey: .recipients)
+    giver = try container.decodeIfPresent(UserSummary.self, forKey: .giver)
+    giverName = try container.decode(String.self, forKey: .giverName)
+    fromLabel = try container.decodeIfPresent(String.self, forKey: .fromLabel)
+    occasion = try container.decodeIfPresent(OccasionSummary.self, forKey: .occasion)
+    occasionName = try container.decodeIfPresent(String.self, forKey: .occasionName)
+    occasionDate = try container.decode(String.self, forKey: .occasionDate)
+    revealAt = try container.timestamp(forKey: .revealAt)
+    givenAt = try container.decodeIfPresent(String.self, forKey: .givenAt).map { text in
+      try Timestamp.date(text, at: container.codingPath + [CodingKeys.givenAt])
+    }
+    isBought = try container.hideable(Bool.self, forKey: .isBought)
+    note = try container.hideable(String.self, forKey: .note)
+    flags = try container.hideable([GiftFlag].self, forKey: .flags)
+    needsAttention = try container.hideable(Bool.self, forKey: .needsAttention)
+    createdAt = try container.hideableTimestamp(forKey: .createdAt)
+    canEdit = try container.decode(Bool.self, forKey: .canEdit)
+    canDelete = try container.decode(Bool.self, forKey: .canDelete)
+    canRaiseQuantity = try container.decode(Bool.self, forKey: .canRaiseQuantity)
+    canAcknowledge = try container.decode(Bool.self, forKey: .canAcknowledge)
+    canRestore = try container.decode(Bool.self, forKey: .canRestore)
+    canAddAgain = try container.decode(Bool.self, forKey: .canAddAgain)
+  }
+
+  public static let fields = WishboneAPI.fields(
+    of: CodingKeys.self,
+    nested: [
+      "item": GiftItemSummary.fields, "list": ListSummary.fields, "image": ImageSummary.fields,
+      "giver": UserSummary.fields, "occasion": OccasionSummary.fields,
+    ],
+    lists: ["recipients": UserSummary.fields, "flags": GiftFlag.fields])
+}
+
+/// An item by its title and primary image, inside a gift.
+public struct GiftItemSummary: Model, Equatable {
+  public let id: String
+  public let title: String
+  public let primaryImage: ImageSummary?
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case id
+    case title
+    case primaryImage = "primary_image"
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    id = try container.decode(String.self, forKey: .id)
+    title = try container.decode(String.self, forKey: .title)
+    primaryImage = try container.decodeIfPresent(ImageSummary.self, forKey: .primaryImage)
+  }
+
+  public static let fields = WishboneAPI.fields(of: CodingKeys.self, nested: ["primary_image": ImageSummary.fields])
+}
+
+/// What happened to an open gift that its giver should answer. Each code has the fields that the server gives it.
+/// The enum is open: a code that the app doesn't know is `unknown`, with no fields.
+public enum GiftFlag: Model, Equatable {
+  /// The item changed since the giver picked the gift: a line for each field, in the order they first changed.
+  case changed([GiftChange])
+
+  /// The item was deleted.
+  case removed
+
+  /// The item moved to another list. Nil when the giver can't see the new list.
+  case moved(to: ListSummary?)
+
+  /// The gift's occasion stopped applying, and the gift moved to another one.
+  case occasionMoved
+
+  /// The giver can see none of the list's recipients now.
+  case noLongerShared
+
+  /// A recipient said that they didn't get the gift, and it is open again. Nil when the giver can't see who.
+  case restored(by: UserSummary?)
+
+  /// The list's recipients changed: the ones the giver last saw, and the ones now. Each is nil when the giver
+  /// can't see the list.
+  case recipientsChanged(old: [UserSummary]?, new: [UserSummary]?)
+  case unknown(String)
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case code
+    case fields
+    case list
+    case by
+    case oldRecipients = "old_recipients"
+    case newRecipients = "new_recipients"
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    let code = try container.decode(String.self, forKey: .code)
+    switch code {
+    case "changed": self = .changed(try container.decodeIfPresent([GiftChange].self, forKey: .fields) ?? [])
+    case "removed": self = .removed
+    case "moved": self = .moved(to: try container.decodeIfPresent(ListSummary.self, forKey: .list))
+    case "occasion_moved": self = .occasionMoved
+    case "no_longer_shared": self = .noLongerShared
+    case "restored": self = .restored(by: try container.decodeIfPresent(UserSummary.self, forKey: .by))
+    case "recipients_changed":
+      self = .recipientsChanged(
+        old: try container.decodeIfPresent([UserSummary].self, forKey: .oldRecipients),
+        new: try container.decodeIfPresent([UserSummary].self, forKey: .newRecipients))
+    default: self = .unknown(code)
+    }
+  }
+
+  /// The users that the flag names, as summaries.
+  public var users: [UserSummary] {
+    switch self {
+    case .restored(let by): by.map { [$0] } ?? []
+    case .recipientsChanged(let old, let new): (old ?? []) + (new ?? [])
+    case .changed, .removed, .moved, .occasionMoved, .noLongerShared, .unknown: []
+    }
+  }
+
+  public static let fields = WishboneAPI.fields(
+    of: CodingKeys.self,
+    nested: ["list": ListSummary.fields, "by": UserSummary.fields],
+    lists: [
+      "fields": GiftChange.fields, "old_recipients": UserSummary.fields, "new_recipients": UserSummary.fields,
+    ])
+}
+
+/// A blocked store, as a row of `GET /blocked-stores`. Only the admin sees them. `GET /versions` doesn't cover
+/// them.
+public struct BlockedStore: Model, Equatable {
+  public let id: String
+
+  /// A lowercase host with no `www.`. It matches that host and its subdomains.
+  public let store: String
+  public let createdAt: Date
+  public let canDelete: Bool
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case id
+    case store
+    case createdAt = "created_at"
+    case canDelete = "can_delete"
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    id = try container.decode(String.self, forKey: .id)
+    store = try container.decode(String.self, forKey: .store)
+    createdAt = try container.timestamp(forKey: .createdAt)
+    canDelete = try container.decode(Bool.self, forKey: .canDelete)
+  }
+
+  public static let fields = WishboneAPI.fields(of: CodingKeys.self)
+}
+
 /// A resource, with its version as this caller sees it.
 ///
 /// The version comes from the resource's own answer: the `ETag` of its `GET`, or its `version` as a row of a
@@ -654,6 +912,9 @@ public struct ResourceVersion: Model, Equatable {
     /// A store link. Its `itemID` is its item's. Its version is the `ETag` of the store link's own `GET`, which
     /// the app never calls: no item body carries it.
     case storeLink
+
+    /// A gift: the ones that the caller gives, and the given gifts for them or their children.
+    case gift
     case occasion
     case group
 
@@ -682,7 +943,7 @@ public struct ResourceVersion: Model, Equatable {
 
     private static let known: [String: Kind] = [
       "user": .user, "user_summary": .userSummary, "list": .list, "list_recipient": .listRecipient, "item": .item,
-      "store_link": .storeLink, "occasion": .occasion, "group": .group, "invitation": .invitation,
+      "store_link": .storeLink, "gift": .gift, "occasion": .occasion, "group": .group, "invitation": .invitation,
       "group_users": .groupUsers, "group_groups": .groupGroups,
       "occasion_groups": .occasionGroups, "users_in_group": .usersInGroup, "users_of_occasion": .usersOfOccasion,
     ]

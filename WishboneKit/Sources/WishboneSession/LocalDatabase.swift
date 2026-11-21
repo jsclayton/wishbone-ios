@@ -167,6 +167,9 @@ struct LocalDatabase: Sendable {
         named(row.userID, by: .invitation(row.id))
         named(row.invitedByID, by: .invitation(row.id))
       }
+      for row in try GiftRow.order(Column("id")).fetchAll(database) {
+        for id in [row.giverID] + (row.recipientIDs.value ?? []) + row.flagUserIDs { named(id, by: .gift(row.id)) }
+      }
       return naming
     }
   }
@@ -225,6 +228,11 @@ struct LocalDatabase: Sendable {
     try await versions(of: InvitationRow.self)
   }
 
+  /// The version of each gift in the copy, by the gift's ID.
+  func giftVersions() async throws -> [String: String] {
+    try await versions(of: GiftRow.self)
+  }
+
   /// The version of each recipient row in the copy, by its list, and then by its user.
   func recipientVersions() async throws -> [String: [String: String]] {
     try await writer.read { database in
@@ -257,12 +265,16 @@ struct LocalDatabase: Sendable {
   /// `GET /versions` whose `ETag` it kept, so the kept `ETag` goes in the same change. Otherwise a pull that stops
   /// in the middle could leave the copy half changed, and a later 304 would say that it is current.
   ///
+  /// `isOutsideTheVersions` is for a change only to what `GET /versions` doesn't cover: the blocked stores. The
+  /// kept `ETag` says nothing about them, so it stays.
+  ///
   /// A fitness test holds this: nothing else in the module writes to the database.
-  private func change<Result: Sendable>(_ updates: @escaping @Sendable (Database) throws -> Result) async throws
-    -> Result
-  {
+  private func change<Result: Sendable>(
+    isOutsideTheVersions: Bool = false,
+    _ updates: @escaping @Sendable (Database) throws -> Result
+  ) async throws -> Result {
     try await writer.write { database in
-      try database.execute(sql: "DELETE FROM \(Self.keptETagTable)")
+      if !isOutsideTheVersions { try database.execute(sql: "DELETE FROM \(Self.keptETagTable)") }
       return try updates(database)
     }
   }
@@ -451,6 +463,50 @@ struct LocalDatabase: Sendable {
     }
   }
 
+  /// Saves the gifts, each with the version that its own answer carried, and removes the gifts with the IDs, in one
+  /// change. A gift's giver, its recipients, and the users in its flags are summaries, saved as the summaries of a
+  /// user's body are.
+  func save(
+    _ gifts: [Versioned<Gift>],
+    summaries: [String: String] = [:],
+    removingGifts gone: [String] = []
+  ) async throws {
+    let rows = gifts.map { GiftRow($0) }
+    let users = gifts.flatMap { gift in
+      let resource = gift.resource
+      return (resource.giver.map { [$0] } ?? []) + (resource.recipients.value ?? [])
+        + (resource.flags.value ?? []).flatMap(\.users)
+    }
+    let inBodies = Self.summaryRows(of: users, named: summaries)
+    try await change { database in
+      try GiftRow.deleteAll(database, keys: gone)
+      for row in inBodies {
+        try row.save(database)
+      }
+      for row in rows {
+        try row.save(database)
+      }
+    }
+  }
+
+  /// Puts the blocked stores in the place of the ones that the copy holds, in one change, when they differ. The
+  /// kept `ETag` stays: `GET /versions` doesn't cover blocked stores.
+  func replaceBlockedStores(with stores: [Versioned<BlockedStore>]) async throws {
+    let rows = stores.map { BlockedStoreRow($0) }.sorted { $0.id < $1.id }
+    try await change(isOutsideTheVersions: true) { database in
+      guard try BlockedStoreRow.order(Column("id")).fetchAll(database) != rows else { return }
+      try BlockedStoreRow.deleteAll(database)
+      for row in rows {
+        try row.save(database)
+      }
+    }
+  }
+
+  /// Whether the copy holds any blocked store.
+  func holdsBlockedStores() async throws -> Bool {
+    try await writer.read { database in try BlockedStoreRow.fetchCount(database) > 0 }
+  }
+
   /// Removes every row that the answer of `GET /versions` doesn't name, in one change: what was deleted, moved
   /// out of view, or hidden. A user who is no longer named in full, and is named as a summary, becomes a summary
   /// with the version that the answer named for it: the name and the avatar stay, and the rest goes.
@@ -477,6 +533,7 @@ struct LocalDatabase: Sendable {
       try GroupRow.deleteAll(database, keys: try absent(GroupRow.self, from: named.groups))
       try OccasionRow.deleteAll(database, keys: try absent(OccasionRow.self, from: named.occasions))
       try InvitationRow.deleteAll(database, keys: try absent(InvitationRow.self, from: named.invitations))
+      try GiftRow.deleteAll(database, keys: try absent(GiftRow.self, from: named.gifts))
       try Self.removeLists(try absent(ListRow.self, from: named.lists), in: database)
       try Self.removeItems(try absent(ItemRow.self, from: named.itemsByID), in: database)
       try StoreLinkRow.deleteAll(database, keys: try absent(StoreLinkRow.self, from: named.storeLinks))
@@ -550,6 +607,12 @@ struct LocalDatabase: Sendable {
     /// Every pending invitation of the copy, the oldest first.
     var invitations: [InvitationRow] = []
 
+    /// Every gift of the copy, the soonest reveal first.
+    var gifts: [GiftRow] = []
+
+    /// Every blocked store of the copy, by store.
+    var blockedStores: [BlockedStoreRow] = []
+
     /// Every user of the copy, in full and as a summary, by name.
     var users: [UserRow] = []
 
@@ -588,6 +651,8 @@ struct LocalDatabase: Sendable {
         snapshot.recipients[list.id] = named + unordered.filter { !list.recipientIDs.contains($0.userID) }
       }
       snapshot.invitations = try InvitationRow.order(Column("createdAt"), Column("id")).fetchAll(database)
+      snapshot.gifts = try GiftRow.order(Column("revealAt"), Column("id")).fetchAll(database)
+      snapshot.blockedStores = try BlockedStoreRow.order(Column("store"), Column("id")).fetchAll(database)
       snapshot.users = try UserRow.order(Column("name"), Column("id")).fetchAll(database)
       snapshot.groups = try GroupRow.order(Column("name"), Column("id")).fetchAll(database)
       snapshot.occasions = try OccasionRow.order(
@@ -718,5 +783,60 @@ extension InvitationRow {
       id: resource.id, listID: resource.list.id, listName: resource.list.name, userID: resource.user.id,
       invitedByID: resource.invitedBy?.id, createdAt: resource.createdAt, canAccept: resource.canAccept,
       canDelete: resource.canDelete, version: invitation.version)
+  }
+}
+
+extension GiftRow {
+  init(_ gift: Versioned<Gift>) {
+    let resource = gift.resource
+    self.init(
+      id: resource.id, state: resource.state, quantity: resource.quantity, itemID: resource.item.id,
+      itemTitle: resource.item.title, itemPrimaryImage: resource.item.primaryImage, listID: resource.list.id,
+      listName: resource.list.name, title: resource.title, image: resource.image, priceMinor: resource.priceMinor,
+      topPriceMinor: resource.topPriceMinor, currency: resource.currency,
+      recipientIDs: resource.recipients.map { $0.map(\.id) }, giverID: resource.giver?.id,
+      giverName: resource.giverName, fromLabel: resource.fromLabel, occasion: resource.occasion,
+      occasionName: resource.occasionName, occasionDate: resource.occasionDate, revealAt: resource.revealAt,
+      givenAt: resource.givenAt, isBought: resource.isBought, note: resource.note,
+      flags: resource.flags.map { $0.map(Flag.init) }, needsAttention: resource.needsAttention,
+      createdAt: resource.createdAt, canEdit: resource.canEdit, canDelete: resource.canDelete,
+      canRaiseQuantity: resource.canRaiseQuantity, canAcknowledge: resource.canAcknowledge,
+      canRestore: resource.canRestore, canAddAgain: resource.canAddAgain, version: gift.version)
+  }
+
+  /// The users that the gift's flags name.
+  var flagUserIDs: [String] {
+    (flags.value ?? []).flatMap { flag -> [String] in
+      switch flag {
+      case .restored(let id): id.map { [$0] } ?? []
+      case .recipientsChanged(let old, let new): (old ?? []) + (new ?? [])
+      case .changed, .removed, .moved, .occasionMoved, .noLongerShared, .unknown: []
+      }
+    }
+  }
+}
+
+extension GiftRow.Flag {
+  init(_ flag: GiftFlag) {
+    switch flag {
+    case .changed(let lines): self = .changed(lines)
+    case .removed: self = .removed
+    case .moved(let list): self = .moved(to: list)
+    case .occasionMoved: self = .occasionMoved
+    case .noLongerShared: self = .noLongerShared
+    case .restored(let user): self = .restored(byUserID: user?.id)
+    case .recipientsChanged(let old, let new):
+      self = .recipientsChanged(oldUserIDs: old?.map(\.id), newUserIDs: new?.map(\.id))
+    case .unknown(let code): self = .unknown(code)
+    }
+  }
+}
+
+extension BlockedStoreRow {
+  init(_ store: Versioned<BlockedStore>) {
+    let resource = store.resource
+    self.init(
+      id: resource.id, store: resource.store, createdAt: resource.createdAt, canDelete: resource.canDelete,
+      version: store.version)
   }
 }

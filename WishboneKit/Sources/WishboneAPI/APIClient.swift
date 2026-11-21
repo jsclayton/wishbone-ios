@@ -142,11 +142,6 @@ public struct APIClient: Sendable {
     try await rows { cursor in .page(of: .lists, cursor: cursor) }
   }
 
-  /// `GET /lists?recipient_id=`: the lists that have the user among their recipients, each with its version.
-  public func lists(ofRecipient userID: String) async throws(APIError) -> FetchedCollection<Versioned<ListResource>> {
-    try await rows { cursor in .page(of: .lists, filters: ["recipient_id": userID], cursor: cursor) }
-  }
-
   /// `GET /lists/{id}`: one list.
   public func list(_ id: String) async throws(APIError) -> Versioned<ListResource> {
     try await versioned(.list(id))
@@ -176,6 +171,25 @@ public struct APIClient: Sendable {
   /// `GET /invitations/{id}`: one invitation.
   public func invitation(_ id: String) async throws(APIError) -> Versioned<Invitation> {
     try await versioned(.invitation(id))
+  }
+
+  // MARK: - Gifts and blocked stores
+
+  /// `GET /gifts`: every gift that the session's user can see, each with its version: the ones they give, and the
+  /// given gifts for them or their children.
+  public func gifts() async throws(APIError) -> FetchedCollection<Versioned<Gift>> {
+    try await rows { cursor in .page(of: .gifts, cursor: cursor) }
+  }
+
+  /// `GET /gifts/{id}`: one gift. A 404 for a gift that the session's user can't see, which an open gift is for
+  /// everyone but its giver.
+  public func gift(_ id: String) async throws(APIError) -> Versioned<Gift> {
+    try await versioned(.gift(id))
+  }
+
+  /// `GET /blocked-stores`: every blocked store, each with its version. Only the admin can read it.
+  public func blockedStores() async throws(APIError) -> FetchedCollection<Versioned<BlockedStore>> {
+    try await rows { cursor in .page(of: .blockedStores, cursor: cursor) }
   }
 
   /// `DELETE /users/me/sessions/current`: signs out. The server revokes the session, and the token works no more.

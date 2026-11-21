@@ -50,11 +50,18 @@ enum LocalCopyRules {
     "\(module)/CopySchema.swift", "\(module)/Rows.swift", Repo.module("WishboneAPI") + "/Values.swift",
   ]
 
-  /// The parts of other files that say what the copy keeps: the kinds of the answer that the pull keeps, and how a
-  /// row is made from the API's model. Each is the code from its first line up to its last, or to the end of the
-  /// file. A part that can't be found fails the test, so a rename can't drop it from the digest.
+  /// The parts of other files that say what the copy keeps: the kinds of the answer that the pull keeps, which
+  /// bodies hold the summaries that the copy keeps, how a summary's row is made, and how a row is made from the
+  /// API's model. Each is the code from its first line up to its last, or to the end of the file. A part that
+  /// can't be found fails the test, so a rename can't drop it from the digest.
   static let schemaParts = [
     Part(path: "\(module)/Pull.swift", from: "  struct Named: Sendable {", to: "  // MARK: - One kind of resource"),
+    Part(
+      path: "\(module)/LocalDatabase.swift", from: "  func bodiesNaming(",
+      to: "  /// The version of each group in the copy"),
+    Part(
+      path: "\(module)/LocalDatabase.swift", from: "  private static func summaryRows(",
+      to: "  /// Saves the groups"),
     Part(path: "\(module)/LocalDatabase.swift", from: "// MARK: - A row from the API's model", to: nil),
   ]
 
@@ -77,7 +84,7 @@ enum LocalCopyRules {
   /// **When this fails, what the copy keeps has changed.** Raise `LocalDatabase.copySchema`, so that every device
   /// drops the old copy. Then record the new number here, with the digest that the failure gives. If only the
   /// code's own shape changed, and nothing that a database holds, record the digest alone.
-  static let recorded = (schema: 3, digest: "d4b13ff395e7f5bf")
+  static let recorded = (schema: 4, digest: "2530f7ebd735b8b0")
 
   /// The digest of the sources: their code, with no comment line and no white space.
   static func digest(of sources: [String]) -> String {

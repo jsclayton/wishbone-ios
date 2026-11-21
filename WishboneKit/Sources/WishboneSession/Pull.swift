@@ -12,14 +12,18 @@ import WishboneAPI
 /// 5. The answer's `ETag` is kept only when every fetch gave the version that its entry named. Otherwise none is
 ///    kept, and the next pull compares again.
 ///
-/// **What the copy holds:** every user, group, occasion, list, list recipient, item, store link and invitation
-/// that the session's user can see, and the memberships that the user can read. Every other entry is ignored.
-/// When the copy starts to hold another kind, `LocalDatabase.copySchema` rises.
+/// **What the copy holds:** every user, group, occasion, list, list recipient, item, store link, gift and
+/// invitation that the session's user can see, and the memberships that the user can read: every kind that the
+/// server names. An entry of a kind that the app doesn't know is ignored. When the copy starts to hold another
+/// kind, `LocalDatabase.copySchema` rises.
 ///
-/// **The order** is Home's data first: the users, the groups, the occasions, and the memberships. Then the lists
-/// that the user is a recipient of, and then everyone else's (see `PullLists.swift`). Then the invitations. So on
-/// the first sync, Home's rows are in the copy before any list is asked for, and the user's own lists before
-/// anyone else's.
+/// **The order** is Home's data first: the users, the groups, the occasions, the memberships, and the gifts, which
+/// Home's countdown counts. Then the lists that the user is a recipient of, and then everyone else's (see
+/// `PullLists.swift`). Then the invitations. So on the first sync, Home's rows are in the copy before any list is
+/// asked for, and the user's own lists before anyone else's.
+///
+/// **The blocked stores are not in `GET /versions`.** So every pull of the admin reads them again, after the
+/// rest, also when `GET /versions` answered 304 (see `pullBlockedStores`). Nobody else asks for them.
 ///
 /// **A summary, a membership and a store link have no answer that carries a version,** so step 4 can't hold for
 /// them. Each is saved with the version that its entry named (see `PullPeople.swift`, and `PullLists.swift`).
@@ -44,7 +48,13 @@ struct Pull: Sendable {
   @concurrent
   func run() async throws -> UserRow? {
     let answer = try await client.versions(ifNoneMatch: try await database.keptETag())
-    guard case .changed(let versions) = answer else { return try await database.user(userID) }
+    if case .changed(let versions) = answer { try await pull(versions) }
+    try await pullBlockedStores()
+    return try await database.user(userID)
+  }
+
+  /// Brings the copy up to date with an answer of `GET /versions` that is not a 304.
+  private func pull(_ versions: Versions) async throws {
     let named = Named(versions.entries)
     var agrees = true
 
@@ -54,6 +64,7 @@ struct Pull: Sendable {
     try await pullGroups(named, agrees: &agrees)
     try await pullOccasions(named, agrees: &agrees)
     try await pullMemberships(named, agrees: &agrees)
+    try await pullGifts(named, agrees: &agrees)
 
     let primaryListID = try await database.user(userID)?.record?.primaryListID
     try await pullLists(named, primaryListID: primaryListID, agrees: &agrees)
@@ -65,7 +76,6 @@ struct Pull: Sendable {
     try await pullSummaries(named, agrees: &agrees)
 
     try await database.keep(etag: agrees ? versions.etag : nil)
-    return try await database.user(userID)
   }
 
   /// What one answer of `GET /versions` names, for each kind that the copy holds: the version of each thing, by
@@ -94,6 +104,7 @@ struct Pull: Sendable {
     /// The item of each store link, by the store link's ID.
     var storeLinkItems: [String: String] = [:]
     var invitations: [String: String] = [:]
+    var gifts: [String: String] = [:]
 
     init(_ entries: [ResourceVersion]) {
       for entry in entries {
@@ -116,6 +127,7 @@ struct Pull: Sendable {
             storeLinkItems[entry.id] = itemID
           }
         case .invitation: invitations[entry.id] = entry.version
+        case .gift: gifts[entry.id] = entry.version
         case .groupUsers: memberships[.init(kind: .groupUsers, ownerID: entry.id)] = entry.version
         case .usersInGroup: memberships[.init(kind: .usersInGroup, ownerID: entry.id)] = entry.version
         case .usersOfOccasion: memberships[.init(kind: .usersOfOccasion, ownerID: entry.id)] = entry.version

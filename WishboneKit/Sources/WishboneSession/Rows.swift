@@ -17,6 +17,12 @@ import WishboneAPI
 // A store link has no answer of its own: the app reads it inside its item. So it keeps the version that
 // `GET /versions` named for it.
 //
+// A gift keeps its giver, its recipients, and the users in its flags as IDs too, and each of those users has a row
+// of their own. Its item, its list and its occasion can be out of the copy: the item was deleted, or the gift was
+// given and its item left the list. So it keeps their summaries.
+//
+// A blocked store is not in `GET /versions`. Each sync reads the admin's again, and the answer replaces them.
+//
 // **A change to what a row keeps is a change to the copy.** So `LocalDatabase.copySchema` rises with it, and a
 // fitness test holds this file to that number.
 
@@ -310,5 +316,116 @@ public struct InvitationRow: Codable, Sendable, Equatable, Identifiable, Fetchab
   public let canDelete: Bool
 
   /// The version of the invitation as the session's user sees it.
+  public let version: String
+}
+
+/// A gift in the local copy: the ones that the session's user gives, and the given gifts for them or their
+/// children.
+///
+/// **An open gift is what the device must keep from its recipients.** It is only in the session's database, never
+/// in the shared container. The fields that only the giver of an open gift sees are hidden for a recipient and
+/// their parent, as the server sends them: hidden is never `false` or empty.
+public struct GiftRow: Codable, Sendable, Equatable, Identifiable, FetchableRecord, PersistableRecord {
+  public static let databaseTableName = "gift"
+
+  public let id: String
+  public let state: GiftState
+  public let quantity: Int
+
+  /// The item the gift is of, by its summary. The copy can have no row for it.
+  public let itemID: String
+  public let itemTitle: String
+  public let itemPrimaryImage: ImageSummary?
+
+  /// The item's list, by its summary. The copy can have no row for it.
+  public let listID: String
+  public let listName: String
+
+  /// The item's title, image and price: as they are now for an open gift, and as they were at reveal for a given
+  /// one.
+  public let title: String
+  public let image: ImageSummary?
+  public let priceMinor: Int?
+  public let topPriceMinor: Int?
+  public let currency: String?
+
+  /// The users the gift is for, never its giver. Each has a row of their own, in full or as a summary. Hidden when
+  /// the giver can't see the list, or couldn't at reveal.
+  public let recipientIDs: Hideable<[String]>
+
+  /// The giver. They have a row of their own, in full or as a summary. Nil once they are deleted: `giverName` is
+  /// their name as it was.
+  public let giverID: String?
+  public let giverName: String
+  public let fromLabel: String?
+
+  /// The gift's occasion, by its summary. Nil when the giver can't see it.
+  public let occasion: OccasionSummary?
+  public let occasionName: String?
+
+  /// The date the occasion fell on when the giver picked it, as `YYYY-MM-DD`.
+  public let occasionDate: String
+  public let revealAt: Date
+
+  /// Nil while the gift is open.
+  public let givenAt: Date?
+
+  /// Hidden for anyone but the giver.
+  public let isBought: Hideable<Bool>
+
+  /// Hidden for anyone but the giver.
+  public let note: Hideable<String>
+
+  /// Hidden for anyone but the giver of an open gift.
+  public let flags: Hideable<[Flag]>
+
+  /// Hidden for anyone but the giver of an open gift.
+  public let needsAttention: Hideable<Bool>
+
+  /// Hidden for anyone but the giver.
+  public let createdAt: Hideable<Date>
+
+  public let canEdit: Bool
+  public let canDelete: Bool
+  public let canRaiseQuantity: Bool
+  public let canAcknowledge: Bool
+  public let canRestore: Bool
+  public let canAddAgain: Bool
+
+  /// The version of the gift as the session's user sees it.
+  public let version: String
+
+  /// A flag of the gift, with its users as IDs. Each of them has a row of their own, in full or as a summary.
+  public enum Flag: Codable, Sendable, Equatable {
+    /// The item changed: a line for each field, in the order they first changed.
+    case changed([GiftChange])
+    case removed
+
+    /// The item moved to another list. Nil when the giver can't see the new list.
+    case moved(to: ListSummary?)
+    case occasionMoved
+    case noLongerShared
+
+    /// Nil when the giver can't see who restored the gift.
+    case restored(byUserID: String?)
+
+    /// The recipients that the giver last saw, and the ones now. Each is nil when the giver can't see the list.
+    case recipientsChanged(oldUserIDs: [String]?, newUserIDs: [String]?)
+
+    /// A code that the app doesn't know, with its text.
+    case unknown(String)
+  }
+}
+
+/// A blocked store in the local copy. Only the admin has them.
+public struct BlockedStoreRow: Codable, Sendable, Equatable, Identifiable, FetchableRecord, PersistableRecord {
+  public static let databaseTableName = "blockedStore"
+
+  public let id: String
+  public let store: String
+  public let createdAt: Date
+  public let canDelete: Bool
+
+  /// The version of the row in the collection. No pull compares it: `GET /versions` doesn't name blocked stores.
   public let version: String
 }
