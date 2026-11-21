@@ -63,6 +63,7 @@ See [ADR 0004](adr/0004-the-api-client-is-written-by-hand-and-checked-against-a-
 - Models ignore unknown keys. Every enum has an `unknown(String)` case. A field that can be hidden keeps "absent" apart from `null` where it matters.
 - Error codes are one open enum, with `unknown(String)`.
 - Collections always follow `next_cursor`.
+- A resource comes with its version: the `ETag` of its own `GET`, or its `version` as a row of a collection. Only `GET /versions` sends `If-None-Match`, and its request never has a query.
 - The token goes only to the instance address, and only on a route that needs a session. The client follows no redirect. A store's image loads with no token.
 - Family content in a log line (names, titles, notes, addresses) is always `.private`.
 

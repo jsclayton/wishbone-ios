@@ -814,7 +814,7 @@ These show only where the window and the system allow several windows.
 
 ## 10. Offline and keeping in step
 
-Relies on the server spec's [Collections](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#collections), [Writes](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#writes), [Images](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#images), and [Versions of the API](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#versions-of-the-api). The server at the minimum version gives a client a cheap way to keep a local copy current (conditional `GET`, and the changes since a point for each caller), and an optional `Idempotency-Key` on writes. See [ADR 0005](adr/0005-grdb-is-the-local-database-and-screens-read-only-it.md) and [ADR 0006](adr/0006-writes-are-a-journal-of-unsent-changes-the-server-decides-and-claims-are-online-only.md).
+Relies on the server spec's [Collections](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#collections), [Writes](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#writes), [Versions of everything a caller sees](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#versions-of-everything-a-caller-sees), [Images](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#images), and [Versions of the API](https://github.com/jsclayton/wishbone/blob/main/docs/spec.md#versions-of-the-api). The server at the minimum version gives a client a cheap way to keep a local copy current (`GET /versions`: the version of everything that the caller can see, in one answer, with a 304 when nothing changed), and an optional `Idempotency-Key` on writes. See [ADR 0005](adr/0005-grdb-is-the-local-database-and-screens-read-only-it.md) and [ADR 0006](adr/0006-writes-are-a-journal-of-unsent-changes-the-server-decides-and-claims-are-online-only.md).
 
 Screens: the states in [What every screen shares](screens/README.md#what-every-screen-shares), and [add-form](screens/add-form.md), [gift](screens/gift.md), [item](screens/item.md).
 
@@ -873,7 +873,7 @@ These writes are never unsent changes either. Each one changes what other people
 
 - No write sends `If-Match`. Each change is a merge patch of only the fields changed. The server applies it to its current state, and the last writer wins for each field.
 - The server's `ETag` covers what each caller sees, so it changes for reasons that have nothing to do with the edit. For example, a claim changes a parent's `ETag` on a child's item. `If-Match` then fails for no real conflict, more so for a change that waited offline.
-- Each row keeps its version, to skip writes that change nothing, and to send as `If-None-Match` when it fetches.
+- Each row keeps its version, to compare with the server's answer at each pull, and to skip a write that changes nothing. Only `GET /versions` gets `If-None-Match`, because no other route takes it.
 
 ### When the app syncs
 
@@ -885,6 +885,13 @@ A sync sends the unsent changes, then pulls. It runs:
 - once when the last unsent change is sent
 - at once when the share extension says that it added an item
 - in background app refresh: the unsent changes, a pull, then the reminders (section 8) and the widget's file are made again from the copy
+
+A pull brings the copy up to date:
+
+- It asks for the versions (`GET /versions`), and compares them with the copy.
+- It fetches what is new or changed.
+- It removes what is absent: deleted, moved out of view, or hidden, which look the same.
+- It ignores a kind that it doesn't know.
 
 Opening a page fetches nothing of its own, except Sign-in and devices (see [What the copy holds](#what-the-copy-holds)). The app never shows "Syncing".
 
