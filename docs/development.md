@@ -228,7 +228,7 @@ To move the pin:
 2. **Server:** builds the pinned test server, or reuses the built one.
 3. **Package:** `swift test` on macOS, in parallel: the contract test, the fitness tests, the session model, the secrecy suite, and the pure units.
 4. **Build:** the app, the share extension, the widget, and the test bundles for the simulator, with zero warnings. It is the simulator step's build too. Then the check that the build changed nothing that is in git (see [What the build writes](#what-the-build-writes)).
-5. **Simulator:** `just simulator`: the hosted test bundle, then the journeys twice, one at a time, on the gate's own simulator: once with the audit in the four settings, and once in the double-length pseudo-language. It builds with the same arguments as step 4, so its build has nothing to do, and it runs the tests from that build's `.xctestrun` file. The result bundles stay inside the checkout, in `build/gate/run/simulator/`, with the log of each run.
+5. **Simulator:** `just simulator`: the hosted test bundle, then the journeys twice, one at a time, on the gate's own simulator: once with the audit in the four settings, and once in the double-length pseudo-language. It doesn't build: it runs the tests from step 4's `.xctestrun` file. `just simulator` by itself builds first, with the same arguments as `just build`. The result bundles stay inside the checkout, in `build/gate/run/simulator/`, with the log of each run.
 
 The gate reads its own results:
 

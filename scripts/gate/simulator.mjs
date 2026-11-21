@@ -1,8 +1,8 @@
 // The simulator tier: the hosted test bundle, then the journeys, on the gate's own simulator. `just simulator`
 // runs it, and it is step 5 of the gate. See "The simulator tier" in docs/development.md.
 //
-// It builds as `just build` (step 4) does, with the same arguments, so after step 4 its build has nothing to do,
-// and it says how many Swift files it compiled. Then it runs the tests from that build's `.xctestrun` file.
+// It builds as `just build` does, with the same arguments, and runs the tests from that build's `.xctestrun`
+// file. Under the gate (`--no-build`), it doesn't build: step 4 is `just build`, so it runs step 4's build.
 //
 // The journeys run twice. In the first run, each journey audits each screen in the four settings of the audit:
 // the journey asks this script's settings helper, a small HTTP server on the Mac, to put the simulator in each
@@ -231,10 +231,14 @@ function xcodebuild(args, { root, log, env = {} }) {
 }
 
 /**
- * Builds the app and the test bundles, or finds them built by step 4, and runs the hosted tests and then the
- * journeys. The first run that fails ends it. Returns true when every run passed.
+ * Builds the app and the test bundles, and runs the hosted tests and then the journeys. The first run that fails
+ * ends it. Returns true when every run passed.
+ *
+ * With `build: false`, it doesn't build: it runs the tests that `just build` built. The gate asks for that, because
+ * its step 4 has just built them. On CI, a build next to a newly booted simulator took minutes, even with nothing
+ * to compile.
  */
-export async function runSimulatorTier({ root, directory, say = console.log }) {
+export async function runSimulatorTier({ root, directory, build = true, say = console.log }) {
   rmSync(directory, { recursive: true, force: true });
   mkdirSync(directory, { recursive: true });
   const simulator = findOrMakeSimulator();
@@ -256,10 +260,13 @@ export async function runSimulatorTier({ root, directory, say = console.log }) {
     const bootStarted = Date.now();
     simctl(['bootstatus', simulator, '-b'], { stdio: 'ignore' });
     say(`✓ Booted the gate's simulator (${duration(Date.now() - bootStarted)})`);
-    if (!(await run('Built the app and the test bundles for the simulator', buildArguments, { log: 'build.log' }))) return false;
-    // After step 4, the build has nothing to compile. The line says so, so a log shows whether it reused step 4's.
-    say(`  It compiled ${compiledFiles(path.join(directory, 'build.log'))} Swift files.`);
+    if (build) {
+      if (!(await run('Built the app and the test bundles for the simulator', buildArguments, { log: 'build.log' }))) return false;
+      // After `just build`, the build has nothing to compile. The line says so.
+      say(`  It compiled ${compiledFiles(path.join(directory, 'build.log'))} Swift files.`);
+    }
     const testRun = findTestRun(path.join(root, 'build', 'DerivedData', 'Build', 'Products'));
+    if (!build) say(`✓ Took the app and the test bundles from the gate's build step (${relative(testRun)})`);
     holdStatusBar(simulator);
     apply(settings[0], simulator);
 
@@ -304,11 +311,13 @@ export async function runSimulatorTier({ root, directory, say = console.log }) {
 
 if (import.meta.main) {
   const root = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8', cwd: path.dirname(fileURLToPath(import.meta.url)) }).trim();
-  const directory = path.resolve(root, process.argv[2] ?? path.join('build', 'simulator'));
+  const [results, ...flags] = process.argv.slice(2);
+  const directory = path.resolve(root, results ?? path.join('build', 'simulator'));
+  const build = !flags.includes('--no-build');
   try {
     // Under the gate, the gate holds the slot. By itself, the run takes it, so it never breaks another
     // checkout's gate on the one simulator.
-    const passed = await inSlot(() => runSimulatorTier({ root, directory }), {
+    const passed = await inSlot(() => runSimulatorTier({ root, directory, build }), {
       directory: slotDirectory(),
       owner: `just simulator in ${root} (process ${process.pid})`,
       onWait: (holder) => console.log(`── waiting for the gate slot${holder === '' ? '' : `, which ${holder} holds`}`),
