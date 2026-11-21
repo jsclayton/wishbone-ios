@@ -51,7 +51,7 @@ The start of adding an item: paste a link, type what you want, or use a photo. T
 
 ## Words
 
-Decided in the spec: the prompt "Paste a link or type what you want", "Paste", "Take a photo", "Choose a photo", "Fill it in myself", "Add it without the link", "Added {title} to {list}", and "Can't reach {address}".
+Decided in the spec: the prompt "Paste a link or type what you want", "Paste", "Take a photo", "Choose a photo", "Fill it in myself", "Add it without the link", "Added {title} to {list}", and "Can't reach {address}". The paste button's word, "Paste", is the system's, not the app's.
 
 **Provisional.** These are drafts: "Links from {store} are blocked on this Wishbone." (in the spec, marked), and:
 
