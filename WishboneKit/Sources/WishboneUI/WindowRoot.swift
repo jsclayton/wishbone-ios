@@ -26,9 +26,10 @@ public struct WindowRoot: View {
     }
     // A session from an earlier launch shows what is saved at once. This sync brings it up to date.
     .task { await device.session?.sync() }
-    .onChange(of: device.session == nil, initial: true) {
-      // A place is of one session. The window of a signed-out device keeps none, so the next session starts at
-      // Home.
+    .onChange(of: device.session == nil) {
+      // A place is of one session. A window that sees the device sign out keeps none, so the next session starts
+      // at Home. A window that opens on a signed-out device forgets nothing: the device also has no session while
+      // the session keychain can't be read, and what another session saved is not restored anyway.
       if device.session == nil { saved = nil }
     }
   }
