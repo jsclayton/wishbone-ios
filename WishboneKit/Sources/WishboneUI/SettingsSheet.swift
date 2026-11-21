@@ -37,19 +37,7 @@ struct SettingsSheet: View {
         }
       }
     }
-    .alert(Text("Sign out?", bundle: #bundle), isPresented: $isConfirmingSignOut) {
-      Button(role: .destructive) {
-        Task { await device.signOut() }
-      } label: {
-        Text("Sign out", bundle: #bundle)
-      }
-      Button(role: .cancel) {
-      } label: {
-        Text("Cancel", bundle: #bundle)
-      }
-    } message: {
-      Text("You need a new login link to sign in again.", bundle: #bundle)
-    }
+    .signOutConfirmation(isPresented: $isConfirmingSignOut)
   }
 
   /// The Signed in block: the user's name, the instance address with its scheme, and Sign out.

@@ -1,26 +1,45 @@
 import Foundation
 import WishboneAPI
 
-/// The app's own words for each error code of the API. See "Words for error codes" in
-/// `docs/screens/README.md`, which holds the table. The app never shows the server's `detail` for a code that it
-/// knows.
-enum ErrorWords {
-  /// The words for a refusal. For a code that the app doesn't know, they are the server's `detail`.
-  static func words(for refusal: APIError.Refusal) -> String {
+/// The app's own words for each error code of the API: the one lookup that every screen uses. See "Words for
+/// error codes" in `docs/screens/README.md`, which holds the table. The app never shows the server's `detail` for a
+/// code that it knows.
+///
+/// Each ticket adds the codes that its screens meet.
+public enum ErrorWords {
+  /// The words for a refusal. Nil for a code that counts as success, which shows nothing. For a code that the app
+  /// doesn't know, they are the server's `detail`.
+  public static func words(for refusal: APIError.Refusal) -> String? {
+    if refusal.code.isSuccess { return nil }
     switch refusal.code {
     case .loginLinkInvalid:
-      linkInvalid
+      return linkInvalid
     case .rateLimited:
-      String(localized: "Too many tries. Wait a minute, then try again.", bundle: #bundle)
+      return String(localized: "Too many tries. Wait a minute, then try again.", bundle: #bundle)
     case .invalidInput:
-      String(localized: "Some fields need another look.", bundle: #bundle)
-    case .notFound:
-      String(localized: "This is gone, or it isn't shared with you.", bundle: #bundle)
-    case .unknownFilter, .unknownSort, .cursorMismatch:
-      fault
-    case .unauthorized, .apiVersionRemoved, .unknown:
+      return String(localized: "Some fields need another look.", bundle: #bundle)
+    case .notFound, .referenceNotFound:
+      return String(localized: "This is gone, or it isn't shared with you.", bundle: #bundle)
+    case .forbidden, .fieldNotWritable:
+      return String(localized: "You can't do this any more.", bundle: #bundle)
+    case .requestTooLarge, .imageTooLarge:
+      return String(localized: "That photo is too large. Choose a smaller one.", bundle: #bundle)
+    case .imageInvalid:
+      return String(localized: "Wishbone can't use that file. Choose a JPEG, PNG, GIF, or WebP photo.", bundle: #bundle)
+    case .birthdayRequired:
+      return String(localized: "A birthday is required.", bundle: #bundle)
+    case .adminHasNoParents:
+      return String(localized: "The admin can't have parents.", bundle: #bundle)
+    case .unknownFilter, .unknownSort, .cursorMismatch, .imageAttached, .resourceChanged:
+      return fault
+    case .unauthorized, .apiVersionRemoved, .userDeactivated, .parentLoop, .unknown:
       // The first two have screens of their own, and reach here only in an answer that those screens don't take.
-      refusal.detail
+      // `user_deactivated` names a person, so the screen that meets it gives its words. `parent_loop` shows the
+      // server's `detail`, as the table says.
+      return refusal.detail
+    case .alreadyClaimed, .alreadyInvited, .alreadyRecipient, .alreadyInGroup, .alreadyAttached, .alreadyBlocked:
+      // These count as success: see above.
+      return nil
     }
   }
 
@@ -30,7 +49,7 @@ enum ErrorWords {
   }
 
   /// The words for a fault of the app: a code that only a fault can cause, or an answer that the app can't read.
-  static var fault: String {
+  public static var fault: String {
     String(localized: "Something went wrong in Wishbone. Try again.", bundle: #bundle)
   }
 }

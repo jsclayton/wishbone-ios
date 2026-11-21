@@ -97,6 +97,9 @@ public final class NetworkConditioner: Sendable {
     /// The headers, with their names in lower case.
     public let headers: [String: String]
 
+    /// The body, as the conditioner read it.
+    public let body: Data
+
     /// Whether the request is on the route.
     public func isOn(_ route: Route) -> Bool {
       route.matches(method: method, target: target)
@@ -415,7 +418,8 @@ extension NetworkConditioner {
           for (name, value) in request.headers {
             headers[name.lowercased()] = value
           }
-          state.requests.append(SeenRequest(method: request.method, target: request.target, headers: headers))
+          state.requests.append(
+            SeenRequest(method: request.method, target: request.target, headers: headers, body: request.body))
           return state.rules.first { $0.isInForce && $0.route.matches(method: request.method, target: request.target) }
         }
         let answer: CannedAnswer

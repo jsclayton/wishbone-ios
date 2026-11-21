@@ -2,13 +2,13 @@
   "sourceLanguage" : "en",
   "strings" : {
     "NSCameraUsageDescription" : {
-      "comment" : "Why the app asks for the camera: the scanner on the signed-out screen.",
+      "comment" : "Why the app asks for the camera: the scanner on the signed-out screen, and Take a photo at the profile gate.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wishbone uses the camera to scan the QR code of a login link."
+            "value" : "Wishbone uses the camera to scan the QR code of a login link, and to take your profile photo."
           }
         }
       }

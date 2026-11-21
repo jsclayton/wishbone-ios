@@ -124,6 +124,12 @@ public struct FixtureBuilder: Sendable {
     return url
   }
 
+  /// Confirms the user's profile, as the user, so the app shows them no profile gate. A user that the builder makes
+  /// has no confirmed profile.
+  public func confirmProfile(of person: Fixture.Person) async throws {
+    _ = try await person.signedIn().send("POST", "/users/me/confirm-profile").expecting(200)
+  }
+
   /// Deactivates the user, as the admin. The server revokes their sessions, so the handle that comes back has
   /// none.
   public func deactivate(_ person: Fixture.Person) async throws -> Fixture.Person {
@@ -139,7 +145,7 @@ public struct FixtureBuilder: Sendable {
     upload.httpMethod = "POST"
     upload.setValue("Bearer \(session.token)", forHTTPHeaderField: "Authorization")
     upload.setValue("image/png", forHTTPHeaderField: "Content-Type")
-    upload.httpBody = Self.onePixel
+    upload.httpBody = Self.onePixelPNG
     let image = try await TestHTTP.send(upload).expecting(201).json
     let imageID = try id(of: image)
     try await session.send("PATCH", "/users/me", json: ["avatar_image_id": .string(imageID)]).expecting(200)
@@ -147,7 +153,7 @@ public struct FixtureBuilder: Sendable {
   }
 
   /// A PNG of one pixel.
-  private static let onePixel =
+  public static let onePixelPNG =
     Data(
       base64Encoded:
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="

@@ -24,7 +24,7 @@ One form, filled with what the profile has:
 
 The form has no time zone and no good to know. The time zone is reported by the app, and good to know is in [Your profile](profile.md).
 
-**Provisional.** Plain default: one system form with the profile's fields and a Continue button. Sign out is a toolbar button.
+**Provisional.** Plain default: one system form with the profile's fields. Continue is the form's main button, at the trailing end of the toolbar, and Sign out is a toolbar button at its leading end. The title is the form's first row, where it wraps.
 
 ## States
 
@@ -57,6 +57,11 @@ Every window shows the gate until the profile is confirmed. The form stays in a 
 | The year | "Year (optional)", with the footer "With a year, your family sees the age you're turning." |
 | Photo | "Add a photo", with the footer "A photo is optional." |
 | Name is empty | "Enter your name." |
+| The photo's menu | "Take a photo", "Choose a photo", "Remove photo". With a photo, the control reads "Photo" |
+| The birthday's rows | "Month", "Day", and "Year (optional)", whose picker starts with "No year" |
+| A field that a 422 names | "Check your name.", "Check your last name.", "Check your birthday." |
+| The camera's permission string | The one that the [signed-out](signed-out.md) screen's scanner uses, which names the profile photo too |
+| Continue with no connection | "Can't reach {address}", and the button reads "Try again" |
 
 ## Accessibility
 

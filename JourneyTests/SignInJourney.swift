@@ -22,11 +22,69 @@ nonisolated final class SignInJourney: XCTestCase {
     }
   }
 
+  /// The sign-in again, as a user with no confirmed profile: the profile gate shows before the tabs, and Continue
+  /// reaches Home. See `docs/screens/profile-gate.md`.
+  @MainActor
+  func testSignInToTheProfileGate() async {
+    continueAfterFailure = false
+    do {
+      try await signInToTheProfileGate()
+    } catch {
+      XCTFail("\(error)")
+    }
+  }
+
+  @MainActor
+  private func signInToTheProfileGate() async throws {
+    let server = try await TestServer.shared()
+    let builder = try await FixtureBuilder(server: server)
+    let sam = try await builder.person("Sam")
+    let list = try await builder.primaryList(of: sam)
+    _ = try await builder.item("Tent", on: list, as: sam)
+
+    let app = Audit.app()
+    app.launchEnvironment["WISHBONE_JOURNEY_START_SIGNED_OUT"] = "1"
+    app.launchEnvironment["WISHBONE_JOURNEY_LOGIN_LINK"] = try await builder.loginLink(for: sam).absoluteString
+    app.launch()
+
+    // The gate, in place of the tabs, with the profile's name in its field. Its title is the form's first row, and
+    // its bar holds Sign out and Continue.
+    let title = app.staticTexts[Audit.words("Finish your profile")]
+    let gate = app.navigationBars.firstMatch
+    XCTAssertTrue(title.waitForExistence(timeout: 60), "The profile gate didn't show after the sign-in.")
+    XCTAssertFalse(app.tabBars.firstMatch.exists, "The tabs show behind the profile gate.")
+    XCTAssertTrue(app.staticTexts[Audit.words("Check your name and birthday. Your family sees them.")].exists)
+    // The name field holds the profile's name.
+    let nameField = app.descendants(matching: .any).matching(NSPredicate(format: "value == %@", sam.name)).firstMatch
+    XCTAssertTrue(nameField.exists, "The name field doesn't hold the profile's name.")
+    XCTAssertTrue([.textField, .textView].contains(nameField.elementType), "The name is not in a field.")
+    XCTAssertTrue(app.buttons[Audit.words("Add a photo")].exists, "The gate has no photo control.")
+    XCTAssertTrue(gate.buttons[Audit.words("Sign out")].exists, "The gate has no Sign out.")
+    XCTAssertTrue(gate.buttons[Audit.words("Continue")].exists, "The gate has no Continue in its bar.")
+    try await Audit.run(on: app, showing: "the profile gate", in: self)
+
+    // Continue confirms the profile, and the window shows Home.
+    gate.buttons[Audit.words("Continue")].tap()
+    XCTAssertTrue(app.staticTexts["Tent"].waitForExistence(timeout: 60), "Home didn't show after Continue.")
+    XCTAssertTrue(app.tabBars.firstMatch.buttons[Audit.words("Home")].isSelected)
+    XCTAssertFalse(title.exists)
+    app.terminate()
+
+    // A relaunch goes straight to the tabs.
+    let relaunched = Audit.app()
+    relaunched.launch()
+    XCTAssertTrue(relaunched.staticTexts["Tent"].waitForExistence(timeout: 60), "The relaunch didn't show Home.")
+    XCTAssertFalse(relaunched.staticTexts[Audit.words("Finish your profile")].exists)
+    relaunched.terminate()
+  }
+
   @MainActor
   private func signIn() async throws {
     let server = try await TestServer.shared()
     let builder = try await FixtureBuilder(server: server)
     let robin = try await builder.person("Robin")
+    // A user who confirmed their profile, so the app shows them no profile gate.
+    try await builder.confirmProfile(of: robin)
     let list = try await builder.primaryList(of: robin)
     for title in ["Kite", "Puzzle"] {
       _ = try await builder.item(title, on: list, as: robin)
