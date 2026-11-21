@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - A Mac with the Xcode version that the project pins: Xcode 27.2, with Swift 6.4.
-- [mise](https://mise.jdx.dev), activated in your shell. `mise.toml` pins Node, pnpm, just, and Go.
+- [mise](https://mise.jdx.dev), activated in your shell. `mise.toml` pins Node, pnpm, just, Go, actionlint, and shellcheck.
 - Go builds the Wishbone server that the tests run against. You don't need to clone the server: the tests fetch and build it themselves.
 
 ## First run
@@ -72,7 +72,7 @@ An xcconfig file treats `//` as the start of a comment. To write a URL in one, s
 | `just gate` | Every check that a pull request must pass, in order (see [The gate](#the-gate)) |
 | `just build` | Builds the app and both extensions for the simulator, with zero warnings, and adds new strings to the String Catalog |
 | `just test` | The package tests on macOS, with `swift test` |
-| `just lint` | `swift-format lint --strict`, actionlint and shellcheck, and the docs check |
+| `just lint` | `swift-format lint --strict`, actionlint and shellcheck, the docs check, and the tests of the gate's own scripts |
 | `just fmt` | Formats the Swift files with swift-format |
 
 To run one package test:
@@ -195,15 +195,25 @@ The gate reads its own results:
 
 - It counts the tests from Swift Testing's summary and from each result bundle.
 - It fails on any failure or recorded issue, on a bundle with 0 tests, and on a skip that is not on a short named list.
-- It fails when a count falls below the **floor**: the counts (package, hosted, and UI) in a small file in git. A change that adds tests can raise the floor. A commit that lowers it must say why.
+- A known issue is a recorded issue, so it fails too.
+- It fails when a count falls below the **floor**: the counts (package, hosted, and UI) in a small file in git, `scripts/gate/floor.json`. A change that adds tests can raise the floor. A commit that lowers it must say why.
+- The named list of skips is `allowedSkips` in `scripts/gate/main.mjs`. Each entry has a comment that says why.
 - It ends with one line, for example `GATE PASS package=412 hosted=38 ui=7 · 4m12s`, or `GATE FAIL step 3 (package): 2 failed`, then the names of the failed tests. A pull request quotes that line.
+- A step that the gate skips is named in that line.
+
+What "zero warnings" means in the build step:
+
+- The compiler treats every warning as an error, in the targets and in the package (`SWIFT_TREAT_WARNINGS_AS_ERRORS`). So a warning from the compiler fails every build until it is fixed.
+- The build's log must have no other `warning:` line. These come from what the compiler doesn't own: the linker, the asset catalogs, and the project.
+- One line is left out: `Metadata extraction skipped`, from Xcode's App Intents step. It is that step's own log for a target with no App Intents, not a warning about the code.
+- Xcode prints a warning from the linker, the asset catalogs, or the project only when it runs that part of the build again. So a build that reuses earlier work can pass where a build from nothing fails. CI always builds from nothing, so CI is the full check. To make the same check locally, run `just clean` before the gate.
 
 Time and load:
 
 - Each step is stopped, with all its child processes, when it passes its time limit. A step past its limit is a hang, not a flake.
-- Each run logs its step times to a file that git ignores, so a slowdown shows as a trend.
-- **The budget is 5 minutes**, warm, on the maintainer's laptop. A gate over budget passes with a warning. If it stays over, open an issue to fix it.
-- The build and simulator steps take a machine-wide slot, so that gates from several checkouts don't overload the machine. The slot's lock folder is `WISHBONE_GATE_SLOT_DIR`, which has a default under your user's cache folder.
+- Each run logs its step times to a file that git ignores, `build/gate/times.jsonl`, so a slowdown shows as a trend. The last run's logs are beside it, in `build/gate/run/`.
+- **The budget is 5 minutes**, warm, on the maintainer's laptop. A gate over budget passes with a warning. If it stays over, open an issue to fix it. CI starts cold, so the gate gives no warning there.
+- The build and simulator steps take a machine-wide slot, so that gates from several checkouts don't overload the machine. A gate waits for its turn, and the wait is not part of its time. The slot's lock folder is `WISHBONE_GATE_SLOT_DIR`, which has a default under your user's cache folder: `~/Library/Caches/wishbone-gate`.
 
 While you work, run only the suites you touch. Run the full gate once at the end, after your last rebase.
 
@@ -220,7 +230,7 @@ None.
 
 ### CI
 
-- GitHub Actions runs the same `just gate`, on a macOS runner with the pinned Xcode, for every pull request and on `main`.
+- GitHub Actions runs the same `just gate`, on a macOS runner with the pinned Xcode, for every pull request and on `main`. The runner is GitHub's `xcode-27` image.
 - CI builds unsigned, with no secrets, so a fork's pull request runs the whole gate.
 - CI caches the built server, Go's caches, and SwiftPM's, keyed on the pin and `Package.resolved`.
 - The workflows and the required checks are in [`workflow.md`](workflow.md#ci).
