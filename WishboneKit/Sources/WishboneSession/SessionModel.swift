@@ -18,7 +18,7 @@ public final class SessionModel {
   /// The user's primary list. Nil until the first sync has filled the copy.
   public private(set) var primaryList: ListRow?
 
-  /// The items on the primary list, in the list's order.
+  /// The items on the primary list, in the list's order. Empty while `primaryList` is nil: the two change together.
   public private(set) var primaryListItems: [ItemRow] = []
 
   /// The lists in the copy that the session's user is a recipient of, the primary list first. The copy holds only
