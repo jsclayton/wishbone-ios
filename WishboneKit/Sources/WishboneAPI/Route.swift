@@ -19,6 +19,7 @@ public enum Route: String, Sendable, CaseIterable {
   case list
   case listItems
   case item
+  case revokeCurrentSession
 
   public var method: String {
     switch self {
@@ -27,6 +28,7 @@ public enum Route: String, Sendable, CaseIterable {
       "GET"
     case .redeemLoginLink: "POST"
     case .updateMe: "PATCH"
+    case .revokeCurrentSession: "DELETE"
     }
   }
 
@@ -49,6 +51,7 @@ public enum Route: String, Sendable, CaseIterable {
     case .list: "/lists/{id}"
     case .listItems: "/lists/{id}/items"
     case .item: "/items/{id}"
+    case .revokeCurrentSession: "/users/me/sessions/current"
     }
   }
 
@@ -58,7 +61,7 @@ public enum Route: String, Sendable, CaseIterable {
     switch self {
     case .health, .redeemLoginLink: true
     case .versions, .updateMe, .users, .user, .groups, .group, .groupUsers, .groupGroups, .occasions, .occasion,
-      .occasionGroups, .list, .listItems, .item:
+      .occasionGroups, .list, .listItems, .item, .revokeCurrentSession:
       false
     }
   }
@@ -72,7 +75,9 @@ public enum Route: String, Sendable, CaseIterable {
     // The two filters give the memberships: the users in a group with nesting, and the users of an occasion.
     case .users: Self.paging + ["group_id", "occasion_id"]
     case .groups, .groupUsers, .groupGroups, .occasions, .occasionGroups, .listItems: Self.paging
-    case .health, .redeemLoginLink, .versions, .updateMe, .user, .group, .occasion, .list, .item: []
+    case .health, .redeemLoginLink, .versions, .updateMe, .user, .group, .occasion, .list, .item,
+      .revokeCurrentSession:
+      []
     }
   }
 
@@ -85,12 +90,13 @@ public enum Route: String, Sendable, CaseIterable {
     case .redeemLoginLink: fields(of: RedeemBody.CodingKeys.self)
     case .updateMe: fields(of: UserChanges.CodingKeys.self)
     case .health, .versions, .users, .user, .groups, .group, .groupUsers, .groupGroups, .occasions, .occasion,
-      .occasionGroups, .list, .listItems, .item:
+      .occasionGroups, .list, .listItems, .item, .revokeCurrentSession:
       []
     }
   }
 
-  /// The fields that the client reads from the route's answer, as key paths.
+  /// The fields that the client reads from the route's answer, as key paths. A route whose answer has no body
+  /// (a 204) has none.
   public var decodedFields: [String] {
     switch self {
     case .health: Health.fields
@@ -107,6 +113,7 @@ public enum Route: String, Sendable, CaseIterable {
     case .list: ListResource.fields
     case .listItems: Page<VersionedRow<Item>>.fields
     case .item: Item.fields
+    case .revokeCurrentSession: NoContent.fields
     }
   }
 }
@@ -204,6 +211,13 @@ extension Endpoint where Response == ListResource {
 extension Endpoint where Response == Item {
   static func item(_ id: String) -> Endpoint {
     Endpoint(route: .item, parameters: ["id": id])
+  }
+}
+
+extension Endpoint where Response == NoContent {
+  /// Signs out: the server revokes the session that the token is of.
+  static var revokeCurrentSession: Endpoint {
+    Endpoint(route: .revokeCurrentSession)
   }
 }
 

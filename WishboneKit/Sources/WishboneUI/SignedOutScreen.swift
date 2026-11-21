@@ -116,6 +116,12 @@ public struct SignedOutScreen: View {
       ErrorWords.words(for: refusal)
     case .failed:
       ErrorWords.fault
+    case .signedOutUnreachable(let address):
+      String(
+        localized:
+          "Signed out on this device. \(address.text) could not be reached, so this device still shows in your Devices list until you remove it there.",
+        bundle: #bundle
+      )
     }
   }
 

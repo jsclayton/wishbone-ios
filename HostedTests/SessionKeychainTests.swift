@@ -2,9 +2,12 @@ import Foundation
 import Security
 import Testing
 import WishboneAPI
+import WishboneSession
 
 /// The session keychain's item, in the system's Keychain, with the app's entitlements. See "Where the session
 /// lives" in `docs/spec.md`.
+///
+/// The tests share the one item of the app's access group, so they run one at a time.
 @Suite("The session keychain's item", .serialized, .timeLimit(.minutes(1)))
 struct SessionKeychainTests {
   @Test("The item is in the shared access group, stays on this device, and is readable after the first unlock")
@@ -52,5 +55,41 @@ struct SessionKeychainTests {
 
     try keychain.delete()
     #expect(try keychain.read() == nil)
+  }
+
+  @Test("After a sign-out, the Keychain item and the database file are gone from the device")
+  @MainActor
+  func signOutClearsTheDevice() async throws {
+    let accessGroup = try #require(Bundle.main.object(forInfoDictionaryKey: "WishboneKeychainAccessGroup") as? String)
+    let keychain = SystemSessionKeychain(accessGroup: accessGroup)
+    // The bundle has no test server, so the instance can't be reached. The device is cleared all the same.
+    let instance = try #require(InstanceAddress("http://127.0.0.1:9"))
+    try keychain.save(Session(instance: instance, token: "a-token-for-the-test", userID: "7"))
+    // The bundle can't link `TestSupport`, so the device's storage is a folder of its own in the app's caches.
+    let storage = URL.cachesDirectory.appending(path: "SignOutTest-\(UUID().uuidString)", directoryHint: .isDirectory)
+    defer { try? FileManager.default.removeItem(at: storage) }
+    let sessions = storage.appending(path: "Sessions", directoryHint: .isDirectory)
+
+    let device = Device(
+      Device.Setup(
+        userAgent: UserAgent(version: "1.0", isPad: false), keychain: keychain, storage: .folder(storage)))
+    #expect(device.session != nil)
+    let folders = try FileManager.default.contentsOfDirectory(at: sessions, includingPropertiesForKeys: nil)
+    #expect(folders.count == 1)
+    let file = try #require(folders.first).appending(path: "database.sqlite")
+    #expect(FileManager.default.fileExists(atPath: file.path(percentEncoded: false)))
+
+    await device.signOut()
+
+    #expect(device.session == nil)
+    #expect(device.signInState == .signedOutUnreachable(instance))
+    #expect(try keychain.read() == nil)
+    let query: [CFString: Any] = [
+      kSecClass: kSecClassGenericPassword,
+      kSecAttrService: SystemSessionKeychain.service,
+      kSecAttrSynchronizable: kSecAttrSynchronizableAny,
+    ]
+    #expect(SecItemCopyMatching(query as CFDictionary, nil) == errSecItemNotFound)
+    #expect(!FileManager.default.fileExists(atPath: sessions.path(percentEncoded: false)))
   }
 }

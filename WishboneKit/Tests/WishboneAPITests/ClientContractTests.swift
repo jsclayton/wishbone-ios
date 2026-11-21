@@ -26,6 +26,11 @@ struct ClientContractTests {
   @Test("Every field that the client reads is in the route's answer", arguments: Route.allCases)
   func decodedFieldsAreInTheAnswer(route: Route) throws {
     let responses = try operation(of: route)["responses"]
+    guard route.decodedFields != NoContent.fields else {
+      // A route that the client reads no body from answers 204 in the copy.
+      #expect(responses["204"] != .null, "\(route.method) \(route.template) has no 204 answer in the copy")
+      return
+    }
     let answer = responses["200"]["content"]["application/json"]["schema"]
     #expect(answer != .null, "\(route.method) \(route.template) has no 200 answer in the copy")
     #expect(!route.decodedFields.isEmpty)
