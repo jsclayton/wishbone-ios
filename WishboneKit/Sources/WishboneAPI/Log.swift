@@ -17,11 +17,6 @@ public enum Log {
 
   private static let subsystem = "wishbone"
 
-  /// A line whose words are all in the code.
-  public static func note(_ category: Category, _ message: StaticString) {
-    loggers[category]?.info("\(message.description, privacy: .public)")
-  }
-
   /// A line about a fault of the app. `detail` is private: it can hold family content.
   public static func fault(_ category: Category, _ message: StaticString, detail: String = "") {
     loggers[category]?.fault("\(message.description, privacy: .public) \(detail, privacy: .private)")

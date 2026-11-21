@@ -30,10 +30,4 @@ public enum ErrorCode: Sendable, Hashable {
   public init(_ text: String) {
     self = Self.known[text] ?? .unknown(text)
   }
-
-  /// The server's text for the code.
-  public var text: String {
-    if case .unknown(let text) = self { return text }
-    return Self.known.first { $0.value == self }?.key ?? ""
-  }
 }

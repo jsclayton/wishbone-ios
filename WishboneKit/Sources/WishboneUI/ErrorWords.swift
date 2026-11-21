@@ -9,7 +9,7 @@ enum ErrorWords {
   static func words(for refusal: APIError.Refusal) -> String {
     switch refusal.code {
     case .loginLinkInvalid:
-      String(localized: "That link was already used, or it has expired. Ask for a new one.", bundle: #bundle)
+      linkInvalid
     case .rateLimited:
       String(localized: "Too many tries. Wait a minute, then try again.", bundle: #bundle)
     case .invalidInput:
@@ -22,6 +22,11 @@ enum ErrorWords {
       // The first two have screens of their own, and reach here only in an answer that those screens don't take.
       refusal.detail
     }
+  }
+
+  /// The words for a login link that is used or expired. The server gives one answer for both.
+  static var linkInvalid: String {
+    String(localized: "That link was already used, or it has expired. Ask for a new one.", bundle: #bundle)
   }
 
   /// The words for a fault of the app: a code that only a fault can cause, or an answer that the app can't read.

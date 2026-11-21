@@ -87,7 +87,7 @@ public struct SignedOutScreen: View {
     case .signedIn(let name):
       String(localized: "Signed in as \(name)", bundle: #bundle)
     case .linkInvalid:
-      String(localized: "That link was already used, or it has expired. Ask for a new one.", bundle: #bundle)
+      ErrorWords.linkInvalid
     case .notALoginLink:
       String(localized: "That isn't a Wishbone login link", bundle: #bundle)
     case .unreachable(let address):

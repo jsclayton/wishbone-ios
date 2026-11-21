@@ -156,7 +156,6 @@ public final class Device {
         keptLink = link
         signInState = .unreachable(link.instance)
       case .cancelled:
-        keptLink = link
         signInState = .plain
       case .refused(let refusal) where refusal.code == .loginLinkInvalid:
         signInState = .linkInvalid
