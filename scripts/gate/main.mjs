@@ -77,9 +77,10 @@ const steps = [
     // Step 4 (`just build`) has built the app and the test bundles, so this step doesn't build them again.
     command: ['just', 'simulator', path.relative(root, simulatorDirectory), '--no-build'],
     // A first run starts a new simulator. Then come the hosted tests, and the journeys twice: with the audit in
-    // the four settings, and in the double-length pseudo-language. On a new CI runner, the simulator's first boot
-    // takes up to about 6 minutes before the first test, and each journey about 1m30s on both runs, up to 2m20s.
-    // So six journeys take about 17 to 22 minutes.
+    // the four settings, and in the double-length pseudo-language. On a new CI runner, the step's fixed part (the
+    // simulator's first boot, up to about 6 minutes, and the hosted tests) takes about 5m40s to 8 minutes. Each
+    // screen that the journeys audit takes about 1 minute in the four settings, once in the run, and about 15
+    // seconds in double length. So the step holds about 19 to 22 audited screens.
     limitMs: 30 * minute,
     slot: true,
     counts: ['hosted', 'ui'],

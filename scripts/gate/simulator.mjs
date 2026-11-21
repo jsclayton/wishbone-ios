@@ -4,9 +4,10 @@
 // It builds as `just build` does, with the same arguments, and runs the tests from that build's `.xctestrun`
 // file. Under the gate (`--no-build`), it doesn't build: step 4 is `just build`, so it runs step 4's build.
 //
-// The journeys run twice. In the first run, each journey audits each screen in the four settings of the audit:
-// the journey asks this script's settings helper, a small HTTP server on the Mac, to put the simulator in each
-// setting with `simctl`. The second run is in the double-length pseudo-language, which needs a new launch.
+// The journeys run twice. In the first run, each screen that the journeys reach is audited in the four settings
+// of the audit, once: the journey asks this script's settings helper, a small HTTP server on the Mac, whether a
+// screen is new in the run, and to put the simulator in each setting with `simctl`. The second run is in the
+// double-length pseudo-language, which needs a new launch.
 //
 // Every `xcodebuild` writes its log, and its result bundle, to the results folder. The script prints one line for
 // each run.
@@ -21,7 +22,7 @@ import { fileURLToPath } from 'node:url';
 import { duration } from './gate.mjs';
 import { judge } from './reading.mjs';
 import { inSlot, slotDirectory } from './slot.mjs';
-import { readResultBundle } from './xcresult.mjs';
+import { checkAuditScreenshots, readAttachmentNames, readResultBundle } from './xcresult.mjs';
 
 /** The name of the gate's own simulator. The gate makes it when the machine has none. */
 export const simulatorName = 'Wishbone gate';
@@ -189,6 +190,13 @@ export function settingCommands(setting, simulator) {
 export const settingCallLimitMs = 30_000;
 
 /**
+ * The longest time that the helper takes to answer a journey: an `apply` runs at most one call for each of the
+ * three settings, and each call can hang once and then hang again. `helperTimeout` in `JourneyTests/Audit.swift`
+ * is longer, so a journey gets the helper's own error, which names the call, not a request that timed out.
+ */
+export const helperAnswerLimitMs = 3 * 2 * settingCallLimitMs;
+
+/**
  * How long a `simctl` call may take at the step's start. Just after a new simulator's first boot, its calls wait
  * minutes for the simulator to be ready, so they are not hung until much later than a journey's.
  */
@@ -223,6 +231,9 @@ export function simctlWithLimit(args, limitMs = settingCallLimitMs, { file = 'xc
  *
  * `apply` takes `{ limitMs }`, the limit of each call, which is `limitMs` unless it says otherwise.
  *
+ * It applies one setting at a time: an `apply` that comes while another runs waits for it, also when that one
+ * fails. So a journey whose request timed out leaves no call running beside the next journey's.
+ *
  * Returns `{ apply(setting, { limitMs }), calls(), retries(), ms() }`: the number of calls that it ran, how many of them hung
  * and were run again, and the time that they took.
  */
@@ -231,8 +242,8 @@ export function settingsApplier(simulator, { run = simctlWithLimit, limitMs = se
   let calls = 0;
   let retries = 0;
   let ms = 0;
-  return {
-    async apply(setting, { limitMs: callLimitMs = limitMs } = {}) {
+  let queue = Promise.resolve();
+  const applyNow = async (setting, callLimitMs) => {
       for (const command of settingCommands(setting, simulator)) {
         const [, , name, value] = command;
         if (set.get(name) === value) continue;
@@ -258,6 +269,12 @@ export function settingsApplier(simulator, { run = simctlWithLimit, limitMs = se
         }
         set.set(name, value);
       }
+  };
+  return {
+    apply(setting, { limitMs: callLimitMs = limitMs } = {}) {
+      const applied = queue.then(() => applyNow(setting, callLimitMs));
+      queue = applied.catch(() => {});
+      return applied;
     },
     calls: () => calls,
     retries: () => retries,
@@ -271,10 +288,34 @@ export function settingsApplier(simulator, { run = simctlWithLimit, limitMs = se
  * answers 204 when it is applied. A name that is not a setting gets 404. The journey gets the helper's address in
  * its environment, because a test can't change text size or Increase Contrast from inside the simulator.
  *
- * Resolves with `{ address, close }`.
+ * It also knows which screens the run has audited. `POST /screens`, with a screen's name as the body, answers
+ * 201 when the name is new in the run, so the journey audits the screen, and 200 when a journey audited it
+ * already, so the journey doesn't audit it again. Each run of the journeys starts its own helper.
+ *
+ * Resolves with `{ address, close, screens }`, where `screens()` gives the names, in the order they came.
  */
 export function startSettingsHelper(applySetting) {
+  const screens = new Set();
   const server = createServer((request, response) => {
+    if (request.url === '/screens') {
+      if (request.method !== 'POST') {
+        response.writeHead(404).end();
+        return;
+      }
+      const body = [];
+      request.on('data', (chunk) => body.push(chunk));
+      request.on('end', () => {
+        const screen = Buffer.concat(body).toString('utf8');
+        if (screen === '') {
+          response.writeHead(400, { 'Content-Type': 'text/plain' }).end("a screen's name, as the body");
+          return;
+        }
+        const isNew = !screens.has(screen);
+        screens.add(screen);
+        response.writeHead(isNew ? 201 : 200).end();
+      });
+      return;
+    }
     const match = /^\/settings\/([a-z-]+)$/.exec(request.url ?? '');
     const setting = settings.find((one) => one.name === match?.[1]);
     if (request.method !== 'POST' || setting === undefined) {
@@ -294,6 +335,7 @@ export function startSettingsHelper(applySetting) {
       resolve({
         address: `http://127.0.0.1:${server.address().port}`,
         close: () => new Promise((done) => server.close(() => done())),
+        screens: () => [...screens],
       });
     });
   });
@@ -394,25 +436,36 @@ export async function runSimulatorTier({ root, directory, build = true, say = co
     ];
     if (!(await run('The hosted tests', test('HostedTests', bundles.hosted[0].path), { log: 'hosted.log', bundle: bundles.hosted[0].path }))) return false;
 
-    helper = await startSettingsHelper((setting) => applier.apply(setting));
     const helperCalls = applier.calls();
     const helperRetries = applier.retries();
     const helperMs = applier.ms();
     for (const [index, journeys] of journeyRuns.entries()) {
       await applier.apply(settings[0]);
+      // Each run of the journeys has its own helper, so the run audits each screen that it reaches.
+      await helper?.close();
+      helper = journeys.helper ? await startSettingsHelper((setting) => applier.apply(setting)) : null;
       // xcodebuild gives the test runner each variable that starts with TEST_RUNNER_, without that start.
       const env = {
-        TEST_RUNNER_WISHBONE_SETTINGS_HELPER: journeys.helper ? helper.address : '',
+        TEST_RUNNER_WISHBONE_SETTINGS_HELPER: helper?.address ?? '',
         TEST_RUNNER_WISHBONE_DOUBLE_LENGTH: journeys.doubleLength ? 'YES' : 'NO',
       };
       const bundle = bundles.ui[index].path;
       const passed = await run(`The journeys in ${journeys.label}`, test('JourneyTests', bundle), { log: `journeys-${journeys.name}.log`, bundle, env });
-      if (index === 0) {
+      if (journeys.helper) {
         const retried = applier.retries() - helperRetries;
         const again = retried === 0 ? '' : `, and ran ${retried} that hung once more`;
         say(`  The settings helper made ${applier.calls() - helperCalls} simctl calls, in ${duration(applier.ms() - helperMs)}${again}.`);
       }
       if (!passed) return false;
+      if (journeys.helper) {
+        // The result bundle must have each screen that the journeys reached in the four settings, once.
+        const { screens, problem } = checkAuditScreenshots(readAttachmentNames(bundle), settings.map((setting) => setting.label));
+        if (problem !== null) {
+          say(`✗ The audit's screenshots in ${relative(bundle)}: ${problem}`);
+          return false;
+        }
+        say(`  The journeys audited ${screens} screens, each in the four settings once.`);
+      }
     }
     return true;
   } finally {
