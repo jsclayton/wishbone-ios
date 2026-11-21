@@ -264,14 +264,6 @@ function holdStatusBar(simulator) {
  * simulator's ID, and the `settingsApplier` that knows its settings.
  */
 export function prepareSimulator({ say = console.log } = {}) {
-  // DIAGNOSTIC, to be removed: the simulators that the runner's image has, and the size of each one's data.
-  if (process.env.CI) {
-    try {
-      say(execFileSync('sh', ['-c', 'xcrun simctl list devices; cd ~/Library/Developer/CoreSimulator/Devices && du -sm */data 2>/dev/null | sort -rn | head -n 15'], { encoding: 'utf8' }));
-    } catch (error) {
-      say(`diagnostic failed: ${error.message}`);
-    }
-  }
   const timed = (what, work) => {
     const started = Date.now();
     const result = work();
@@ -356,6 +348,8 @@ export async function runSimulatorTier({ root, directory, build = true, say = co
     helper = await startSettingsHelper((setting) => applier.apply(setting));
     const helperCalls = applier.calls();
     const helperMs = applier.ms();
+    // DIAGNOSTIC, to be removed: the journeys three times over, to see their cost once the simulator has settled.
+    for (let pass = 0; pass < 3; pass += 1)
     for (const [index, journeys] of journeyRuns.entries()) {
       applier.apply(settings[0]);
       // xcodebuild gives the test runner each variable that starts with TEST_RUNNER_, without that start.
@@ -363,8 +357,8 @@ export async function runSimulatorTier({ root, directory, build = true, say = co
         TEST_RUNNER_WISHBONE_SETTINGS_HELPER: journeys.helper ? helper.address : '',
         TEST_RUNNER_WISHBONE_DOUBLE_LENGTH: journeys.doubleLength ? 'YES' : 'NO',
       };
-      const bundle = bundles.ui[index].path;
-      const passed = await run(`The journeys in ${journeys.label}`, test('JourneyTests', bundle), { log: `journeys-${journeys.name}.log`, bundle, env });
+      const bundle = pass === 0 ? bundles.ui[index].path : path.join(directory, `pass-${pass}-journeys-${journeys.name}.xcresult`);
+      const passed = await run(`Pass ${pass + 1}: the journeys in ${journeys.label}`, test('JourneyTests', bundle), { log: `pass-${pass}-journeys-${journeys.name}.log`, bundle, env });
       if (index === 0) say(`  The settings helper made ${applier.calls() - helperCalls} simctl calls, in ${duration(applier.ms() - helperMs)}.`);
       if (!passed) return false;
     }
