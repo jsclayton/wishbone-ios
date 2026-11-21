@@ -136,7 +136,10 @@ enum Audit {
       if [.contrast, .dynamicType].contains(issue.auditType), let button = issue.element,
         button.elementType == .button,
         let gateButton = ["Sign out", "Continue", "Try again"].map(words).first(where: { $0 == button.label }),
-        app.staticTexts[words("Finish your profile")].exists, app.navigationBars.firstMatch.buttons[gateButton].exists
+        app.staticTexts[words("Finish your profile")].exists,
+        // The element must be the bar's button itself, not another with the same words.
+        case let barButton = app.navigationBars.firstMatch.buttons[gateButton], barButton.exists,
+        barButton.frame == button.frame
       {
         return true
       }

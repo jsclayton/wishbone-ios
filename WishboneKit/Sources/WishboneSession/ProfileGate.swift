@@ -114,6 +114,9 @@ extension SessionModel {
       return .confirmed
     } catch let error as APIError {
       return outcome(of: error, photo: false)
+    } catch is CancellationError {
+      // A sign-out ended the session during Continue. It is no fault of the copy.
+      return .failed
     } catch {
       Log.fault(.session, "The copy can't take the user's record.", detail: "\(error)")
       return .failed

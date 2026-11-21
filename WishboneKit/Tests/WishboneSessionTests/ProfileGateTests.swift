@@ -98,6 +98,34 @@ final class ProfileGateTests {
     #expect(first.user?.record?.lastName == "Fischer")
   }
 
+  @Test("Clearing sends null: a last name of spaces, a birthday with no year, and Remove only with an avatar")
+  func clearing() async throws {
+    let robin = try await instance.person("Robin")
+    let device = try await signedIn(as: robin)
+    let session = try #require(device.session)
+    var draft = ProfileDraft(try #require(session.user))
+    draft.lastName = "Fischer"
+    draft.birthday = PartialDate(month: 6, day: 15, year: 2014)
+    #expect(await session.confirmProfile(draft) == .confirmed)
+    await until { session.user?.record?.lastName == "Fischer" }
+
+    // Robin has no avatar, so Remove sends nothing for it.
+    var clearing = ProfileDraft(try #require(session.user))
+    clearing.lastName = "   "
+    clearing.birthday = PartialDate(month: 6, day: 15)
+    clearing.photo = .remove
+    #expect(await session.confirmProfile(clearing) == .confirmed)
+
+    let patches = requests(on: Self.update)
+    #expect(patches.count == 2)
+    let sent = try JSON(parsing: try #require(patches.last).body)
+    #expect(sent == ["last_name": nil, "birthday": ["month": 6, "day": 15, "year": nil]])
+    let record = try await record(of: robin)
+    #expect(record["last_name"].isNull)
+    #expect(record["birthday"]["year"].isNull)
+    await until { session.user?.record?.lastName == nil && session.user?.record?.birthday.year == nil }
+  }
+
   @Test("A draft with nothing changed sends no PATCH, and confirms")
   func nothingChanged() async throws {
     let robin = try await instance.person("Robin")
