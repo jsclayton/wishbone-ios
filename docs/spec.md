@@ -13,7 +13,7 @@ This spec says what the iPhone and iPad app does, and it is the source of truth 
 
 ### The minimum server version
 
-- The minimum server version is **2.2.0**.
+- The minimum server version is **2.3.0**.
 - The app works with a Wishbone server at its minimum version, or a newer one. The app reads the server's version before it signs in, and blocks with a message when the server is older (see [Version checks](#version-checks)).
 - The minimum version, the pinned server that the tests run against, and the app's copy of the server's OpenAPI document change together, in one commit (see [ADR 0004](adr/0004-the-api-client-is-written-by-hand-and-checked-against-a-pinned-copy-of-the-servers-openapi-document.md) and [ADR 0007](adr/0007-the-tests-run-against-a-real-wishbone-server-built-from-a-pinned-commit.md)). To use a newer server feature, raise the minimum on purpose.
 

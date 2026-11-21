@@ -32,7 +32,7 @@ async function servedDocument(root) {
   const { binary } = buildPaths(root, readPin(root));
   const data = mkdtempSync(path.join(tmpdir(), 'wishbone-openapi-'));
   const port = await freePort();
-  const env = { PATH: process.env.PATH, TZ: 'UTC', WISHBONE_PORT: String(port), WISHBONE_PUBLIC_URL: `http://localhost:${port}`, WISHBONE_DATA_DIR: data };
+  const env = { PATH: process.env.PATH, TZ: 'UTC', WISHBONE_PORT: String(port), WISHBONE_PUBLIC_URL: `http://localhost:${port}`, WISHBONE_DATA_DIR: data, WISHBONE_LISTEN_ADDRESS: '127.0.0.1' };
   const server = spawn(binary, ['serve'], { cwd: data, env, stdio: 'ignore' });
   const exited = new Promise((resolve) => server.once('exit', resolve));
   try {

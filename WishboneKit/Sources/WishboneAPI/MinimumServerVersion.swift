@@ -2,4 +2,4 @@
 ///
 /// It changes in one commit with the pinned test server and the copy of that server's OpenAPI document, which
 /// are in `WishboneKit/Server/`. See "The minimum server version" in `docs/spec.md`.
-public let minimumServerVersion = "2.2.0"
+public let minimumServerVersion = "2.3.0"
