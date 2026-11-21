@@ -964,7 +964,7 @@ Every new error type picks its side: captured, a breadcrumb, or never.
 - **Captured** (the app's own faults, by code only):
   - the local database will not open
   - a migration drops the copy
-  - a response that the client can't decode (the path template and the key path that failed, never a value)
+  - a response that the client can't decode (the path template and the key path that failed, never a value), except `GET /health`, where an answer that can't be decoded means no Wishbone is there (the same as an answer that isn't the API's)
   - an unsent change refused late, or any 400 or 422 refusal of a write that the app sent (the method, the path template, and the server's error code, never the body)
   - an error code that is not in the app's list (the code only)
 - **Never captured:** unreachable, offline, timed out, cancelled, the API's own 401, a 404 or 410 for something deleted elsewhere, a version block, and a server 5xx. A 5xx is the operator's server, not the app's fault.
