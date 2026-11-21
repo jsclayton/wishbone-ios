@@ -79,7 +79,7 @@ nonisolated final class SignInJourney: XCTestCase {
     // largest text size, where the check measures every row that shows.
     try await Audit.run(
       on: app, showing: "the Share diagnostics sheet", in: self, rowsThatLeaveTheScreen: ["Privacy policy"])
-    app.navigationBars[Audit.words("Share diagnostics")].buttons[Audit.words("Done")].tap()
+    app.navigationBars.buttons[Audit.words("Done")].tap()
     XCTAssertTrue(scan.waitForExistence(timeout: 10))
     XCTAssertFalse(share.exists, "The Share diagnostics sheet didn't close.")
     app.terminate()

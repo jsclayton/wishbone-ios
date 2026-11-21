@@ -44,6 +44,30 @@ struct ShareDiagnosticsScreen: View {
   }()
 
   var body: some View {
+    // Pushed from Settings, the bar names the screen. As a sheet, the bar holds only Done: a title there is cut short
+    // in a longer language, and the switch's words already name the screen.
+    switch place {
+    case .pushed:
+      form
+        .navigationTitle(Text("Share diagnostics", bundle: #bundle))
+        #if os(iOS)
+          .navigationBarTitleDisplayMode(.inline)
+        #endif
+    case .sheet:
+      form
+        .toolbar {
+          ToolbarItem(placement: .confirmationAction) {
+            Button {
+              dismiss()
+            } label: {
+              Text("Done", bundle: #bundle)
+            }
+          }
+        }
+    }
+  }
+
+  private var form: some View {
     Form {
       Section {
         Toggle(isOn: isOn) {
@@ -66,21 +90,6 @@ struct ShareDiagnosticsScreen: View {
       if let privacyPolicy = Self.privacyPolicy {
         Section {
           WebLinkRow(title: String(localized: "Privacy policy", bundle: #bundle), destination: privacyPolicy)
-        }
-      }
-    }
-    .navigationTitle(Text("Share diagnostics", bundle: #bundle))
-    #if os(iOS)
-      .navigationBarTitleDisplayMode(.inline)
-    #endif
-    .toolbar {
-      if place == .sheet {
-        ToolbarItem(placement: .confirmationAction) {
-          Button {
-            dismiss()
-          } label: {
-            Text("Done", bundle: #bundle)
-          }
         }
       }
     }
