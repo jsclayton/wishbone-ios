@@ -32,6 +32,14 @@ nonisolated final class EnvelopeReceiver: Sendable {
     /// the text has each one as `/` again: a check for a path or a zone in the text must be able to fail.
     let text: String
 
+    /// Every string of the envelope: each key and each string value of every line of JSON in it (its header, and each
+    /// item's header and payload), and the whole of a line that is not JSON. A number is not in it.
+    ///
+    /// A check for a planted value reads these, with each part of the value in a shape that no random ID can take by
+    /// chance. In the text, a short run of hex or of digits can be in a random ID or a number by chance: a part of
+    /// an IPv6 address, `890a`, was once in the `trace_id` of the header.
+    let strings: [String]
+
     /// The events of the envelope.
     var events: [[String: Any]] {
       items.filter { $0.type == "event" }.compactMap(\.json)
@@ -88,13 +96,27 @@ nonisolated final class EnvelopeReceiver: Sendable {
   static func envelope(_ body: Data) -> Envelope {
     let text = String(decoding: body, as: UTF8.self).replacingOccurrences(of: #"\/"#, with: "/")
     var lines = body.split(separator: UInt8(ascii: "\n"), omittingEmptySubsequences: false).map { Data($0) }
-    guard !lines.isEmpty else { return Envelope(items: [], text: text) }
+    let strings = lines.filter { !$0.isEmpty }.flatMap { line in
+      (try? JSONSerialization.jsonObject(with: line, options: .fragmentsAllowed)).map(Self.strings)
+        ?? [String(decoding: line, as: UTF8.self)]
+    }
+    guard !lines.isEmpty else { return Envelope(items: [], text: text, strings: strings) }
     lines.removeFirst()
     var items: [Envelope.Item] = []
     while lines.count >= 2 {
       let header = (try? JSONSerialization.jsonObject(with: lines.removeFirst())) as? [String: Any] ?? [:]
       items.append(Envelope.Item(header: header, payload: lines.removeFirst()))
     }
-    return Envelope(items: items, text: text)
+    return Envelope(items: items, text: text, strings: strings)
+  }
+
+  /// Every key and every string value in a value of JSON.
+  private static func strings(_ value: Any) -> [String] {
+    switch value {
+    case let text as String: [text]
+    case let list as [Any]: list.flatMap(strings)
+    case let fields as [String: Any]: fields.flatMap { [$0.key] + strings($0.value) }
+    default: []
+    }
   }
 }
