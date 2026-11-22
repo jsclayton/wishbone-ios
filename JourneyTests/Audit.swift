@@ -1,3 +1,4 @@
+import CoreGraphics
 import XCTest
 
 /// The accessibility audit of each screen that the journeys reach. See "Accessibility checks" in
@@ -10,19 +11,21 @@ import XCTest
 /// double-length pseudo-language, have no helper: a journey audits each screen each time that it reaches it, in
 /// the simulator's own settings.
 enum Audit {
-  /// A setting of the audit: its name for the settings helper, and its words in a failure.
+  /// A setting of the audit: its name for the settings helper, its words in a failure, and whether the app shows it
+  /// in dark mode.
   struct Setting {
     let name: String
     let label: String
+    let isDark: Bool
   }
 
   /// The settings of the audit. The first is the default of each. They are `settings` in
   /// `scripts/gate/simulator.mjs`.
   static let settings = [
-    Setting(name: "default", label: "the default settings"),
-    Setting(name: "largest-text", label: "the largest text size"),
-    Setting(name: "dark-mode", label: "dark mode"),
-    Setting(name: "increase-contrast", label: "Increase Contrast"),
+    Setting(name: "default", label: "the default settings", isDark: false),
+    Setting(name: "largest-text", label: "the largest text size", isDark: false),
+    Setting(name: "dark-mode", label: "dark mode", isDark: true),
+    Setting(name: "increase-contrast", label: "Increase Contrast", isDark: false),
   ]
 
   /// The largest text size, which audits Dynamic Type on every row that shows. See `run`.
@@ -321,14 +324,15 @@ enum Audit {
   /// How many times a change is sent again, after the first time.
   private static let resendLimit = 2
 
-  /// Waits until two screenshots in a row are the same, and differ from the screen before the change: the screen
-  /// shows the setting, and is still.
+  /// Waits until two screenshots in a row are the same, differ from the screen before the change, and are in the
+  /// setting's appearance: the screen shows the setting, and is still.
   ///
   /// This is where the named flake "a change of setting doesn't show in the app" in `docs/development.md` is met:
-  /// `simctl` applied the change, but the app goes on showing the screen as it was. So when the screen has shown
-  /// exactly what it showed before for `unchangedLimit` since the change was sent, the journey asks the helper to
-  /// send the change again, up to `resendLimit` times. Each send gets the whole `settleTimeout`. A screen that
-  /// moved is only slow, so its change isn't sent again.
+  /// `simctl` applied the change, but the app goes on showing the screen as it was, or shows it late. So when no
+  /// screenshot has shown the change for `unchangedLimit` since the change was sent, the journey asks the helper to
+  /// send the change again, up to `resendLimit` times. A screenshot shows the change when it differs from the screen
+  /// before, in the setting's appearance. Each send gets the whole `settleTimeout`. A screen that showed the change
+  /// is only slow, so its change isn't sent again.
   private static func settledScreen(
     of app: XCUIApplication, in setting: Setting, after change: Change
   ) async throws -> (screenshot: XCUIScreenshot, pixels: Data) {
@@ -348,14 +352,21 @@ enum Audit {
     }
   }
 
-  /// The screen still showed exactly what it showed before a change, at the limit. See `settledScreen(of:in:after:)`.
+  /// No screenshot showed the change, at the limit. See `settledScreen(of:in:after:)`.
   private struct Unchanged: Error {}
 
-  /// Waits until two screenshots in a row are the same, and pass `accept`: the screen shows the setting, and is
-  /// still. The gate holds the status bar's clock still, so a still screen gives the same pixels each time.
+  /// Waits until two screenshots in a row are the same, pass `accept`, and are in the setting's appearance (see
+  /// `isInAppearance`): the screen shows the setting, and is still. The gate holds the status bar's clock still, so
+  /// a still screen gives the same pixels each time.
   ///
-  /// `before` is the screen before a change. With `unchangedLimit`, it throws `Unchanged` when every screenshot
-  /// was exactly `before` for that long.
+  /// A change of appearance can reach the app seconds after `simctl` returns, and then the app fades from one
+  /// appearance to the other. On 2026-11-22, the change from dark mode back to the default reached the app 6 seconds
+  /// late. Its screen in dark mode differed a little from the screenshot before the change, so a check of "differs"
+  /// alone took it as the default. Increase Contrast was then audited on the screen in dark mode, and the fade to
+  /// light came during the audit: the contrast check measured grey text on grey. So the appearance is checked too.
+  ///
+  /// `before` is the screen before a change. With `unchangedLimit`, it throws `Unchanged` when no screenshot
+  /// showed the change for that long: each was exactly `before`, or not in the setting's appearance.
   private static func settledScreen(
     of app: XCUIApplication, in setting: Setting, where accept: (Data) -> Bool, before: Data? = nil,
     unchangedLimit: Duration? = nil
@@ -364,24 +375,72 @@ enum Audit {
     let deadline = started + settleTimeout
     var last: Data?
     var moved = false
+    var inAppearance = false
+    var onlyBefore = true
     while true {
       let screenshot = app.screenshot()
       let pixels = screenshot.pngRepresentation
-      if pixels == last, accept(pixels) { return (screenshot, pixels) }
+      let shows = isInAppearance(screenshot, of: setting)
+      if pixels == last, shows, accept(pixels) { return (screenshot, pixels) }
       last = pixels
+      inAppearance = inAppearance || shows
       if let before, !moved {
-        if pixels != before {
+        if pixels != before { onlyBefore = false }
+        if pixels != before, shows {
           moved = true
         } else if let unchangedLimit, ContinuousClock.now - started >= unchangedLimit {
           throw Unchanged()
         }
       }
       guard ContinuousClock.now < deadline else {
-        let unchanged = moved || before == nil ? "" : " It showed the screen as it was before the change."
+        let unchanged =
+          if moved || before == nil {
+            inAppearance ? "" : " It never showed \(setting.isDark ? "dark" : "light") appearance."
+          } else if onlyBefore {
+            " It showed the screen as it was before the change."
+          } else {
+            " It never showed the change in \(setting.isDark ? "dark" : "light") appearance."
+          }
         throw AuditError("The screen didn't settle in \(setting.label) within \(settleTimeout).\(unchanged)")
       }
       try await Task.sleep(for: .milliseconds(250))
     }
+  }
+}
+
+extension Audit {
+  /// The mean brightness, from 0 to 1, below which a screenshot is in dark mode, and above which it is light. In the
+  /// screenshots of every audited screen on 2026-11-22, light was 0.87 or more and dark 0.17 or less, also with a
+  /// sheet, at the largest text size, and in Increase Contrast. The fade from one to the other takes about a third
+  /// of a second, and most of it is in the gap between the two limits, so a screenshot in the middle of it is
+  /// neither.
+  private static let darkBelow = 0.25
+  private static let lightAbove = 0.8
+
+  /// Whether the screenshot is in the setting's appearance: dark in dark mode, light in each other setting.
+  static func isInAppearance(_ screenshot: XCUIScreenshot, of setting: Setting) -> Bool {
+    guard let brightness = brightness(of: screenshot) else { return false }
+    return setting.isDark ? brightness < darkBelow : brightness > lightAbove
+  }
+
+  /// The mean brightness of the screenshot, from 0 for black to 1 for white, from a small copy of it in grey.
+  private static func brightness(of screenshot: XCUIScreenshot) -> Double? {
+    guard let image = screenshot.image.cgImage else { return nil }
+    let width = 24
+    let height = 52
+    var pixels = [UInt8](repeating: 0, count: width * height)
+    let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in
+      guard
+        let context = CGContext(
+          data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width,
+          space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue)
+      else { return false }
+      context.interpolationQuality = .medium
+      context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+      return true
+    }
+    guard drawn else { return nil }
+    return Double(pixels.reduce(0) { $0 + Int($1) }) / Double(pixels.count * 255)
   }
 }
 
