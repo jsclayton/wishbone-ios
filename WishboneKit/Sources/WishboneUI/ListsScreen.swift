@@ -10,13 +10,9 @@ import WishboneSession
 ///
 /// **No claim state.** A row's count is the server's `item_count`, with no comment.
 ///
-/// **Provisional.** Plain default: a system list in one column of readable width, with a section for each part.
+/// **Provisional.** Plain default: a system list, as Home is, with a section for each part.
 struct ListsScreen: View {
   let session: SessionModel
-
-  /// The width of the window, for the list's column of readable width.
-  @State private var width: CGFloat = 0
-  @ScaledMetric(relativeTo: .body) private var readableWidth: CGFloat = 640
 
   var body: some View {
     let tab = session.listsTab
@@ -25,11 +21,7 @@ struct ListsScreen: View {
         Section {
           rows(tab.yourLists)
         } header: {
-          Text("Your lists", bundle: #bundle)
-            .font(.headline)
-            .foregroundStyle(.primary)
-            .textCase(nil)
-            .accessibilityAddTraits(.isHeader)
+          YourListsHeading()
         }
       }
       ForEach(tab.children) { part in
@@ -39,12 +31,6 @@ struct ListsScreen: View {
           ChildHeading(child: part.child)
         }
       }
-    }
-    .contentMargins(.horizontal, max(0, (width - readableWidth) / 2), for: .scrollContent)
-    .onGeometryChange(for: CGFloat.self) {
-      $0.size.width
-    } action: {
-      width = $0
     }
     .sharedStates(of: session, hasRows: !tab.isEmpty) {
       // Every user has a primary list, so the tab is never empty after a sync. It says so anyway.
@@ -64,6 +50,23 @@ struct ListsScreen: View {
   }
 }
 
+/// The heading of the user's own lists: "Your lists". It is plain text in the primary color, as Home's part headings
+/// are, and a heading for the VoiceOver rotor. A bare `Text` as a section's header takes the system's grey, below
+/// 4.5:1, so the heading is in a stack of its own.
+private struct YourListsHeading: View {
+  var body: some View {
+    VStack(alignment: .leading) {
+      Text("Your lists", bundle: #bundle)
+    }
+    .font(.headline)
+    .foregroundStyle(.primary)
+    .textCase(nil)
+    .fixedSize(horizontal: false, vertical: true)
+    .accessibilityElement(children: .combine)
+    .accessibilityAddTraits(.isHeader)
+  }
+}
+
 /// A child's part heading: the child's name, and "Deactivated" beside it when it applies. It is plain text, and a
 /// heading for the VoiceOver rotor.
 private struct ChildHeading: View {
@@ -75,9 +78,9 @@ private struct ChildHeading: View {
         .font(.headline)
         .foregroundStyle(.primary)
       if child.isDeactivated {
+        // The primary color, as the count: the secondary color falls short of 4.5:1 at this size.
         Text("Deactivated", bundle: #bundle)
           .font(.subheadline)
-          .foregroundStyle(.secondary)
       }
     }
     .textCase(nil)
@@ -132,8 +135,8 @@ private struct ListsRow: View {
         Text("\(list.itemCount) items", bundle: #bundle)
       }
     }
+    // The primary color: the secondary color falls short of 4.5:1 at this size, and the accessibility audit fails it.
     .font(.subheadline)
-    .foregroundStyle(.secondary)
     .fixedSize(horizontal: false, vertical: true)
   }
 
