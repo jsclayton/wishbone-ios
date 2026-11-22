@@ -10,13 +10,15 @@ import WishboneSession
 @Suite("The Lists tab", .timeLimit(.minutes(1)))
 @MainActor
 struct ListsTabTests {
-  /// A new device, signed in as the person, once a sync has filled its copy. Each device has a keychain of its own,
-  /// so a test can sign several people in on one server.
+  /// A new device, signed in as the person. Its first sync has ended, and the session publishes all that it wrote.
+  /// The devices of one `Instance` share its keychain, so each sign-in has an instance of its own on the same server,
+  /// and a test can sign several people in.
   private func signedIn(as person: Fixture.Person, on instance: Instance) async throws -> SessionModel {
+    let instance = try await Instance(server: instance.server)
     let device = instance.device()
     await device.signIn(pasting: try await instance.loginLink(for: person))
     let session = try #require(device.session)
-    #expect(await session.syncNow() == .succeeded)
+    try await untilInStep(session, as: person)
     return session
   }
 
