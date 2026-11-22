@@ -5,8 +5,8 @@ import WishboneAPI
 import WishboneSession
 
 /// A list's page, from the copy: its recipients for the "For {names}" line, the items with their claim state as the
-/// server sends it, the line for an editor who is also a giver, the empty state, and the sort. See
-/// `docs/screens/list.md`.
+/// server sends it, the line that says why items can be missing, the "For" line's links, the empty state, and the
+/// sort. See `docs/screens/list.md`.
 @Suite("A list's page", .timeLimit(.minutes(1)))
 @MainActor
 struct ListPageTests {
@@ -65,7 +65,7 @@ struct ListPageTests {
     #expect(page.recipients.map(\.user.name) == [family.child.name])
     #expect(page.recipients.allSatisfy { $0.isLinked && !$0.isDeactivated })
     #expect(!page.isRecipient)
-    #expect(!page.seesClaimsAsEditor)
+    #expect(!page.seesWhyItemsAreMissing)
     #expect(page.noItems == nil)
     #expect(
       rows(page.items) == [
@@ -82,7 +82,7 @@ struct ListPageTests {
 
     let page = try #require(session.listPage(id: list.id))
     #expect(page.isRecipient)
-    #expect(!page.seesClaimsAsEditor)
+    #expect(!page.seesWhyItemsAreMissing)
     #expect(
       rows(page.items) == [
         Row(title: "Scarf", claim: nil), Row(title: "Book", claim: nil), Row(title: "Socks", claim: nil),
@@ -99,12 +99,58 @@ struct ListPageTests {
     let page = try #require(session.listPage(id: list.id))
     #expect(!page.isRecipient)
     #expect(page.list.canEdit)
-    #expect(page.seesClaimsAsEditor)
+    #expect(page.seesWhyItemsAreMissing)
     #expect(
       rows(page.items) == [
         Row(title: "Scarf", claim: UserPage.Claim(stillWanted: 1, quantity: 2, youClaimed: 0)),
         Row(title: "Socks", claim: UserPage.Claim(stillWanted: nil, quantity: 1, youClaimed: 0)),
       ])
+  }
+
+  @Test("A parent of a deactivated child, who can't edit the child's list, gets the line that says why")
+  func parentOfADeactivatedChild() async throws {
+    let instance = try await Instance()
+    let family = try await instance.builder.standardFamily()
+    let session = try await signedIn(as: family.parent, on: instance)
+
+    let page = try #require(session.listPage(id: family.primaryList.id))
+    #expect(!page.isRecipient)
+    #expect(!page.list.canEdit)
+    #expect(page.seesWhyItemsAreMissing)
+  }
+
+  @Test("Each name on the \"For\" line links its own name, never a match inside an earlier word or the \"and\"")
+  func forLineLinks() throws {
+    let deactivated = { (name: String) in "\(name) (Deactivated)" }
+    func url(_ id: String) throws -> URL { try #require(URL(string: "test://user/\(id)")) }
+    /// Each linked span of the line: its words, and its link.
+    func links(_ line: AttributedString) -> [String: URL] {
+      Dictionary(
+        uniqueKeysWithValues: line.runs.compactMap { run in
+          run.link.map { (String(line[run.range].characters), $0) }
+        })
+    }
+
+    // A short lowercase name after a deactivated one: "d" is in "(Deactivated)", and "an" is in "and".
+    let line = ListPage.forLineNames(
+      [
+        ListPage.ForLineName(name: "Grandpa", isDeactivated: true, link: try url("1")),
+        ListPage.ForLineName(name: "d", isDeactivated: false, link: try url("2")),
+        ListPage.ForLineName(name: "an", isDeactivated: false, link: try url("3")),
+      ],
+      deactivated: deactivated)
+    #expect(String(line.characters) == ["Grandpa (Deactivated)", "d", "an"].formatted(.list(type: .and)))
+    #expect(links(line) == ["Grandpa": try url("1"), "d": try url("2"), "an": try url("3")])
+
+    // A name with no link is only a name, and the names after it keep theirs.
+    let unlinked = ListPage.forLineNames(
+      [
+        ListPage.ForLineName(name: "Sam", isDeactivated: false, link: nil),
+        ListPage.ForLineName(name: "a", isDeactivated: false, link: try url("4")),
+      ],
+      deactivated: deactivated)
+    #expect(String(unlinked.characters) == ["Sam", "a"].formatted(.list(type: .and)))
+    #expect(links(unlinked) == ["a": try url("4")])
   }
 
   @Test("A recipient whom the viewer can't see is a name with no link, and \"Deactivated\" shows only to a parent")

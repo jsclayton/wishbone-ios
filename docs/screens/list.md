@@ -20,7 +20,7 @@ From top to bottom:
 1. A pending invitation to this list, for the user or for one of their children, with Accept and Decline.
 2. The list's name, and the "For {names}" line with its recipients' names and avatars.
 3. The description, as markdown, when the list has one.
-4. For a viewer who can edit the list and is also a giver, the line "You see what's been claimed here. Fully claimed items don't show."
+4. For a viewer who is not a recipient, and who can edit the list or is a parent of one of its recipients, the line "You see what's been claimed here. Fully claimed items don't show."
 5. The items, in the order that the Sort menu sets. Each row shows the primary image, the title, and the price. For a giver, it also shows how many are still wanted, and "You claimed {n}".
 6. An **Add item** row, from `can_edit`.
 7. For a recipient: the list's other pending invitations, each with who invited them and Withdraw, and **Invite**.
@@ -80,7 +80,7 @@ A sheet with the users that the user can invite, with names and avatars, by name
 | Delete list | A row, from `can_delete` | Deletes the list and its items, after a confirmation |
 | Open in New Window | The toolbar's menu, where several windows are allowed | Opens a window with this page on top of Home |
 
-- **Price** sorts lowest first, with items that have no price last. **Newest** sorts by when the item was added.
+- **Price** sorts lowest first, with items that have no price last. When a list mixes currencies, Price compares the amounts in each currency's minor units, as they are, with no conversion: ¥1,000 (1000) comes after $5.00 (500). **Newest** sorts by when the item was added.
 - No confirmation, and no words about gifts, come before a move or a reorder.
 - The words of the Delete and Leave confirmations never depend on the list's gifts.
 
@@ -96,6 +96,8 @@ Decided in the spec: "Move to…", "Reorder", "Add item", "Open in New Window".
 
 | Where | Words |
 |---|---|
+| The toolbar's menu | "More" |
+| A deactivated recipient, on the "For" line | "{name} (Deactivated)". Only the name links |
 | Sort | "Sort", with "List order", "Price", "Newest" |
 | No items, for a giver | "Nothing on this list yet." |
 | No items, for someone who can edit | "Nothing here yet. Tap Add item to start the list." |
@@ -119,7 +121,7 @@ Decided in the spec: "Move to…", "Reorder", "Add item", "Open in New Window".
 
 - **A giver** sees how many of each item are still wanted, and their own claims. A fully claimed item is not there for them at all.
 - **A recipient** sees none of it. Their rows have no still-wanted line and no I'll get this.
-- **A parent who is not a recipient** sees both, with the line that says why items can be missing.
+- **A parent who is not a recipient** sees both, with the line that says why items can be missing. The line shows also for a parent who can't edit the list, as a parent of a deactivated child.
 - The page never says who claimed an item.
 - No confirmation mentions gifts, because that shows a recipient that something is claimed.
 - A dragged-out item, and Copy link, carry no claim state.

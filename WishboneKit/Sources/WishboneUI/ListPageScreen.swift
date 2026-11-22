@@ -2,7 +2,7 @@ import SwiftUI
 import WishboneAPI
 import WishboneSession
 
-/// A list's page: the name, the "For {names}" line, the description, the line for an editor who is also a giver,
+/// A list's page: the name, the "For {names}" line, the description, the line that says why items can be missing,
 /// and the items in the order that Sort sets. See `docs/screens/list.md`.
 ///
 /// Claim state shows only as the server sends it, and the page never says who claimed. Every action that changes
@@ -30,7 +30,7 @@ struct ListPageScreen: View {
         }
       }
       Section {
-        if page.seesClaimsAsEditor {
+        if page.seesWhyItemsAreMissing {
           Text("You see what's been claimed here. Fully claimed items don't show.", bundle: #bundle)
             .foregroundStyle(.secondary)
         }
@@ -136,20 +136,10 @@ struct ForLine: View {
 
   /// The names, as the locale lists them, each linked name with its link.
   private var names: AttributedString {
-    let words = recipients.map { recipient in
-      recipient.isDeactivated
-        ? String(localized: "\(recipient.user.name) (Deactivated)", bundle: #bundle) : recipient.user.name
-    }
-    var names = AttributedString(words.formatted(.list(type: .and)))
-    var searchFrom = names.startIndex
-    for recipient in recipients {
-      guard let range = names[searchFrom...].range(of: recipient.user.name) else { continue }
-      if recipient.isLinked {
-        names[range].link = RecipientLink.url(forUserID: recipient.user.id)
-      }
-      searchFrom = range.upperBound
-    }
-    return names
+    ListPage.forLineNames(
+      of: recipients,
+      deactivated: { String(localized: "\($0) (Deactivated)", bundle: #bundle) },
+      link: RecipientLink.url(forUserID:))
   }
 }
 
