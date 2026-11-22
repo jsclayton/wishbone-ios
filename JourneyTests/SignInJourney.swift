@@ -9,7 +9,7 @@ import XCTest
 /// It runs the accessibility audit on each screen that it reaches, and attaches a screenshot of each as evidence
 /// for a person. A screenshot is never compared with a reference. Under the gate, it audits each screen in the four
 /// settings, in one run.
-nonisolated final class SignInJourney: XCTestCase {
+nonisolated final class SignInJourney: JourneyTestCase {
   @MainActor
   func testSignIn() async {
     continueAfterFailure = false
