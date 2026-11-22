@@ -39,7 +39,7 @@ struct UserPageScreen: View {
             noItems(on: list)
           }
           ForEach(page.items) { item in
-            UserPageItemRow(item: item, tileUserID: list.recipientIDs.first ?? page.user.id)
+            ItemRowView(item: item, tileUserID: list.recipientIDs.first ?? page.user.id)
           }
         }
       }
@@ -153,9 +153,10 @@ private struct NoticeLine: View {
   }
 }
 
-/// An item of the primary list: the image's place, the title, the price, and, for a giver, how many are still
-/// wanted and "You claimed {n}". It is one element. At the largest text sizes, the image sits above the text.
-private struct UserPageItemRow: View {
+/// An item's row, on a user's page and on a list's page: the image's place, the title, the price, and, for a giver,
+/// how many are still wanted and "You claimed {n}". It is one element. At the largest text sizes, the image sits
+/// above the text.
+struct ItemRowView: View {
   let item: UserPage.Item
 
   /// The user whose color the tile takes: the list's first recipient.

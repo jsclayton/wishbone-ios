@@ -1,6 +1,9 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "%@ (Deactivated)" : {
+
+    },
     "%@ hasn't added anything yet." : {
 
     },
@@ -207,6 +210,9 @@
     "Finish your profile" : {
 
     },
+    "For %@" : {
+
+    },
     "For the admin" : {
 
     },
@@ -260,16 +266,25 @@
     "Links from these stores and their subdomains can't be added or searched. Items that already have them keep them." : {
 
     },
+    "List order" : {
+
+    },
     "Lists" : {
 
     },
     "Month" : {
 
     },
+    "More" : {
+
+    },
     "Moving the admin role, backups and server settings are done by the person who runs Wishbone, on the server." : {
 
     },
     "Name" : {
+
+    },
+    "Newest" : {
 
     },
     "No Wishbone found at %@" : {
@@ -297,6 +312,9 @@
 
     },
     "Nothing here yet. Tap Add item to start the list." : {
+
+    },
+    "Nothing on this list yet." : {
 
     },
     "Notifications are off for Wishbone. Turn them on in Settings to get reminders." : {
@@ -334,6 +352,9 @@
 
     },
     "Point the camera at the QR code of your login link." : {
+
+    },
+    "Price" : {
 
     },
     "Privacy policy" : {
@@ -397,6 +418,9 @@
 
     },
     "Something went wrong in Wishbone. Try again." : {
+
+    },
+    "Sort" : {
 
     },
     "Source code" : {

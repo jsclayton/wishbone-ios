@@ -145,7 +145,7 @@ public struct TabFrame: View {
     NavigationStack(path: $place[pagesOn: tab]) {
       first()
         .navigationDestination(for: Page.self) { page in
-          PageScreen(page: page, session: session)
+          PageScreen(page: page, session: session, pages: $place[pagesOn: tab])
         }
     }
   }

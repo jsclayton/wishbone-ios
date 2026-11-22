@@ -106,7 +106,8 @@ extension WindowPlace {
 extension Page {
   /// What a page shows.
   public enum Content: Equatable, Sendable {
-    case list(ListRow)
+    /// A list's page. The page reads what it shows from the session model: see `SessionModel.listPage(id:)`.
+    case list(id: String)
 
     /// A user's page. The page reads what it shows from the session model: see `SessionModel.userPage(id:today:)`.
     case user(id: String)
@@ -120,7 +121,7 @@ extension Page {
   /// What the page shows, from the session's copy.
   public func content(in session: SessionModel) -> Content {
     switch self {
-    case .list(let id): session.list(id: id).map(Content.list) ?? .notFound
+    case .list(let id): session.listPage(id: id) == nil ? .notFound : .list(id: id)
     // A user whom the copy holds only as a summary has no page, on the server or here.
     case .user(let id): session.userPage(id: id) == nil ? .notFound : .user(id: id)
     case .people: .people
