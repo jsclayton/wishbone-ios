@@ -70,8 +70,15 @@ enum Audit {
   /// pushes off the screen. The list then lets go of them, so the Dynamic Type check can't measure them, and
   /// reports them as "partially unsupported". Only that issue is allowed for them, and never at the largest text
   /// size: there the rows that show are on the screen from the start, so the check measures each of them in full.
+  ///
+  /// `rowsToScrollTo` names the rows, by the start of their words, that are below the fold at the largest text
+  /// size. There, after the audit of the screen as it opens, the journey scrolls each row on the screen in turn, in
+  /// the order given, and audits the screen again with the row on it. A row that is on the screen already was in
+  /// the audit before. So the Dynamic Type check measures, at the largest size, each row that a larger text pushes
+  /// off. A run with no helper doesn't scroll.
   static func run(
-    on app: XCUIApplication, showing screen: String, in test: XCTestCase, rowsThatLeaveTheScreen: [String] = []
+    on app: XCUIApplication, showing screen: String, in test: XCTestCase, rowsThatLeaveTheScreen: [String] = [],
+    rowsToScrollTo: [String] = []
   ) async throws {
     guard let helper else {
       // A run with no helper is at the simulator's own text size, as the double-length run is.
@@ -89,19 +96,86 @@ enum Audit {
     for setting in settings.dropFirst() {
       try await apply(setting, helper: helper)
       let toSetting = Change(from: settings[0], before: current.pixels, helper: helper)
-      let shown = try await settledScreen(of: app, in: setting, after: toSetting)
+      var shown = try await settledScreen(of: app, in: setting, after: toSetting)
       // The largest text size gets no rows, so it checks Dynamic Type on every row that shows. See above.
       let rows = setting.name == largestText.name ? [] : rowsThatLeaveTheScreen
       try audit(app, screen, in: setting.label, screenshot: shown.screenshot, rows: rows, test: test)
+      if setting.name == largestText.name {
+        for row in rowsToScrollTo {
+          guard let top = try await scroll(app, to: row, in: screen) else { continue }
+          let scrolled = try await settledScreen(of: app, in: setting, where: { _ in true })
+          // The words after the setting keep the screenshot out of the gate's count of the screen's four settings.
+          // The audit is of Dynamic Type and clipped text only. The screen as it opens had the other checks, and a
+          // scrolled screen has rows under the top bar, which the system fades: the contrast check reads those.
+          try audit(
+            app, screen, in: "\(setting.label), scrolled to \(row)", screenshot: scrolled.screenshot, rows: [],
+            types: [.dynamicType, .textClipped], underTheBar: top, test: test)
+          shown = scrolled
+        }
+      }
       try await apply(settings[0], helper: helper)
       let toDefault = Change(from: setting, before: shown.pixels, helper: helper)
       current = try await settledScreen(of: app, in: settings[0], after: toDefault)
     }
   }
 
+  /// How many drags may bring a row on the screen.
+  private static let scrollLimit = 20
+
+  /// Drags the screen's content up until the row's top is at the top of the content, under the navigation bar, so
+  /// the row is on the screen whole. A list that stops moving before the row is in place fails. Returns the top of the content when it
+  /// scrolled, or nil when the row was on the screen whole already.
+  private static func scroll(_ app: XCUIApplication, to row: String, in screen: String) async throws -> CGFloat? {
+    let element = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", words(row)))
+      .firstMatch
+    let window = app.windows.firstMatch
+    // The top of the content is under the navigation bar.
+    let top = app.navigationBars.firstMatch.exists ? app.navigationBars.firstMatch.frame.maxY : window.frame.minY
+    func isOnScreen() -> Bool {
+      element.exists && element.frame.minY >= top - 1 && element.frame.maxY <= window.frame.maxY
+    }
+    if isOnScreen() { return nil }
+    var stillDrags = 0
+    for _ in 0..<scrollLimit {
+      // A list makes a row's element only near the screen, so a row that has none yet is a long drag away.
+      let distance = element.exists ? element.frame.minY - top : window.frame.height * 0.4
+      if element.exists, distance < 4 {
+        throw AuditError("\(row) is too tall to show whole on the screen of \(screen) at the largest text size.")
+      }
+      let before = element.exists ? element.frame : nil
+      let screenBefore = before == nil ? app.screenshot().pngRepresentation : nil
+      // A short press and a slow drag with a hold, so the list doesn't coast, and nothing is tapped. A drag moves the
+      // content a little less than the finger, so the loop drags again for the rest.
+      let from = window.frame.minY + window.frame.height * 0.8
+      let to = max(from - distance, top + 8)
+      let origin = window.coordinate(withNormalizedOffset: .zero)
+      let start = origin.withOffset(CGVector(dx: window.frame.width / 2, dy: from - window.frame.minY))
+      let end = origin.withOffset(CGVector(dx: window.frame.width / 2, dy: to - window.frame.minY))
+      start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.2)
+      try await Task.sleep(for: .milliseconds(250))
+      if isOnScreen(), element.frame.minY - top < 60 { return top }
+      // The row's place tells whether the list moved: a screenshot differs while the scroll indicator fades.
+      let moved =
+        if let before { !element.exists || element.frame != before } else {
+          app.screenshot().pngRepresentation != screenBefore
+        }
+      if !moved {
+        // A drag can be lost on a busy machine. A list at its end doesn't move three times in a row.
+        stillDrags += 1
+        if stillDrags == 3 {
+          if isOnScreen() { return top }
+          throw AuditError("\(screen) stopped scrolling at the largest text size before \(row) was on the screen.")
+        }
+      } else {
+        stillDrags = 0
+      }
+    }
+    throw AuditError("\(row) wasn't on the screen of \(screen) at the largest text size after \(scrollLimit) drags.")
+  }
+
   private static func audit(
     _ app: XCUIApplication, _ screen: String, in setting: String, screenshot: XCUIScreenshot, rows: [String],
-    test: XCTestCase
+    types: XCUIAccessibilityAuditType = .all, underTheBar contentTop: CGFloat? = nil, test: XCTestCase
   ) throws {
     let attachment = XCTAttachment(screenshot: screenshot)
     attachment.name = "\(screen), in \(setting)"
@@ -109,7 +183,10 @@ enum Audit {
     test.add(attachment)
     // Every issue on the screen, so one run reports all of them, not only the first.
     var issues: [String] = []
-    try app.performAccessibilityAudit { issue in
+    try app.performAccessibilityAudit(for: types) { issue in
+      // On a scrolled screen, a row that starts above the top of the content is under the top bar, partly or
+      // whole. It was in the audit before the scroll, whole.
+      if let contentTop, let element = issue.element, element.frame.minY < contentTop - 1 { return true }
       // Scan QR code is disabled where the camera is denied or not available, as in the simulator, and the words
       // beside it say why. WCAG's contrast rule leaves out a control that is not active (1.4.3, 1.4.11).
       if issue.auditType == .contrast, let scan = issue.element, scan.label == words("Scan QR code"), !scan.isEnabled {
@@ -122,6 +199,25 @@ enum Audit {
       // A row that a larger text pushes off the screen can't be measured. See `run`. In the double-length
       // pseudo-language, a row's words start with the words of English too, so the prefix still matches.
       if issue.auditType == .dynamicType, let row = issue.element?.label, rows.contains(where: row.hasPrefix) {
+        return true
+      }
+      // On Acknowledgements, a package's heading is the package's own name, such as GRDB.swift, which the license
+      // notice must show as it is. The audit reads a name with a file's extension as not human-readable. The
+      // exception is for one word with a dot on that screen only, as a package's name is.
+      if issue.auditType == .sufficientElementDescription, let heading = issue.element,
+        heading.elementType == .staticText, app.navigationBars[words("Acknowledgements")].exists,
+        heading.label.contains("."), !heading.label.contains(" ")
+      {
+        return true
+      }
+      // A pushed screen's inline title is the system's own label in the navigation bar, at the system's size. A long
+      // title, such as Acknowledgements in the double-length pseudo-language, doesn't fit the bar, and the system
+      // cuts it short. VoiceOver reads the title whole. The element must be the bar's own title, not text on the
+      // screen with the same words.
+      if issue.auditType == .textClipped, let title = issue.element, title.elementType == .staticText,
+        case let bar = app.navigationBars.firstMatch, bar.exists, bar.identifier == title.label,
+        case let barTitle = bar.staticTexts[title.label], barTitle.exists, barTitle.frame == title.frame
+      {
         return true
       }
       // Done in a sheet's bar (Settings, Share diagnostics) is the system's own bar button, on the system's glass.
@@ -152,7 +248,7 @@ enum Audit {
       // The element's words, its type, such as a text field, and its place, so a failure says which it is.
       let element =
         issue.element.map { "\($0.label), element type \($0.elementType.rawValue), at \($0.frame)" } ?? "no element"
-      issues.append("\(issue.compactDescription) (\(element))")
+      issues.append("\(issue.compactDescription): \(issue.detailedDescription) (\(element))")
       return true
     }
     if !issues.isEmpty {
