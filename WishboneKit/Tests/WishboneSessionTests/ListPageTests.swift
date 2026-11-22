@@ -123,12 +123,13 @@ struct ListPageTests {
   func forLineLinks() throws {
     let deactivated = { (name: String) in "\(name) (Deactivated)" }
     func url(_ id: String) throws -> URL { try #require(URL(string: "test://user/\(id)")) }
-    /// Each linked span of the line: its words, and its link.
-    func links(_ line: AttributedString) -> [String: URL] {
-      Dictionary(
-        uniqueKeysWithValues: line.runs.compactMap { run in
-          run.link.map { (String(line[run.range].characters), $0) }
-        })
+    /// The line as text, with each linked span in brackets and its user ID after it: "[Grandpa](1) (Deactivated)".
+    /// So a link on the wrong span, such as the "d" at the end of "Deactivated", gives other text.
+    func marked(_ line: AttributedString) -> String {
+      line.runs.map { run in
+        let words = String(line[run.range].characters)
+        return run.link.map { "[\(words)](\($0.lastPathComponent))" } ?? words
+      }.joined()
     }
 
     // A short lowercase name after a deactivated one: "d" is in "(Deactivated)", and "an" is in "and".
@@ -140,7 +141,7 @@ struct ListPageTests {
       ],
       deactivated: deactivated)
     #expect(String(line.characters) == ["Grandpa (Deactivated)", "d", "an"].formatted(.list(type: .and)))
-    #expect(links(line) == ["Grandpa": try url("1"), "d": try url("2"), "an": try url("3")])
+    #expect(marked(line) == ["[Grandpa](1) (Deactivated)", "[d](2)", "[an](3)"].formatted(.list(type: .and)))
 
     // A name with no link is only a name, and the names after it keep theirs.
     let unlinked = ListPage.forLineNames(
@@ -150,7 +151,7 @@ struct ListPageTests {
       ],
       deactivated: deactivated)
     #expect(String(unlinked.characters) == ["Sam", "a"].formatted(.list(type: .and)))
-    #expect(links(unlinked) == ["a": try url("4")])
+    #expect(marked(unlinked) == ["Sam", "[a](4)"].formatted(.list(type: .and)))
   }
 
   @Test("A recipient whom the viewer can't see is a name with no link, and \"Deactivated\" shows only to a parent")
