@@ -119,7 +119,24 @@ private struct ListsRow: View {
       }
     }
     .padding(.vertical, 2)
-    .accessibilityElement(children: .combine)
+    // One element, read in the spec's order at every text size: the name, the recipients' names, and the count. The
+    // regular layout draws the count before the avatars, so the row gives its own label.
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(spoken)
+  }
+
+  /// What VoiceOver reads for the row: the name, the recipients' names, and the count, as the row shows them.
+  private var spoken: Text {
+    if recipients.isEmpty {
+      Text(
+        "\(list.name), \(countWords)", bundle: #bundle,
+        comment: "A list's row, as VoiceOver reads it: the list's name, then how many items it has")
+    } else {
+      Text(
+        "\(list.name), \(recipients.map(\.name).formatted(.list(type: .and))), \(countWords)", bundle: #bundle,
+        comment:
+          "A list's row, as VoiceOver reads it: the list's name, the recipients' names, then how many items it has")
+    }
   }
 
   private var name: some View {
@@ -127,20 +144,19 @@ private struct ListsRow: View {
       .fixedSize(horizontal: false, vertical: true)
   }
 
-  private var count: some View {
-    Group {
-      if list.itemCount == 0 {
-        Text("No items yet", bundle: #bundle)
-      } else {
-        Text("\(list.itemCount) items", bundle: #bundle)
-      }
-    }
-    // The primary color: the secondary color falls short of 4.5:1 at this size, and the accessibility audit fails it.
-    .font(.subheadline)
-    .fixedSize(horizontal: false, vertical: true)
+  private var countWords: Text {
+    list.itemCount == 0
+      ? Text("No items yet", bundle: #bundle) : Text("\(list.itemCount) items", bundle: #bundle)
   }
 
-  /// The recipients' avatars, each over the one before it. VoiceOver reads the recipients' names in their place.
+  private var count: some View {
+    countWords
+      // The primary color: the secondary color falls short of 4.5:1 at this size, and the accessibility audit fails it.
+      .font(.subheadline)
+      .fixedSize(horizontal: false, vertical: true)
+  }
+
+  /// The recipients' avatars, each over the one before it. The row's label reads the recipients' names in their place.
   @ViewBuilder private var avatars: some View {
     if !recipients.isEmpty {
       HStack(spacing: -8) {
@@ -149,8 +165,6 @@ private struct ListsRow: View {
             .overlay { Circle().stroke(.background, lineWidth: 2) }
         }
       }
-      .accessibilityElement(children: .ignore)
-      .accessibilityLabel(Text(recipients.map(\.name).formatted(.list(type: .and))))
     }
   }
 }

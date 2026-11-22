@@ -89,6 +89,28 @@
     "%@'s birthday is in 4 weeks" : {
 
     },
+    "%@, %@" : {
+      "comment" : "A list's row, as VoiceOver reads it: the list's name, then how many items it has",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@, %2$@"
+          }
+        }
+      }
+    },
+    "%@, %@, %@" : {
+      "comment" : "A list's row, as VoiceOver reads it: the list's name, the recipients' names, then how many items it has",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@, %2$@, %3$@"
+          }
+        }
+      }
+    },
     "%@, opens in browser" : {
 
     },
