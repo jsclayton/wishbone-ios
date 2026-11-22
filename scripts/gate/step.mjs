@@ -76,16 +76,23 @@ export function startKeeper(pids = [], { command = [process.execPath, keeperModu
   return keeper;
 }
 
+/** The limit's clock: a timer. */
+function startTimer(ms, onLimit) {
+  const timer = setTimeout(onLimit, ms);
+  return () => clearTimeout(timer);
+}
+
 /**
  * Runs `command` until it exits, passes `limitMs`, or `signal` aborts. Then it stops every process that the step
  * left.
  *
  * The step's output goes to `echo` as it comes, and to the file at `logPath` a whole line at a time. `onStart`
- * is called with the step's process ID when it starts.
+ * is called with the step's process ID when it starts. `startLimit` starts the limit's clock: it calls its second
+ * argument when the limit passes, and returns a function that cancels it. Tests pass one that they fire by hand.
  * Resolves with `{ exit, timedOut, interrupted, ms, pid }`. `exit` is the exit code, or null when the step was
  * stopped or died from a signal.
  */
-export function runStep({ command, limitMs, logPath, cwd, env, signal, echo = process.stdout, graceMs = 2000, onStart }) {
+export function runStep({ command, limitMs, logPath, cwd, env, signal, echo = process.stdout, graceMs = 2000, onStart, startLimit = startTimer }) {
   return new Promise((resolve, reject) => {
     const started = Date.now();
     const log = logPath === undefined ? null : createWriteStream(logPath);
@@ -107,14 +114,19 @@ export function runStep({ command, limitMs, logPath, cwd, env, signal, echo = pr
     // a chunk from the other stream between them. What is left of a line at the end goes to the log then.
     const partial = new Map();
 
+    // The limit and an interrupt start a stop and don't wait for it, so a failed stop is marked as handled here.
+    // `settle` still waits for the same stop, and a failure there is the step's error.
     const stop = () => {
-      stopping ??= stopFamily(child.pid, { graceMs });
+      if (stopping === null) {
+        stopping = stopFamily(child.pid, { graceMs });
+        stopping.catch(() => {});
+      }
       return stopping;
     };
-    const limit = setTimeout(() => {
+    const cancelLimit = startLimit(limitMs, () => {
       timedOut = true;
       stop();
-    }, limitMs);
+    });
     const onAbort = () => {
       interrupted = true;
       stop();
@@ -125,7 +137,7 @@ export function runStep({ command, limitMs, logPath, cwd, env, signal, echo = pr
     const settle = async (error) => {
       if (settled) return;
       settled = true;
-      clearTimeout(limit);
+      cancelLimit();
       clearTimeout(closeFallback);
       signal?.removeEventListener('abort', onAbort);
       // A step that ended on its own can leave processes behind. They are stopped too.
@@ -157,9 +169,12 @@ export function runStep({ command, limitMs, logPath, cwd, env, signal, echo = pr
     child.on('exit', (code) => {
       exit = code;
       // `close` comes when the output ends. A process that the step left behind can hold the output open, so stop
-      // those processes now, and don't wait for `close` for long.
-      stop();
-      closeFallback = setTimeout(() => settle(), 2000);
+      // those processes now. When they are gone, nothing holds it, so don't wait for `close` for long after that.
+      stop()
+        .then(() => {
+          if (!settled) closeFallback = setTimeout(() => settle(), 2000);
+        })
+        .catch(() => {});
     });
     child.on('close', () => settle());
   });

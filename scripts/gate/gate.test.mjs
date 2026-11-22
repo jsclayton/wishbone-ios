@@ -24,7 +24,10 @@ function gateIn(t) {
   return { root, options, lines: () => written.join('').split('\n').filter(Boolean) };
 }
 
-const passes = (name, more = {}) => ({ name, command: ['true'], limitMs: 10_000, ...more });
+// A step that is not about its limit gets one far past its work, so a busy machine doesn't stop it.
+const noLimitMs = 60 * 60_000;
+
+const passes = (name, more = {}) => ({ name, command: ['true'], limitMs: noLimitMs, ...more });
 
 /** A step that runs "tests": it writes the event stream that Swift Testing would, and the gate reads it. */
 // With `xctest`, the step also writes the lines of an XCTest run (see `xctestLog`) to its output, as `swift test`
@@ -38,7 +41,7 @@ function testStep(root, tests, { name = 'package', countName = 'package', allowe
   return {
     name,
     command: ['sh', '-c', `cp "${fixture}" "${events}"; cat "${terminal}"; exit ${exit}`],
-    limitMs: 10_000,
+    limitMs: noLimitMs,
     counts: [countName],
     check: ({ exit, logPath }) => checkEventStream(events, { exit, countName, allowedSkips, xctestLog: xctest === undefined ? undefined : logPath }),
   };
@@ -72,7 +75,7 @@ test('a failing test gives GATE FAIL, with the step and the name of the test', a
   const { root, options, lines } = gateIn(t);
   const tests = { ...twoPassing, 'Tests.Suite/adds()/S.swift:3:2': 'fail' };
   const later = path.join(root, 'later-ran');
-  const steps = [passes('lint'), testStep(root, tests, { exit: 1 }), { name: 'build', command: ['touch', later], limitMs: 10_000 }];
+  const steps = [passes('lint'), testStep(root, tests, { exit: 1 }), { name: 'build', command: ['touch', later], limitMs: noLimitMs }];
   const result = await runGate({ ...options, steps });
   assert.equal(result.ok, false);
   assert.equal(result.line, 'GATE FAIL step 2 (package): 1 failed: Tests.Suite/adds()');
@@ -82,7 +85,7 @@ test('a failing test gives GATE FAIL, with the step and the name of the test', a
 
 test('a step that fails with nothing to read gives its exit code and its log', async (t) => {
   const { options } = gateIn(t);
-  const result = await runGate({ ...options, steps: [{ name: 'lint', command: ['sh', '-c', 'echo bad; exit 7'], limitMs: 10_000 }] });
+  const result = await runGate({ ...options, steps: [{ name: 'lint', command: ['sh', '-c', 'echo bad; exit 7'], limitMs: noLimitMs }] });
   assert.equal(result.line, 'GATE FAIL step 1 (lint): exit 7 (log: run/1-lint.log)');
   assert.equal(readFileSync(path.join(options.runDirectory, '1-lint.log'), 'utf8'), 'bad\n');
 });
@@ -90,7 +93,7 @@ test('a step that fails with nothing to read gives its exit code and its log', a
 test('a test run that failed to build gives its exit code', async (t) => {
   const { options } = gateIn(t);
   const events = path.join(options.runDirectory, 'none.jsonl');
-  const step = { name: 'package', command: ['false'], limitMs: 10_000, check: ({ exit }) => checkEventStream(events, { exit, countName: 'package' }) };
+  const step = { name: 'package', command: ['false'], limitMs: noLimitMs, check: ({ exit }) => checkEventStream(events, { exit, countName: 'package' }) };
   const result = await runGate({ ...options, steps: [step] });
   assert.equal(result.line, 'GATE FAIL step 1 (package): exit 1 (log: run/1-package.log)');
 });
@@ -180,7 +183,7 @@ test('a step past its limit fails the gate, and the next step does not run', asy
   const later = path.join(root, 'later-ran');
   const steps = [
     { name: 'package', command: ['sh', '-c', 'sleep 60 & wait'], limitMs: 1_000 },
-    { name: 'build', command: ['touch', later], limitMs: 10_000 },
+    { name: 'build', command: ['touch', later], limitMs: noLimitMs },
   ];
   const result = await runGate({ ...options, steps });
   assert.equal(result.line, 'GATE FAIL step 1 (package): stopped at its limit of 1s (log: run/1-package.log)');
@@ -190,16 +193,26 @@ test('a step past its limit fails the gate, and the next step does not run', asy
 test('two gates at once take turns at the slot', async (t) => {
   const { root, options } = gateIn(t);
   const turns = path.join(root, 'turns');
+  const go = path.join(root, 'go');
   // Each gate's slot step writes when it starts and when it ends. Each gate has its own run folder, as two
-  // checkouts have, and both share the slot's folder.
+  // checkouts have, and both share the slot's folder. A slot step ends only when the other gate says that it
+  // waits for the slot, so the second gate always comes while the first holds it, however busy the machine is.
+  // If the slot let both in, neither would wait, and both steps would stop at their limit.
+  const out = { write: (text) => text.includes('waiting for the gate slot') && writeFileSync(go, '') };
   const gate = (name) =>
     runGate({
       ...options,
+      out,
       runDirectory: path.join(root, `run-${name}`),
       timesFile: path.join(root, `times-${name}.jsonl`),
       steps: [
         passes('lint'),
-        { name: 'build', slot: true, limitMs: 10_000, command: ['sh', '-c', `echo "${name} starts" >> "${turns}"; sleep 0.6; echo "${name} ends" >> "${turns}"`] },
+        {
+          name: 'build',
+          slot: true,
+          limitMs: noLimitMs,
+          command: ['sh', '-c', `echo "${name} starts" >> "${turns}"; while [ ! -e "${go}" ]; do sleep 0.05; done; echo "${name} ends" >> "${turns}"`],
+        },
       ],
     });
   const results = await Promise.all([gate('one'), gate('two')]);
@@ -209,6 +222,7 @@ test('two gates at once take turns at the slot', async (t) => {
   const second = first === 'one' ? 'two' : 'one';
   assert.deepEqual(order, [`${first} starts`, `${first} ends`, `${second} starts`, `${second} ends`]);
   const waited = ['one', 'two'].map((name) => JSON.parse(readFileSync(path.join(root, `times-${name}.jsonl`), 'utf8')).waitedMs);
+  // A gate says that it waits only after 500 ms of waiting.
   assert.ok(Math.max(...waited) >= 400, `one gate waited for the other (${waited} ms)`);
 });
 
@@ -216,7 +230,7 @@ test('a step in the slot is told that the gate holds it, and a step outside it i
   const { root, options } = gateIn(t);
   const seen = path.join(root, 'seen');
   const say = (name) => ['sh', '-c', `echo "${name}=\${WISHBONE_GATE_SLOT_HELD:-unset}" >> "${seen}"`];
-  const result = await runGate({ ...options, steps: [{ name: 'lint', command: say('lint'), limitMs: 10_000 }, { name: 'build', slot: true, command: say('build'), limitMs: 10_000 }] });
+  const result = await runGate({ ...options, steps: [{ name: 'lint', command: say('lint'), limitMs: noLimitMs }, { name: 'build', slot: true, command: say('build'), limitMs: noLimitMs }] });
   assert.equal(result.ok, true);
   assert.deepEqual(readFileSync(seen, 'utf8').trim().split('\n'), ['lint=unset', 'build=1']);
 });
@@ -225,14 +239,14 @@ test('an interrupt stops the gate at the step that runs', async (t) => {
   const { options } = gateIn(t);
   const interrupt = new AbortController();
   setTimeout(() => interrupt.abort(), 300);
-  const result = await runGate({ ...options, signal: interrupt.signal, steps: [{ name: 'build', command: ['sleep', '60'], limitMs: 30_000 }] });
+  const result = await runGate({ ...options, signal: interrupt.signal, steps: [{ name: 'build', command: ['sleep', '60'], limitMs: noLimitMs }] });
   assert.equal(result.line, 'GATE FAIL step 1 (build): interrupted');
 });
 
 test('each run adds a line of step times to the log', async (t) => {
   const { root, options } = gateIn(t);
   await runGate({ ...options, steps: [passes('lint'), testStep(root, twoPassing)] });
-  await runGate({ ...options, steps: [{ name: 'lint', command: ['false'], limitMs: 10_000 }] });
+  await runGate({ ...options, steps: [{ name: 'lint', command: ['false'], limitMs: noLimitMs }] });
   const records = readFileSync(options.timesFile, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
   assert.deepEqual(records.map((record) => record.result), ['pass', 'fail']);
   assert.deepEqual(Object.keys(records[0].steps), ['lint', 'package']);
@@ -242,7 +256,7 @@ test('each run adds a line of step times to the log', async (t) => {
 
 test('a gate over its budget passes, with a warning', async (t) => {
   const { options, lines } = gateIn(t);
-  const result = await runGate({ ...options, budgetMs: 100, steps: [{ name: 'lint', command: ['sleep', '0.6'], limitMs: 10_000 }] });
+  const result = await runGate({ ...options, budgetMs: 100, steps: [{ name: 'lint', command: ['sleep', '0.6'], limitMs: noLimitMs }] });
   assert.equal(result.ok, true);
   assert.ok(lines().some((line) => /^warning: the gate took \d+s, over its budget of 0s$/.test(line)));
   assert.equal(lines().at(-1), result.line);
@@ -280,9 +294,9 @@ test('a time reads as minutes and seconds', () => {
 
 test("a step's `after` runs however the step ends: it passes, it fails, or it is stopped at its limit", async (t) => {
   for (const [command, limitMs, expected] of [
-    [['true'], 10_000, /^GATE PASS/],
-    [['false'], 10_000, /^GATE FAIL step 1 \(simulator\): exit 1/],
-    [['sleep', '30'], 200, /^GATE FAIL step 1 \(simulator\): stopped at its limit/],
+    [['true'], noLimitMs, /^GATE PASS/],
+    [['false'], noLimitMs, /^GATE FAIL step 1 \(simulator\): exit 1/],
+    [['sleep', '60'], 200, /^GATE FAIL step 1 \(simulator\): stopped at its limit/],
   ]) {
     const { options } = gateIn(t);
     let ran = 0;

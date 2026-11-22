@@ -24,9 +24,26 @@ function isAlive(pid) {
   }
 }
 
+// The tests wait for what they need, not for a time. A busy machine can take many seconds to start a process, so a
+// step that is not about its limit gets one far past any test's work, and a wait gives up only after a long time.
+const noLimitMs = 60 * 60_000;
+const longWaitMs = 120_000;
+
+/** A limit that the test passes by hand: `limit.pass()` does what the limit's clock does when the time is up. */
+function limitByHand() {
+  let onLimit = null;
+  return {
+    startLimit: (ms, fire) => {
+      onLimit = fire;
+      return () => (onLimit = null);
+    },
+    pass: () => onLimit?.(),
+  };
+}
+
 /** Waits for the step to write `count` process IDs to the file, and returns them. */
 async function processIDs(file, count) {
-  for (let tries = 0; tries < 100; tries += 1) {
+  for (const deadline = Date.now() + longWaitMs; Date.now() < deadline; ) {
     try {
       const pids = readFileSync(file, 'utf8').trim().split(/\s+/).map(Number);
       if (pids.length >= count) return pids;
@@ -41,7 +58,7 @@ async function processIDs(file, count) {
 test('a step gives its exit code, and its output goes to the log', async (t) => {
   const folder = scratch(t);
   const logPath = path.join(folder, 'step.log');
-  const result = await runStep({ command: ['sh', '-c', 'echo out; echo err >&2; exit 3'], limitMs: 10_000, logPath, echo: null });
+  const result = await runStep({ command: ['sh', '-c', 'echo out; echo err >&2; exit 3'], limitMs: noLimitMs, logPath, echo: null });
   assert.equal(result.exit, 3);
   assert.equal(result.timedOut, false);
   assert.deepEqual(readFileSync(logPath, 'utf8').split('\n').filter(Boolean).sort(), ['err', 'out']);
@@ -51,7 +68,7 @@ test('a line on one stream is whole in the log, when the other stream writes in 
   const folder = scratch(t);
   const logPath = path.join(folder, 'step.log');
   const script = 'printf "Test Case skipped"; sleep 0.2; echo err >&2; sleep 0.2; printf " (0.001 seconds).\\n"; printf "no end"';
-  await runStep({ command: ['sh', '-c', script], limitMs: 10_000, logPath, echo: null });
+  await runStep({ command: ['sh', '-c', script], limitMs: noLimitMs, logPath, echo: null });
   assert.deepEqual(readFileSync(logPath, 'utf8').split('\n').filter(Boolean).sort(), ['Test Case skipped (0.001 seconds).', 'err', 'no end']);
 });
 
@@ -71,13 +88,16 @@ test('a step past its limit is stopped, with its child processes', async (t) => 
     echo $! >> "${pidFile}"
     wait
   `;
-  const running = runStep({ command: ['sh', '-c', script], limitMs: 400, echo: null, graceMs: 500 });
+  const limit = limitByHand();
+  const running = runStep({ command: ['sh', '-c', script], limitMs: 400, echo: null, graceMs: 500, startLimit: limit.startLimit });
   const pids = await processIDs(pidFile, 5);
   assert.ok(pids.every(isAlive), 'every process runs before the limit');
+  limit.pass();
   const result = await running;
   assert.equal(result.timedOut, true);
   assert.equal(result.exit, null);
-  assert.ok(result.ms < 5_000, `the step stopped at its limit, not at its end (${result.ms} ms)`);
+  // Its children sleep for 60 s, so a step that ran to its end took longer than that.
+  assert.ok(result.ms < 60_000, `the step stopped at its limit, not at its end (${result.ms} ms)`);
   assert.deepEqual(pids.filter(isAlive), [], 'no process is left');
 });
 
@@ -85,8 +105,10 @@ test('a step that ignores the request to stop is killed', async (t) => {
   const folder = scratch(t);
   const pidFile = path.join(folder, 'pids');
   const script = `trap '' TERM; echo $$ > "${pidFile}"; while true; do sleep 1; done`;
-  const running = runStep({ command: ['sh', '-c', script], limitMs: 300, echo: null, graceMs: 300 });
+  const limit = limitByHand();
+  const running = runStep({ command: ['sh', '-c', script], limitMs: 300, echo: null, graceMs: 300, startLimit: limit.startLimit });
   const pids = await processIDs(pidFile, 1);
+  limit.pass();
   const result = await running;
   assert.equal(result.timedOut, true);
   assert.deepEqual(pids.filter(isAlive), []);
@@ -97,7 +119,7 @@ test('an interrupt stops the step, with its child processes', async (t) => {
   const pidFile = path.join(folder, 'pids');
   const interrupt = new AbortController();
   const script = `echo $$ > "${pidFile}"; sleep 60 & echo $! >> "${pidFile}"; wait`;
-  const running = runStep({ command: ['sh', '-c', script], limitMs: 30_000, echo: null, signal: interrupt.signal, graceMs: 500 });
+  const running = runStep({ command: ['sh', '-c', script], limitMs: noLimitMs, echo: null, signal: interrupt.signal, graceMs: 500 });
   const pids = await processIDs(pidFile, 2);
   interrupt.abort();
   const result = await running;
@@ -107,7 +129,7 @@ test('an interrupt stops the step, with its child processes', async (t) => {
 });
 
 /** Waits up to `ms` for every process in `pids` to end, and returns the ones that are still alive. */
-async function survivors(pids, ms = 8_000) {
+async function survivors(pids, ms = longWaitMs) {
   const deadline = Date.now() + ms;
   while (Date.now() < deadline && pids.some(isAlive)) await sleep(50);
   return pids.filter(isAlive);
@@ -118,7 +140,7 @@ test('a step that ends on its own leaves no process behind', async (t) => {
   const pidFile = path.join(folder, 'pids');
   // The step leaves a child, and a child of a child, running when it exits.
   const script = `sleep 60 & echo $! > "${pidFile}"; sh -c 'sleep 60 & echo $! >> "${pidFile}"; wait' & exit 0`;
-  const result = await runStep({ command: ['sh', '-c', script], limitMs: 10_000, echo: null, graceMs: 300 });
+  const result = await runStep({ command: ['sh', '-c', script], limitMs: noLimitMs, echo: null, graceMs: 300 });
   assert.equal(result.exit, 0);
   assert.equal(result.timedOut, false);
   assert.deepEqual((await processIDs(pidFile, 2)).filter(isAlive), []);
@@ -129,7 +151,7 @@ test('a step whose gate is killed outright is stopped, with its child processes'
   const pidFile = path.join(folder, 'pids');
   const stepModule = fileURLToPath(new URL('./step.mjs', import.meta.url));
   const script = `echo $$ > "${pidFile}"; sleep 60 & echo $! >> "${pidFile}"; wait`;
-  const gate = `import(${JSON.stringify(stepModule)}).then(({ runStep }) => runStep({ command: ['sh', '-c', ${JSON.stringify(script)}], limitMs: 60_000, echo: null }));`;
+  const gate = `import(${JSON.stringify(stepModule)}).then(({ runStep }) => runStep({ command: ['sh', '-c', ${JSON.stringify(script)}], limitMs: ${noLimitMs}, echo: null }));`;
   const other = spawn(process.execPath, ['-e', gate], { stdio: 'ignore' });
   t.after(() => other.kill('SIGKILL'));
   const pids = await processIDs(pidFile, 2);
@@ -140,5 +162,5 @@ test('a step whose gate is killed outright is stopped, with its child processes'
 });
 
 test('a command that does not exist is an error', async () => {
-  await assert.rejects(runStep({ command: ['wishbone-no-such-command'], limitMs: 1_000, echo: null }), /ENOENT/);
+  await assert.rejects(runStep({ command: ['wishbone-no-such-command'], limitMs: noLimitMs, echo: null }), /ENOENT/);
 });
