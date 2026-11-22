@@ -156,6 +156,9 @@
     "Blocked stores" : {
 
     },
+    "Buy John a coffee" : {
+
+    },
     "Can't reach %@" : {
 
     },
@@ -402,6 +405,9 @@
     "Store to block" : {
 
     },
+    "Support Wishbone" : {
+
+    },
     "Take a photo" : {
 
     },
@@ -477,6 +483,9 @@
 
     },
     "Wishbone can't use that file. Choose a JPEG, PNG, GIF, or WebP photo." : {
+
+    },
+    "Wishbone is free and open source. A coffee unlocks nothing in the app." : {
 
     },
     "Wishbone needs the camera to scan a QR code. You can turn it on in Settings, or paste a link." : {

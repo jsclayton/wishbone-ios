@@ -9,7 +9,8 @@ import WishboneUI
 struct SettingsTests {
   @Test("The sections and their order, for an everyday user, a child and the admin")
   func sections() {
-    // Support Wishbone and the other sections join in their places when they are built.
+    // With no support page (another storefront, or no address), there is no Support Wishbone. See
+    // `SupportWishboneTests` for the row.
     let order: [SettingsSection] = [.signedIn, .signInAndDevices, .reminders, .shareDiagnostics, .about]
     #expect(SettingsSection.shown(isAdmin: false, hasParents: false) == order, "An everyday user")
     #expect(SettingsSection.shown(isAdmin: false, hasParents: true) == order, "A child")

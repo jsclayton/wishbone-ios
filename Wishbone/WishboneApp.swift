@@ -14,6 +14,10 @@ struct WishboneApp: App {
   /// `docs/spec.md`.
   @State private var diagnostics: DiagnosticsSettings
 
+  /// Whether the Support Wishbone row may show: the storefront and the build's address. Every window's Settings
+  /// reads it.
+  @State private var support = SupportWishbone(source: AppStorefront(), address: AppAbout.current.support)
+
   /// The phase of the app as a whole: `.background` once no window is in the foreground.
   @Environment(\.scenePhase) private var phase
 
@@ -31,6 +35,9 @@ struct WishboneApp: App {
         .environment(device)
         .environment(\.diagnostics, diagnostics)
         .environment(\.diagnosticsReporter, diagnostics.reporter)
+        .environment(\.supportWishbone, support)
+        // Each window follows the storefront while it is open.
+        .task { await support.follow() }
         .modifier(ScenePhaseBreadcrumbs(diagnostics: diagnostics.reporter))
         #if DEBUG
           .task { await Journey.pasteLoginLink(into: device) }

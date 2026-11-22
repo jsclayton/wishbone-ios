@@ -53,15 +53,29 @@ nonisolated final class SignOutJourney: XCTestCase {
     XCTAssertTrue(signedIn.waitForExistence(timeout: 10), "Settings doesn't show the name and \(address).")
     // The rows under Sign out, which a larger text pushes off. At the largest text size they are below the fold,
     // so the journey scrolls each on the screen there.
-    let rowsBelow = ["Share diagnostics", "About", "Source code", "Acknowledgements", "Version"]
+    // Support Wishbone shows only on the US storefront, which the simulator may or may not have, so its header, row
+    // and footer are in the list only when the row shows.
+    let support = [
+      "Support Wishbone", "Buy John a coffee", "Wishbone is free and open source. A coffee unlocks nothing in the app.",
+    ]
+    let showsSupport = app.descendants(matching: .any).matching(
+      NSPredicate(format: "label BEGINSWITH %@", Audit.words("Buy John a coffee"))
+    ).firstMatch.exists
+    let rowsBelow =
+      ["Share diagnostics"] + (showsSupport ? support : []) + ["About", "Source code", "Acknowledgements", "Version"]
     // Reminders leaves the screen too, but the journey doesn't scroll to it: the scroll stops with the long help line
     // above it half under the bar, and the audit reports that line with no element, so it can't be told apart.
     try await Audit.run(
       on: app, showing: "Settings", in: self, rowsThatLeaveTheScreen: ["Reminders"] + rowsBelow,
       rowsToScrollTo: rowsBelow)
 
-    // Acknowledgements: the app's own notice, then the license of each package. Back goes to Settings.
-    app.buttons[Audit.words("Acknowledgements")].tap()
+    // Acknowledgements: the app's own notice, then the license of each package. Back goes to Settings. In the
+    // double-length pseudo-language the row can be below the fold, where the list hasn't made it yet.
+    let acknowledgements = app.buttons[Audit.words("Acknowledgements")]
+    for _ in 0..<5 where !(acknowledgements.exists && acknowledgements.isHittable) {
+      app.swipeUp()
+    }
+    acknowledgements.tap()
     XCTAssertTrue(
       app.navigationBars[Audit.words("Acknowledgements")].waitForExistence(timeout: 10),
       "Acknowledgements didn't show.")
@@ -73,9 +87,15 @@ nonisolated final class SignOutJourney: XCTestCase {
     XCTAssertTrue(
       app.navigationBars[Audit.words("Settings")].waitForExistence(timeout: 10), "Back didn't go to Settings.")
 
+    // Settings is where it was left, so the journey scrolls back to the top if it went down for Acknowledgements.
+    let reminders = app.buttons[Audit.words("Reminders")].firstMatch
+    for _ in 0..<5 where !(reminders.exists && reminders.isHittable) {
+      app.swipeDown()
+    }
+
     // Reminders, pushed inside the sheet. VoiceOver reads Remind me early as one button, with its value, and the
     // audit holds the screen's contrast: the value is drawn in the primary color, not the form's secondary gray.
-    app.buttons[Audit.words("Reminders")].firstMatch.tap()
+    reminders.tap()
     XCTAssertTrue(
       app.navigationBars[Audit.words("Reminders")].waitForExistence(timeout: 10), "The Reminders screen didn't show.")
     let early = app.buttons[Audit.words("Remind me early")]
