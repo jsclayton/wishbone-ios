@@ -8,6 +8,8 @@ import { testResults } from './xcresult-fixture.mjs';
 import { readTestResults } from './xcresult.mjs';
 
 import {
+  auditRetryLines,
+  auditTimeOutFlake,
   buildArguments,
   compiledFiles,
   gateSimulators,
@@ -631,6 +633,43 @@ test("the settings helper sends a change again from the setting before it, and r
   assert.equal((await post('dark-mode?after=double-length')).status, 404);
   assert.equal((await post('dark-mode?after=dark-mode')).status, 404);
   assert.equal(helper.resends().length, 2);
+});
+
+test('the settings helper remembers each audit that ran again after it ran out of time, in order', async (t) => {
+  const { applier, ran } = fakeSimulator();
+  const helper = await startSettingsHelper((setting, options) => applier.apply(setting, options));
+  t.after(() => helper.close());
+  const post = (body, method = 'POST') => fetch(`${helper.address}/audit-retries`, { method, body });
+  assert.deepEqual(helper.auditRetries(), []);
+  assert.equal((await post('Home, in the default settings')).status, 204);
+  assert.equal((await post('Home, in the default settings')).status, 204);
+  assert.equal((await post('the Add screen, in dark mode')).status, 204);
+  assert.deepEqual(helper.auditRetries(), ['Home, in the default settings', 'Home, in the default settings', 'the Add screen, in dark mode']);
+  // An audit with no name, or a request that isn't a POST, is not a retry.
+  assert.equal((await post('')).status, 400);
+  assert.equal((await post(undefined, 'GET')).status, 404);
+  assert.equal(helper.auditRetries().length, 3);
+  // A retry changes no setting, and is not a screen that the run audited.
+  assert.deepEqual(ran, []);
+  assert.deepEqual(helper.screens(), []);
+});
+
+test('the line after the journeys names each audit that ran again, and the flake, and there is none when none did', () => {
+  assert.deepEqual(auditRetryLines([]), []);
+  assert.deepEqual(auditRetryLines(['Home, in the default settings']), [
+    `  The journeys ran 1 audit again, because XCTest said that it didn't complete in time (the named flake "${auditTimeOutFlake}"):`,
+    '    Home, in the default settings.',
+  ]);
+  assert.match(auditRetryLines(['a', 'b'])[0], /ran 2 audits again/);
+});
+
+test("a journey runs a timed-out audit again a bounded number of times, and only on XCTest's time-out", () => {
+  const audit = readFileSync(new URL('../../JourneyTests/Audit.swift', import.meta.url), 'utf8');
+  const limit = Number(/static let auditRetryLimit = (\d+)/.exec(audit)[1]);
+  assert.ok(limit >= 1 && limit <= 2, `Audit.swift runs a timed-out audit again ${limit} times`);
+  assert.match(audit, /error\.domain == "com\.apple\.xcode\.xctest\.accessibilityAudit" && error\.code == -56/);
+  // The journey reports each retry at the path that the helper reads.
+  assert.match(audit, /helper\.appending\(path: "audit-retries"\)/);
 });
 
 test("the settings applier reads each option back, and says which it couldn't read", async () => {
