@@ -530,7 +530,7 @@ export async function runAgainOnLaunchFlake(runOnce, { keep, say = console.log }
   const launches = first.passed ? null : launchFlakeIn(first.reading);
   if (launches === null) return first.passed;
   const kept = keep();
-  say(`  ${launches.join(', ')}: the launch got no process ID (the named flake "${launchFlake.name}"), so these journeys run again, once. The first run is in ${kept.join(' and ')}.`);
+  say(`  ${launches.join(', ')}: the launch got no process ID (the named flake "${launchFlake.name}"), so this run of the journeys runs again, once. The first run is in ${kept.join(' and ')}.`);
   return (await runOnce()).passed;
 }
 

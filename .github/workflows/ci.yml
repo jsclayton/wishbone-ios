@@ -99,7 +99,7 @@ jobs:
     # Above the sum of the limits of the gate's steps (scripts/gate/main.mjs),
     # with room for the job's own steps before the gate, so that a hung step is
     # stopped by the gate, which says which step it was. A gate test holds it.
-    timeout-minutes: 80
+    timeout-minutes: 110
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Select Xcode
@@ -147,8 +147,11 @@ jobs:
       - name: Gate
         run: just gate
       # The gate's logs and results, and the build's log. The gate keeps them
-      # inside the checkout.
-      - if: failure()
+      # inside the checkout. They are uploaded when the gate fails, and when
+      # the gate ran a run of the journeys again for a named flake and passed:
+      # then the first try's result bundle and log, with `-first` at the end of
+      # their names (keepFirstTry in scripts/gate/simulator.mjs), are kept too.
+      - if: failure() || hashFiles('build/gate/**/*-first.log', 'build/gate/**/*-first.xcresult/**') != ''
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: gate-results

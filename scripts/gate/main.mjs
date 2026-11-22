@@ -34,7 +34,10 @@ const steps = [
   {
     name: 'lint',
     command: ['just', 'lint'],
-    limitMs: 2 * minute,
+    // Most of the step is the gate's own tests (`just test-gate`), which take about 10 seconds on a quiet machine.
+    // Under the shared machine's normal load they have taken up to about 140 seconds (a load of 275 to 757), so the
+    // limit is about twice that.
+    limitMs: 5 * minute,
   },
   {
     name: 'server',
@@ -81,8 +84,13 @@ const steps = [
     // simulator's first boot, up to about 6 minutes, and the hosted tests) takes about 5m40s to 8 minutes. Each
     // screen that the journeys audit takes about 1 minute in the four settings, once in the run. Double length has
     // no helper, so it pays its 15 seconds or so each time that a journey reaches a screen. With both runs, about
-    // 1m15s for each screen, the step holds about 17 to 19 audited screens.
-    limitMs: 30 * minute,
+    // 1m15s for each screen, 19 audited screens take about 32 minutes. The limit also holds a second run of the
+    // journeys in the four settings, for the named flake "the app's launch gets no process ID on a busy machine":
+    // with 19 screens, that run takes about 17 minutes, and a first try whose launch waits (about 3 minutes) and
+    // then fails late costs nearly as much again. The named flake "a change of setting doesn't show in the app" sends
+    // a change again: about 1m30s when one resend works, and up to about 5 minutes. So the step holds about 19
+    // audited screens with one such second run and one resend, and about 40 with neither.
+    limitMs: 60 * minute,
     slot: true,
     counts: ['hosted', 'ui'],
     check: ({ exit }) => checkResultBundles(resultBundles(simulatorDirectory), { exit, allowedSkips }),
