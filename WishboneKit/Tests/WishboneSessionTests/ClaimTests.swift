@@ -21,7 +21,10 @@ struct ClaimTests {
     let device = instance.device(diagnostics: diagnostics)
     #expect(device.session == nil, "Each device of a test needs an instance of its own")
     await device.signIn(pasting: try await instance.loginLink(for: person))
-    return try #require(device.session)
+    let session = try #require(device.session)
+    // A sign-in can end before the session publishes its last write.
+    try await untilInStep(session, as: person)
+    return session
   }
 
   /// The person's open gifts on the item, as the server has them.
@@ -153,6 +156,7 @@ struct ClaimTests {
     instance.conditioner.passEverything()
     let seen = instance.conditioner.requests.count
     await session.syncNow()
+    try await untilInStep(session, as: family.relative)
     #expect(instance.conditioner.requests.dropFirst(seen).allSatisfy { $0.method == "GET" })
     #expect(try await giftsOnServer(of: family.relative, onItem: lamp).isEmpty)
     #expect(try #require(session.itemPage(id: lamp.id)).offersClaim)
