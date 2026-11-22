@@ -90,6 +90,12 @@ public final class SessionModel {
 
   let client: APIClient
   let database: LocalDatabase
+
+  /// The session's image cache. Screens show the instance's images through it. See "Images" in `docs/spec.md`.
+  public let images: ImageCache
+
+  /// The fetch of images ahead of time that runs, or the last one. See `fetchImagesAhead()`.
+  private var fetchingImages: Task<Void, Never>?
   private let timeZone: TimeZoneSource
 
   /// What the session model calls when a request gets the API's own 401: the device forgets the session. It returns
@@ -158,6 +164,7 @@ public final class SessionModel {
     session: Session,
     client: APIClient,
     database: LocalDatabase,
+    imageFolder: URL?,
     timeZone: TimeZoneSource,
     timerClock: any Clock<Duration>,
     network: any NetworkChanges,
@@ -169,6 +176,7 @@ public final class SessionModel {
     self.session = session
     self.client = client
     self.database = database
+    images = ImageCache(client: client, folder: imageFolder, network: network)
     self.timeZone = timeZone
     self.timerClock = timerClock
     self.refresh = refresh
@@ -368,9 +376,30 @@ public final class SessionModel {
     }
     let outcome = syncEnded(end)
     // Only a sync that succeeded rebuilds the reminders. A failed sync leaves the set as it is.
-    if outcome == .succeeded, !hasEnded { await rebuildReminders() }
+    if outcome == .succeeded, !hasEnded {
+      await rebuildReminders()
+      fetchImagesAhead()
+    }
     diagnostics.leave(.syncEnded(outcome.end))
     return outcome
+  }
+
+  /// Fetches each item's primary image and each avatar that the image cache doesn't hold yet, on a network that is
+  /// neither expensive nor constrained. It runs after each sync that succeeded, and the sync doesn't wait for it.
+  /// One fetch runs at a time: the next one starts when it ends, and fetches only what is still missing.
+  private func fetchImagesAhead() {
+    let earlier = fetchingImages
+    fetchingImages = Task { [database, images] in
+      await earlier?.value
+      guard !Task.isCancelled, let wanted = try? await database.imagesToFetchAhead() else { return }
+      await images.fetchAhead(wanted)
+    }
+  }
+
+  /// Waits until the fetch of images ahead of time, after the last sync that succeeded, has ended. It returns at
+  /// once when none runs.
+  public func imagesFetchedAhead() async {
+    await fetchingImages?.value
   }
 
   /// Where every sync ends, and gets its outcome. It publishes whether the instance could be reached, and starts or
@@ -571,6 +600,11 @@ public final class SessionModel {
     _ = await running?.value
     // The device removes every reminder after this, so a rebuild that runs must end first.
     await rebuildingReminders?.value
+    // The device removes the image cache's folder after this, so nothing may write to it then.
+    fetchingImages?.cancel()
+    await fetchingImages?.value
+    fetchingImages = nil
+    await images.end()
     observation?.cancel()
     observation = nil
     user = nil

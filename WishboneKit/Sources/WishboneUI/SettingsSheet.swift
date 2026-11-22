@@ -1,4 +1,5 @@
 import SwiftUI
+import WishboneAPI
 import WishboneSession
 
 /// Settings: what is about the user and this device, as a sheet from the user's avatar. See
@@ -158,24 +159,25 @@ struct SettingsSheet: View {
   }
 }
 
-/// The user's avatar, at the top trailing corner of Home, Lists, and Gifts. It opens Settings. It shows the
-/// initials of the user's name, until the person colors and the photos come.
+/// The user's avatar, at the top trailing corner of Home, Lists, and Gifts. It opens Settings. It shows the user's
+/// photo, from the session's image cache, or else the initials of the user's name.
 struct AvatarButton: View {
   let session: SessionModel
   let action: () -> Void
 
   var body: some View {
     Button(action: action) {
-      AvatarInitials(name: session.user?.name ?? "")
+      AvatarInitials(name: session.user?.name ?? "", photo: session.user?.avatar)
     }
     .accessibilityLabel(Text("Settings", bundle: #bundle))
   }
 }
 
-/// A round mark with the initials of a name: the first letter of its first two words. An empty name shows a
-/// person's outline.
+/// A round mark with the user's photo, or the initials of a name: the first letter of its first two words. An empty
+/// name shows a person's outline.
 private struct AvatarInitials: View {
   let name: String
+  let photo: ImageSummary?
 
   @ScaledMetric(relativeTo: .body) private var size: CGFloat = 30
 
@@ -184,6 +186,16 @@ private struct AvatarInitials: View {
   }
 
   var body: some View {
+    if photo != nil {
+      SessionImage(image: photo) { mark }
+        .frame(width: size, height: size)
+        .clipShape(Circle())
+    } else {
+      mark
+    }
+  }
+
+  private var mark: some View {
     Group {
       if initials.isEmpty {
         Image(systemName: "person.crop.circle")

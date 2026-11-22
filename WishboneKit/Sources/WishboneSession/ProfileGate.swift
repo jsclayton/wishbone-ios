@@ -103,6 +103,8 @@ extension SessionModel {
     if case .new(let file) = draft.photo {
       do {
         let image = try await client.uploadImage(file)
+        // The new avatar shows at once, with no download.
+        await images.keep(file, for: image)
         changes.avatarImageID = .some(image.id)
       } catch {
         return await outcome(of: error, photo: true)
@@ -125,11 +127,6 @@ extension SessionModel {
       Log.fault(.session, "The copy can't take the user's record.", detail: "\(error)")
       return .failed
     }
-  }
-
-  /// The request for an image of the instance, with the session's token.
-  public func imageRequest(_ image: ImageSummary) -> URLRequest? {
-    client.imageRequest(image)
   }
 
   /// Puts an answer of the server about the session's own user into the copy, which every window reads.

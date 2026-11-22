@@ -37,6 +37,7 @@ Where each rule lives in the code, and the rules that hold the code together. Wh
 | The window closing confirmation, and Open in New Window | The app target | They need the window scene. The restore of each window's place (`@SceneStorage`) is in `WishboneUI`'s root. |
 | The storefront check for the support row | The app target's UI | The one file that imports StoreKit. Never in an extension. |
 | The widget's file | `WishboneSession` writes it, the widget reads it | A JSON file of occasions only, in the shared container. |
+| The image cache | `WishboneSession` (`ImageCache`), shown by `WishboneUI`'s `SessionImage` | One for each session model, in memory and in a folder for the instance and user under the app's own Caches folder, never the shared container. The API client loads its images, with the token and no redirect, and never reports a failed load. The session model fetches ahead after each sync that succeeded, and asks the network's protocol whether it is expensive or constrained. The device removes the folder where it removes the database. |
 | The accent color | Each thin target's `AccentColor` | A test holds the three equal. |
 | The pinned test server | `WishboneKit/Server/` | The pin file and the copy of the server's OpenAPI document. The contract test holds them against `minimumServerVersion` in `WishboneAPI`. See [A real server](development.md#a-real-server). |
 | Permission strings | Each target's `InfoPlist.xcstrings` | |
@@ -88,7 +89,7 @@ The checklist:
 
 - The shipped app has two third-party dependencies: sentry-cocoa and GRDB. Each is pinned to an exact version, and moves only in a reviewed pull request. `Package.resolved` is in git.
 - Any other dependency needs an ADR that says why Apple's frameworks can't do the job.
-- Apple's frameworks do the rest: `AsyncImage(request:)` with the bearer token for images, Security for the Keychain, VisionKit for scanning QR codes, Core Image for making them, and the app's own small renderer for the web's markdown subset.
+- Apple's frameworks do the rest: the session's own image cache on the API client's `URLSession` for the instance's images, `AsyncImage` with the system's default cache for a store's image, Security for the Keychain, VisionKit for scanning QR codes, Core Image for making them, and the app's own small renderer for the web's markdown subset.
 
 ## Strings
 

@@ -111,6 +111,41 @@ public struct APIClient: Sendable {
     return request
   }
 
+  /// The bytes of an image of the instance, with the session's token, or nil when there are none: no connection,
+  /// any answer but a 200, or an address that is not the instance's. See "Images" in `docs/spec.md`.
+  ///
+  /// It follows no redirect, so the token never goes to another address. With `onlyOnALowCostNetwork`, the system
+  /// refuses the request on an expensive or a constrained network.
+  ///
+  /// Diagnostics: never. A failed image load is not captured, and not a breadcrumb.
+  public func imageBytes(_ image: ImageSummary, onlyOnALowCostNetwork: Bool = false) async -> Data? {
+    guard var request = imageRequest(image) else { return nil }
+    if onlyOnALowCostNetwork {
+      request.allowsExpensiveNetworkAccess = false
+      request.allowsConstrainedNetworkAccess = false
+    }
+    do {
+      let (body, response) = try await withTimeout(timeout, clock: clock) { [request] in
+        try await Self.urlSession.data(for: request, delegate: NoRedirects())
+      }
+      guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+        Log.notice(.api, "An image didn't load: the instance gave no image.")
+        return nil
+      }
+      return body
+    } catch {
+      Log.notice(.api, "An image didn't load.", detail: "\(error)")
+      return nil
+    }
+  }
+
+  /// The request for a store's image, from a store link's `image_url`. It never has the token, whatever its address.
+  /// It loads through the system's default cache. Nil for a text that is not an `http` or `https` address.
+  public static func storeImageRequest(_ address: String) -> URLRequest? {
+    guard let url = URL(string: address), ["http", "https"].contains(url.scheme?.lowercased()) else { return nil }
+    return URLRequest(url: url)
+  }
+
   // MARK: - Users, groups and occasions
 
   /// `GET /users`: every user that the session's user can see, each with its version.

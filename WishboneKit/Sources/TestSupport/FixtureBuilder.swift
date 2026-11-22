@@ -146,16 +146,21 @@ public struct FixtureBuilder: Sendable {
   /// Gives the user an avatar, as the user: a small image that the server keeps. Returns the image's ID.
   @discardableResult
   public func avatar(for person: Fixture.Person) async throws -> String {
+    let imageID = try await image(as: person)
+    try await person.signedIn().send("PATCH", "/users/me", json: ["avatar_image_id": .string(imageID)])
+      .expecting(200)
+    return imageID
+  }
+
+  /// Uploads a small image, as the user, attached to nothing yet. Returns the image's ID.
+  public func image(as person: Fixture.Person) async throws -> String {
     let session = try person.signedIn()
     var upload = URLRequest(url: server.url("/images"))
     upload.httpMethod = "POST"
     upload.setValue("Bearer \(session.token)", forHTTPHeaderField: "Authorization")
     upload.setValue("image/png", forHTTPHeaderField: "Content-Type")
     upload.httpBody = Self.onePixelPNG
-    let image = try await TestHTTP.send(upload).expecting(201).json
-    let imageID = try id(of: image)
-    try await session.send("PATCH", "/users/me", json: ["avatar_image_id": .string(imageID)]).expecting(200)
-    return imageID
+    return try id(of: try await TestHTTP.send(upload).expecting(201).json)
   }
 
   /// A PNG of one pixel.
@@ -252,16 +257,21 @@ public struct FixtureBuilder: Sendable {
   ///
   /// The item can come with store links, in the order given, each with an address and a price in cents or none.
   /// The server reads no store's page for them. `quantity` is how many the item asks for, and `isUnlimited` makes
-  /// it always wanted.
+  /// it always wanted. `imageIDs` are uploaded images, and the first is the primary image.
   public func item(
     _ title: String,
     on list: Fixture.List,
     as editor: Fixture.Person,
     quantity: Int = 1,
     isUnlimited: Bool = false,
-    storeLinks: [(url: String, priceMinor: Int?)] = []
+    storeLinks: [(url: String, priceMinor: Int?)] = [],
+    imageIDs: [String] = []
   ) async throws -> Fixture.Item {
     var body: [String: JSON] = ["title": .string(title)]
+    if let primary = imageIDs.first {
+      body["image_ids"] = .array(imageIDs.map { .string($0) })
+      body["primary_image_id"] = .string(primary)
+    }
     if quantity != 1 { body["quantity"] = .number(Double(quantity)) }
     if isUnlimited { body["is_unlimited"] = true }
     if !storeLinks.isEmpty {

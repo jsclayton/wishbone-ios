@@ -33,6 +33,8 @@ public struct WindowRoot: View {
         // Each time the window comes to the foreground, the session syncs. A session from an earlier launch shows
         // what is saved at once, and this brings it up to date.
         .reportsForeground(to: session)
+        // Every screen of the session shows the instance's images through its cache.
+        .environment(\.sessionImages, session.images)
         // Another session model is another session: its windows start again.
         .id(ObjectIdentifier(session))
       } else if let (block, address) = signInBlock {

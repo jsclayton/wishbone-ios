@@ -258,10 +258,8 @@ final class ProfileGateTests {
     let avatar = try #require(session.user?.avatar)
     #expect(try await record(of: robin)["avatar"]["id"].string == avatar.id)
     #expect(requests(on: Self.upload).count == 1)
-    // The avatar's request carries the token, to the instance address only.
-    let request = try #require(session.imageRequest(avatar))
-    #expect(request.url?.absoluteString == "\(try instance.address.text)\(avatar.url)")
-    #expect(request.value(forHTTPHeaderField: "Authorization")?.hasPrefix("Bearer ") == true)
+    // The new photo shows at once, from the image cache.
+    #expect(session.images.cached(avatar) == FixtureBuilder.onePixelPNG)
 
     // Remove, from the next draft. The profile is confirmed already, and stays so.
     var removing = ProfileDraft(try #require(session.user))

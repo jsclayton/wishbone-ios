@@ -148,6 +148,13 @@ struct LocalDatabase: Sendable {
     }
   }
 
+  /// The images that the app fetches ahead of time after a sync: each item's primary image, and each avatar.
+  func imagesToFetchAhead() async throws -> [ImageSummary] {
+    try await writer.read { database in
+      try ItemRow.fetchAll(database).compactMap(\.primaryImage) + UserRow.fetchAll(database).compactMap(\.avatar)
+    }
+  }
+
   /// The version of each user in the copy, by the user's ID: the users held in full, and the summaries.
   func userVersions() async throws -> (full: [String: String], summaries: [String: String]) {
     try await writer.read { database in
