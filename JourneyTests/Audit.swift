@@ -319,15 +319,17 @@ enum Audit {
       {
         return true
       }
-      // Content that scrolls under the tab bar: at the largest text size, a screen's rows go on below the bar, and
-      // the audit measures the text there against the system's glass, which a person reads only after scrolling
-      // it out. The exception is for contrast only, only at the largest text size, and only for a row that goes on
-      // below the bar's top edge: one that starts above the bar, or one that starts under it and goes on past the
-      // bottom of the screen. Which of the two a row is depends on how long the run's names are. An element that
-      // ends on the screen under the bar, such as a tab or the bar's own button, is never exempt.
-      if issue.auditType == .contrast, setting == largestText.label, let element = issue.element,
+      // Content that scrolls under the tab bar: a screen's rows go on below the bar, and the audit measures the text
+      // there against the system's glass, which a person reads only after scrolling it out. The exception is for
+      // contrast only, and only for a row that goes on below the bar's top edge. At the largest text size, that is
+      // one that starts above the bar, or one that starts under it and goes on past the bottom of the screen. Which
+      // of the two a row is depends on how long the run's names are. In the other settings, it is only a row that
+      // starts above the bar: a long screen, such as Home, has its last row there. An element that ends on the
+      // screen under the bar, such as a tab or the bar's own button, is never exempt.
+      if issue.auditType == .contrast, let element = issue.element,
         case let bar = app.tabBars.firstMatch, bar.exists, element.frame.maxY > bar.frame.minY,
-        element.frame.minY < bar.frame.minY || element.frame.maxY > app.windows.firstMatch.frame.maxY
+        element.frame.minY < bar.frame.minY
+          || (setting == largestText.label && element.frame.maxY > app.windows.firstMatch.frame.maxY)
       {
         return true
       }

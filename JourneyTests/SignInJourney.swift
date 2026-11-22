@@ -175,7 +175,12 @@ nonisolated final class SignInJourney: JourneyTestCase {
     }
     // The sidebar's shortcuts are not in a tab bar, so it never grows a "More" tab.
     XCTAssertFalse(tabs.buttons["More"].exists || tabs.buttons[Audit.words("More")].exists)
-    try await Audit.run(on: app, showing: "Home", in: self)
+    // Home has nothing in the next 60 days, so the countdown and Coming up each say so. Coming up is last, and its
+    // line goes on under the tab bar, where the Dynamic Type check can't measure it. At the largest text size, the
+    // journey scrolls it on the screen.
+    try await Audit.run(
+      on: app, showing: "Home", in: self, rowsThatLeaveTheScreen: ["Nothing in the next 60 days."],
+      rowsToScrollTo: ["Coming up"])
 
     for name in ["Lists", "Gifts"] {
       tabs.buttons[Audit.words(name)].tap()
@@ -247,7 +252,11 @@ nonisolated final class SignInJourney: JourneyTestCase {
     XCTAssertTrue(
       app.staticTexts.matching(lineWords).firstMatch.waitForExistence(timeout: 60), "The line didn't show on Home.")
     XCTAssertTrue(app.buttons[rowan.name].exists, "What is saved went with the instance.")
-    try await Audit.run(on: app, showing: "Home, with the line", in: self)
+    // The Dynamic Type check reports Home's "Nothing in the next 60 days." as "partially unsupported" in the
+    // default settings, as on Home itself. It is allowed as there, and never at the largest text size. Home's own
+    // audit scrolls Coming up on the screen at the largest text size.
+    try await Audit.run(
+      on: app, showing: "Home, with the line", in: self, rowsThatLeaveTheScreen: ["Nothing in the next 60 days."])
     app.terminate()
 
     // A relaunch with the instance still gone. Gifts has nothing saved, and no sync has reached the instance in this
