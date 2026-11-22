@@ -106,6 +106,9 @@ extension Device.Setup {
       keychain: SystemSessionKeychain(accessGroup: accessGroup),
       marker: installMarker(appGroup: appGroup),
       storage: .folder(.applicationSupportDirectory),
+      // The images come from the instance again, so they go in the app's own Caches folder, never the shared
+      // container.
+      images: .folder(.cachesDirectory),
       network: .system,
       refresh: SystemRefreshScheduler(),
       diagnostics: diagnostics,

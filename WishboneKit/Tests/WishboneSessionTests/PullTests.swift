@@ -22,7 +22,8 @@ struct PullTests {
     instance = try await Instance(server: try await TestServer.start())
   }
 
-  /// Signs a new device in, and waits for the titles. The first sync has ended by then.
+  /// Signs a new device in, and waits for the titles. The first sync, and the fetch of images ahead of time after
+  /// it, have ended by then.
   ///
   /// The user's record already has the device's time zone. So the sign-in reports none, and nothing changes the
   /// user after the first sync but what the test does.
@@ -36,6 +37,7 @@ struct PullTests {
     await device.signIn(pasting: try await instance.loginLink(for: person))
     let session = try #require(device.session)
     await until { session.primaryListItems.map(\.title) == titles }
+    await session.imagesFetchedAhead()
     return (device, session)
   }
 

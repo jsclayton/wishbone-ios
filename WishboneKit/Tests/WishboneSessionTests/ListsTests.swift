@@ -67,8 +67,8 @@ struct ListsTests {
     }
   }
 
-  /// Signs the person in on a new device, with a conditioner and a keychain of its own. The first sync has ended
-  /// when it returns.
+  /// Signs the person in on a new device, with a conditioner and a keychain of its own. The first sync, and the
+  /// fetch of images ahead of time after it, have ended when it returns.
   private func signedIn(
     as person: Fixture.Person,
     storage: SessionStorage = .memory
@@ -77,7 +77,9 @@ struct ListsTests {
     let instance = try await Instance(server: server)
     let device = instance.device(storage: storage, timeZone: .fixed(Self.zone))
     await device.signIn(pasting: try await instance.loginLink(for: person))
-    return Signed(person: person, instance: instance, device: device, session: try #require(device.session))
+    let session = try #require(device.session)
+    await session.imagesFetchedAhead()
+    return Signed(person: person, instance: instance, device: device, session: session)
   }
 
   // MARK: - The copy, and the instance's own answers
@@ -143,13 +145,17 @@ struct ListsTests {
       })
   }
 
-  /// Waits until the copy holds what the instance names for the person, each thing with its version.
+  /// Waits until the copy holds what the instance names for the person, each thing with its version, and the fetch
+  /// of images ahead of time has ended.
   private func inStep(_ signed: Signed, _ comment: Comment? = nil, sourceLocation: SourceLocation = #_sourceLocation)
     async throws
   {
     let named = try await entries(namedFor: signed.person)
     await until { entries(of: signed.session) == named }
     #expect(entries(of: signed.session) == named, comment, sourceLocation: sourceLocation)
+    // The fetch of images ahead of time, after the sync, has ended too. So its requests come before the test's
+    // next mark, and an exact list of what a sync asked holds only that sync's.
+    await signed.session.imagesFetchedAhead()
   }
 
   /// The kinds of the copy's entries, for the kinds of the lists.

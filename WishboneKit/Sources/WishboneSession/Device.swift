@@ -79,6 +79,10 @@ public final class Device {
     public var marker: any InstallMarker
     public var storage: SessionStorage
 
+    /// Where each session's image cache keeps its folder: the app's own Caches folder, never the shared container.
+    /// In memory, the cache keeps the images while the app runs.
+    public var images: SessionStorage
+
     /// The clock of every timeout.
     public var clock: any Clock<Duration>
 
@@ -109,6 +113,7 @@ public final class Device {
       keychain: any SessionKeychain,
       marker: any InstallMarker,
       storage: SessionStorage,
+      images: SessionStorage = .memory,
       clock: any Clock<Duration> = ContinuousClock(),
       timerClock: any Clock<Duration> = ContinuousClock(),
       network: any NetworkChanges = .unchanging,
@@ -121,6 +126,7 @@ public final class Device {
       self.keychain = keychain
       self.marker = marker
       self.storage = storage
+      self.images = images
       self.clock = clock
       self.timerClock = timerClock
       self.network = network
@@ -172,6 +178,7 @@ public final class Device {
     }
     guard let kept else {
       LocalDatabase.removeAll(in: setup.storage)
+      ImageCache.removeAll(in: setup.images)
       // With no session, nothing is scheduled, and no reminder is left.
       setup.refresh.cancelRefresh()
       setup.reminders.center.removeAll()
@@ -202,6 +209,7 @@ public final class Device {
       Log.fault(.session, "The session keychain can't forget the session.", detail: "\(error.status)")
     }
     LocalDatabase.removeAll(in: setup.storage)
+    ImageCache.removeAll(in: setup.images)
     setup.refresh.cancelRefresh()
     setup.reminders.center.removeAll()
     let client = APIClient(
@@ -392,7 +400,7 @@ public final class Device {
   }
 
   /// Forgets everything of the session on the device: its session model, the session keychain's item, the local
-  /// databases, and every reminder. Nothing of the session is left.
+  /// databases, the image cache's folder, and every reminder. Nothing of the session is left.
   private func forget(_ model: SessionModel) async {
     await model.end()
     do {
@@ -402,6 +410,7 @@ public final class Device {
       Log.fault(.session, "The session keychain can't forget the session.", detail: "\(error.status)")
     }
     LocalDatabase.removeAll(in: setup.storage)
+    ImageCache.removeAll(in: setup.images)
     // With no session, nothing is scheduled, and no reminder is left.
     setup.refresh.cancelRefresh()
     setup.reminders.center.removeAll()
@@ -417,7 +426,8 @@ public final class Device {
     let client = APIClient(
       session: session, userAgent: setup.userAgent, clock: setup.clock, diagnostics: setup.diagnostics)
     return SessionModel(
-      session: session, client: client, database: database, timeZone: setup.timeZone,
+      session: session, client: client, database: database,
+      imageFolder: ImageCache.folder(of: session, in: setup.images), timeZone: setup.timeZone,
       timerClock: setup.timerClock, network: setup.network, refresh: setup.refresh, diagnostics: setup.diagnostics,
       reminders: setup.reminders, endedByServer: { [weak self] model in await self?.endedByServer(model) })
   }

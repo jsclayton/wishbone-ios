@@ -483,12 +483,8 @@ private struct PhotoPreview: View {
     Group {
       if case .new = photo, let newPhoto {
         newPhoto.resizable().scaledToFill()
-      } else if case .keep = photo, let avatar = session.user?.avatar, let request = session.imageRequest(avatar) {
-        AsyncImage(request: request) { image in
-          image.resizable().scaledToFill()
-        } placeholder: {
-          outline
-        }
+      } else if case .keep = photo, let avatar = session.user?.avatar {
+        SessionImage(image: avatar) { outline }
       } else {
         outline
       }

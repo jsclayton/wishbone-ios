@@ -5,6 +5,13 @@ import WishboneSession
 /// change.
 final class TestNetwork: NetworkChanges {
   private let streams = Mutex<[AsyncStream<Void>.Continuation]>([])
+  private let cost = Mutex(false)
+
+  /// Whether the network is expensive or constrained. A test sets it.
+  var isExpensiveOrConstrained: Bool {
+    get { cost.withLock { $0 } }
+    set { cost.withLock { $0 = newValue } }
+  }
 
   func changes() -> AsyncStream<Void> {
     let (stream, continuation) = AsyncStream.makeStream(of: Void.self)

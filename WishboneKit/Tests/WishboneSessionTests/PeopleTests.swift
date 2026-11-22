@@ -106,13 +106,17 @@ struct PeopleTests {
       })
   }
 
-  /// Waits until the copy holds what the instance names for the person, each thing with its version.
+  /// Waits until the copy holds what the instance names for the person, each thing with its version, and the fetch
+  /// of images ahead of time has ended.
   private func inStep(_ signed: Signed, _ comment: Comment? = nil, sourceLocation: SourceLocation = #_sourceLocation)
     async throws
   {
     let named = try await entries(namedFor: signed.person)
     await until { entries(of: signed.session) == named }
     #expect(entries(of: signed.session) == named, comment, sourceLocation: sourceLocation)
+    // The fetch of images ahead of time, after the sync, has ended too. So its requests come before the test's
+    // next mark, and an exact list of what a sync asked holds only that sync's.
+    await signed.session.imagesFetchedAhead()
   }
 
   /// The IDs of a collection, as the person's own session reads it, in the server's order.
@@ -815,10 +819,13 @@ extension PeopleTests.Signed {
     let instance: Instance
     let device: Device
 
-    /// Signs the person in. The first sync has ended when it returns.
+    /// Signs the person in. The first sync, and the fetch of images ahead of time after it, have ended when it
+    /// returns.
     func signIn() async throws -> PeopleTests.Signed {
       await device.signIn(pasting: try await instance.loginLink(for: person))
-      return .init(person: person, instance: instance, device: device, session: try #require(device.session))
+      let session = try #require(device.session)
+      await session.imagesFetchedAhead()
+      return .init(person: person, instance: instance, device: device, session: session)
     }
   }
 }

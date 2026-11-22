@@ -45,6 +45,7 @@ struct Instance {
   /// Its network changes only when a test changes it.
   func device(
     storage: SessionStorage = .memory,
+    images: SessionStorage = .memory,
     marker: (any InstallMarker)? = nil,
     clock: any Clock<Duration> = ContinuousClock(),
     timerClock: any Clock<Duration> = TestClock(),
@@ -58,6 +59,7 @@ struct Instance {
       Device.Setup(
         userAgent: UserAgent(version: "1.0", isPad: false), keychain: keychain, marker: marker ?? self.marker,
         storage: storage,
+        images: images,
         clock: clock,
         timerClock: timerClock,
         network: network,

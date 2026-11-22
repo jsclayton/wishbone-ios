@@ -168,7 +168,7 @@ private struct UserPageItemRow: View {
       size.isAccessibilitySize
       ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) : AnyLayout(HStackLayout(spacing: 12))
     layout {
-      ItemTile(userID: tileUserID)
+      ItemTile(image: item.row.primaryImage, userID: tileUserID)
       VStack(alignment: .leading, spacing: 2) {
         Text(item.row.title)
           .font(.body.weight(.semibold))
@@ -210,28 +210,36 @@ struct ClaimLines: View {
   }
 }
 
-/// The place of an item's image: a soft tile in the recipient's person color, with a colored symbol, until images
-/// come. Color carries no meaning, and the title sits beside it, so VoiceOver skips it. See "A color for each
-/// person" in `docs/spec.md`.
+/// An item's image: its primary image as it is, from the session's image cache, or else a soft tile in the
+/// recipient's person color, with a colored symbol. It is decoration in a row whose title sits beside it, so
+/// VoiceOver skips it. See "A color for each person" and "Images" in `docs/spec.md`.
 ///
-/// **Provisional.** Plain default: a soft tinted tile with a colored symbol.
+/// **Provisional.** Plain default: the image filling a rounded square, or a soft tinted tile with a colored symbol.
 private struct ItemTile: View {
+  let image: ImageSummary?
   let userID: String
 
   @ScaledMetric(relativeTo: .body) private var scaled: CGFloat = 56
   private var side: CGFloat { min(scaled, 112) }
 
   var body: some View {
+    SessionImage(image: image) { tile }
+      .frame(width: side, height: side)
+      .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+      .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+      .accessibilityHidden(true)
+  }
+
+  /// The tile, while there is no image.
+  private var tile: some View {
     let color = PersonPalette.color(forUserID: userID)
-    RoundedRectangle(cornerRadius: 10, style: .continuous)
+    return RoundedRectangle(cornerRadius: 10, style: .continuous)
       .fill(color.opacity(0.15))
       .overlay {
         Image(systemName: "gift")
           .font(.system(size: side * 0.4))
           .foregroundStyle(color)
       }
-      .frame(width: side, height: side)
-      .accessibilityHidden(true)
   }
 }
 

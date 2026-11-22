@@ -1,11 +1,11 @@
 import SwiftUI
 import WishboneSession
 
-/// A user's initials avatar, in their person color: white initials on a soft gradient of the color. It never
-/// stands alone: a name always sits beside it, so VoiceOver skips it and reads the name. See "A color for each
-/// person" in `docs/spec.md`.
+/// A user's avatar: their photo as it is, from the session's image cache, or else their initials in their person
+/// color, white on a soft gradient of the color. It never stands alone: a name always sits beside it, so VoiceOver
+/// skips it and reads the name. See "A color for each person" and "Images" in `docs/spec.md`.
 ///
-/// **Provisional.** Plain default: a soft gradient initials avatar. The photo comes with the user's page.
+/// **Provisional.** Plain default: the photo in a circle, or a soft gradient initials avatar.
 struct PersonAvatar: View {
   let user: UserRow
 
@@ -14,10 +14,20 @@ struct PersonAvatar: View {
   private var size: CGFloat { min(scaled, 88) }
 
   var body: some View {
+    SessionImage(image: user.avatar) { initialsAvatar }
+      .frame(width: size, height: size)
+      .clipShape(Circle())
+      // A wide photo draws past the frame, and the clip doesn't change where a tap lands.
+      .contentShape(Circle())
+      .accessibilityHidden(true)
+  }
+
+  /// The initials in the person color, while there is no photo.
+  private var initialsAvatar: some View {
     let color = PersonPalette.color(forUserID: user.id)
     // A drawing, not a view of text: the initials are a picture of the name that sits beside them. As text, the
     // accessibility audit measured them against the corners of their frame, outside the circle.
-    Canvas { context, canvas in
+    return Canvas { context, canvas in
       let circle = Path(ellipseIn: CGRect(origin: .zero, size: canvas))
       // The lightest stop is the palette's color, so the initials have at least its contrast everywhere.
       context.fill(
@@ -32,8 +42,6 @@ struct PersonAvatar: View {
       context.scaleBy(x: scale, y: scale)
       context.draw(text, at: .zero)
     }
-    .frame(width: size, height: size)
-    .accessibilityHidden(true)
   }
 
   /// The user's initials, as the locale abbreviates a name: from the name, and the last name when the session's
