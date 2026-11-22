@@ -254,9 +254,11 @@ nonisolated final class SignInJourney: XCTestCase {
     XCTAssertTrue(app.buttons[rowan.name].exists, "What is saved went with the instance.")
     // The Dynamic Type check reports Home's "Nothing in the next 60 days." as "partially unsupported" in the
     // default settings, as on Home itself. It is allowed as there, and never at the largest text size. Home's own
-    // audit scrolls Coming up on the screen at the largest text size.
+    // audit scrolls Coming up on the screen at the largest text size. In the double-length pseudo-language, the line
+    // above People pushes Rowan's row down, and the check reports it the same way.
     try await Audit.run(
-      on: app, showing: "Home, with the line", in: self, rowsThatLeaveTheScreen: ["Nothing in the next 60 days."])
+      on: app, showing: "Home, with the line", in: self,
+      rowsThatLeaveTheScreen: ["Nothing in the next 60 days.", rowan.name])
     app.terminate()
 
     // A relaunch with the instance still gone. Gifts has nothing saved, and no sync has reached the instance in this
