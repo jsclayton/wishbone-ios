@@ -152,8 +152,9 @@ struct ReminderSettingsTests {
     #expect(session.reminderAuthorization == .provisional)
     #expect(center.pending.count == 2)
 
-    // A second tap while the first waits on iOS asks nothing.
-    center.hold(.authorization)
+    // A second tap while the system alert of the first shows asks nothing. The authorization is still provisional
+    // then, so only the tap under way stops it.
+    center.hold(.requestFullAuthorization)
     let first = Task { await session.showRemindersOnLockScreen() }
     await center.waitUntilHeld()
     await session.showRemindersOnLockScreen()

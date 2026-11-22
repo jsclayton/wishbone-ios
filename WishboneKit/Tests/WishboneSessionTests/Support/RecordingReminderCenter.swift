@@ -8,12 +8,15 @@ import WishboneSession
 /// gets it, the first time, as iOS gives it while the user hasn't answered. A request for full authorization gets
 /// the user's answer that the test gives, as the system alert does.
 ///
-/// A test can hold the next call to `authorization()` or `replacePending(with:)`, to see what happens while the
-/// session waits on iOS.
+/// A test can hold the next call to `authorization()`, `requestFullAuthorization()` or `replacePending(with:)`, to see
+/// what happens while the session waits on iOS.
 final class RecordingReminderCenter: ReminderCenter {
   /// A call that a test can hold.
   enum Call: Equatable {
     case authorization
+
+    /// Held before the user answers the system alert: the authorization is still provisional.
+    case requestFullAuthorization
     case replacePending
   }
 
@@ -133,6 +136,7 @@ final class RecordingReminderCenter: ReminderCenter {
   }
 
   func requestFullAuthorization() async {
+    await pause(at: .requestFullAuthorization)
     state.withLock { state in
       state.fullAsks += 1
       // The system alert shows only while the user hasn't answered it: from provisional, or with no answer yet.
