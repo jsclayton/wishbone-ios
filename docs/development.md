@@ -160,6 +160,7 @@ To move the pin:
 - Every test server runs with `TZ=UTC`, `WISHBONE_LISTEN_ADDRESS=127.0.0.1` so that it is not on the local network, a high `WISHBONE_RATE_LIMIT_REDEEM`, `WISHBONE_E2E_HOOKS=true`, and `WISHBONE_EXTRACT_ALLOW_PRIVATE=true`.
 - The package tests run in parallel. The simulator tests run one at a time.
 - `TestHTTP` and the conditioner send each request to a test server on a new connection that no other request used. The test server resets a connection that has carried no request for 10 seconds, so a request that a client puts on an idle pooled connection at that moment is lost: `URLSession` sends a `GET` again, but fails a `POST`, `PATCH`, `PUT` or `DELETE` with `networkConnectionLost`. Each of these requests connects to `127.0.0.1`, not `localhost`, so it doesn't look the name up each time, and sends `Connection: close`, so the server closes first and no client port waits in `TIME_WAIT`.
+- At most 16 requests of `TestHTTP` are on their way at once, in each test process. A new connection waits in the server's listen queue until the server accepts it, and macOS caps that queue at 128 (`kern.ipc.somaxconn`). It resets one more connection, and `URLSession` fails the request with `networkConnectionLost` at once, a `GET` too. A test server on a busy machine accepts late, and a test can make 200 users at once for a group of more than one page. The conditioner's forwards take no slot, so a request that the harness sends through the conditioner never waits for its own forward.
 
 ### Temporary folders: ScratchDirectory
 
