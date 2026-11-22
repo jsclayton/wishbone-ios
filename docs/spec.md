@@ -870,7 +870,7 @@ A sync sends the unsent changes, then pulls. It runs:
 - every 60 seconds while any window is in the foreground and the instance answers (the timer stops while the instance is unreachable)
 - once when the last unsent change is sent
 - at once when the share extension says that it added an item
-- in background app refresh: the unsent changes, a pull, then the reminders (section 8) and the widget's file are made again from the copy
+- in background app refresh: the unsent changes, a pull, then the reminders (section 8) and the widget's file are made again from the copy. The app asks iOS for the next run each time it goes to the background and at the end of each run, no earlier than one hour away. iOS decides when.
 
 A pull brings the copy up to date:
 
