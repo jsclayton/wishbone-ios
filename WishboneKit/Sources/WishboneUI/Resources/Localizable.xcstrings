@@ -190,6 +190,12 @@
     "Added by %@" : {
 
     },
+    "All groups" : {
+
+    },
+    "All users" : {
+
+    },
     "Always wanted" : {
 
     },
@@ -351,6 +357,9 @@
     "No stores are blocked." : {
 
     },
+    "No user has that name." : {
+
+    },
     "No year" : {
 
     },
@@ -450,6 +459,9 @@
 
     },
     "Scan QR code" : {
+
+    },
+    "Search users" : {
 
     },
     "Settings" : {
