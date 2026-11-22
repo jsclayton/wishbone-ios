@@ -36,6 +36,11 @@ nonisolated final class ClaimJourney: XCTestCase {
 
     // Signed in as the giver, on Home.
     let app = Audit.app()
+    // Text that starts with the words. In the double-length pseudo-language, the words of a string with a number
+    // in it come twice, after the number is put in, so the start is the same in both runs.
+    let startsWith = { (words: String) in
+      app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", words)).firstMatch
+    }
     app.launchEnvironment["WISHBONE_JOURNEY_START_SIGNED_OUT"] = "1"
     app.launchEnvironment["WISHBONE_JOURNEY_LOGIN_LINK"] = try await builder.loginLink(for: robin).absoluteString
     app.launch()
@@ -53,7 +58,7 @@ nonisolated final class ClaimJourney: XCTestCase {
     row.tap()
     let claim = app.buttons[Audit.words("I'll get this")]
     XCTAssertTrue(claim.waitForExistence(timeout: 10), "The item's page has no I'll get this.")
-    XCTAssertTrue(app.staticTexts[Audit.words("2 of 2 still wanted")].exists, "The page doesn't say how many.")
+    XCTAssertTrue(startsWith("2 of 2 still wanted").exists, "The page doesn't say how many.")
     // How many, and the button, are the last rows: a larger text pushes them off the screen. The journey doesn't
     // scroll to them at the largest text size: the audit of the scrolled screen reports issues with no element, so
     // they can't be told apart.
@@ -63,10 +68,10 @@ nonisolated final class ClaimJourney: XCTestCase {
     // The claim waits for the server. Then the line, which names the occasion, takes the button's place, and one
     // fewer is still wanted.
     claim.tap()
-    let line = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "You claimed 1 for ")).firstMatch
+    let line = startsWith("You claimed 1 for ")
     XCTAssertTrue(line.waitForExistence(timeout: 30), "The line of the gift didn't show after the claim.")
     XCTAssertFalse(claim.exists, "I'll get this still shows after the claim.")
-    XCTAssertTrue(app.staticTexts[Audit.words("1 of 2 still wanted")].exists, "The page doesn't show one fewer.")
+    XCTAssertTrue(startsWith("1 of 2 still wanted").exists, "The page doesn't show one fewer.")
 
     // The server has the gift.
     let gifts = try await robin.signedIn().get("/gifts?item_id=\(kite.id)&giver_id=me&state=open")
