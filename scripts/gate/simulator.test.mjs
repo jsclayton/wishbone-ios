@@ -540,7 +540,7 @@ test('journeys that fail with the launch flake run again once, keep the first ru
   assert.deepEqual(runs, ['flake', 'pass']);
   assert.equal(kept, 1);
   assert.deepEqual(lines, [
-    `  ${signIn}: the launch got no process ID (the named flake "${launchFlake.name}"), so these journeys run again, once. The first run is in first.xcresult and first.log.`,
+    `  ${signIn}: the launch got no process ID (the named flake "${launchFlake.name}"), so this run of the journeys runs again, once. The first run is in first.xcresult and first.log.`,
   ]);
 });
 
@@ -654,4 +654,21 @@ test('the line after the journeys names each change that was sent again, and the
     '    the default settings to dark mode. The simulator read: appearance dark, increase_contrast disabled, content_size large.',
   ]);
   assert.match(resendLines([{}, {}])[0], /sent 2 changes of setting again/);
+});
+
+test("CI uploads the gate's files after a pass too, when a first try was kept", (t) => {
+  const ci = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  const gateJob = ci.slice(ci.indexOf('\n  gate:\n'), ci.indexOf('\n  ci-ok:\n'));
+  const upload = /^\s+- if: (.+)\n\s+uses: actions\/upload-artifact@/m.exec(gateJob);
+  assert.ok(upload, 'the Gate job has an upload step with a condition');
+  const condition = upload[1];
+  assert.match(condition, /^failure\(\) \|\| hashFiles\(/, 'the upload runs on a failure, or when a first try was kept');
+
+  // The patterns match the names that keepFirstTry gives.
+  const directory = mkdtempSync(path.join(tmpdir(), 'wishbone-gate-test-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const [bundle, log] = keepFirstTry(directory, path.join(directory, 'journeys-settings.xcresult'), 'journeys-settings.log')
+    .map((kept) => path.basename(kept).replace(/^journeys-settings/, ''));
+  assert.ok(condition.includes(`'build/gate/**/*${log}'`), `${condition} has no pattern for *${log}`);
+  assert.ok(condition.includes(`'build/gate/**/*${bundle}/**'`), `${condition} has no pattern for *${bundle}`);
 });
