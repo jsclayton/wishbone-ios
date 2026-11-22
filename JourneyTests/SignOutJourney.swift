@@ -81,10 +81,13 @@ nonisolated final class SignOutJourney: XCTestCase {
     let early = app.buttons[Audit.words("Remind me early")]
     XCTAssertTrue(early.waitForExistence(timeout: 10), "Reminders has no Remind me early row.")
     XCTAssertEqual(early.value as? String, Audit.words("2 weeks"))
-    // The last line is the footer, which a larger text pushes off the screen. The journey doesn't scroll to it at
-    // the largest text size: there the line on 9:00 goes whole under the bar, and the audit reports it with no
-    // element, so it can't be told apart.
-    try await Audit.run(on: app, showing: "Reminders", in: self, rowsThatLeaveTheScreen: ["A reminder names"])
+    // The rows under the timing, which a larger text pushes off the screen: Show on Lock Screen with its line, as
+    // the simulator gives provisional permission, and the footer. The journey doesn't scroll to them at the largest
+    // text size: there the line on 9:00 goes whole under the bar, and the audit reports it with no element, so it
+    // can't be told apart.
+    try await Audit.run(
+      on: app, showing: "Reminders", in: self,
+      rowsThatLeaveTheScreen: ["Show on Lock Screen", "Reminders arrive quietly", "A reminder names"])
     app.navigationBars[Audit.words("Reminders")].buttons.firstMatch.tap()
     XCTAssertTrue(
       app.navigationBars[Audit.words("Settings")].waitForExistence(timeout: 10), "Back didn't show Settings.")
