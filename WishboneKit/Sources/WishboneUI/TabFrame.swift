@@ -47,7 +47,7 @@ public struct TabFrame: View {
       }
 
       Tab(value: WindowTab.lists) {
-        stack(on: .lists) { ListsStandInScreen(session: session).toolbar { avatar } }
+        stack(on: .lists) { ListsScreen(session: session).toolbar { avatar } }
       } label: {
         Label {
           Text("Lists", bundle: #bundle)
