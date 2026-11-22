@@ -5,14 +5,17 @@ import WishboneSession
 /// A user's page: the header, the line for a special case, good to know, the items of the user's primary list, and
 /// Other lists. The user's own page is this same page, with no claim state. See `docs/screens/user.md`.
 ///
-/// Claim state shows only as the server sends it, and the page never says who claimed. The Add item row, an item's
-/// page, and the For {name} part come later.
+/// Claim state shows only as the server sends it, and the page never says who claimed. The Add item row and the For
+/// {name} part come later.
 ///
 /// **Provisional.** Plain default: a system list. The header is the avatar in the person's color with the name
 /// under it, each part is a section, and the items are rows with the image at the leading edge.
 struct UserPageScreen: View {
   let page: UserPage
   let session: SessionModel
+
+  /// The window's pages on this tab: an item's row pushes its page.
+  @Binding var pages: [Page]
 
   var body: some View {
     List {
@@ -39,7 +42,8 @@ struct UserPageScreen: View {
             noItems(on: list)
           }
           ForEach(page.items) { item in
-            ItemRowView(item: item, tileUserID: list.recipientIDs.first ?? page.user.id)
+            ItemRowLink(
+              item: item, tileUserID: list.recipientIDs.first ?? page.user.id, session: session, pages: $pages)
           }
         }
       }

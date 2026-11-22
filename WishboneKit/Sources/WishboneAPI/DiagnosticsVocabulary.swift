@@ -284,6 +284,7 @@ public enum PlaceKind: String, Sendable, CaseIterable {
   case add
   case listPage = "list page"
   case userPage = "user page"
+  case itemPage = "item page"
   case people
   case settings
 }
