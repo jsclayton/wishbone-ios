@@ -1,6 +1,9 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "%@ hasn't added anything yet." : {
+
+    },
     "%@ is in 1 week" : {
 
     },
@@ -59,6 +62,52 @@
     "%@'s birthday is in 4 weeks" : {
 
     },
+    "%@, opens in browser" : {
+
+    },
+    "%@–%@" : {
+      "comment" : "A price range on a row",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@–%2$@"
+          }
+        }
+      }
+    },
+    "%lld items" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld item"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld items"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld of %lld still wanted" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld of %2$lld still wanted"
+          }
+        }
+      }
+    },
     "A birthday is required." : {
 
     },
@@ -77,10 +126,16 @@
     "Add a photo" : {
 
     },
+    "Always wanted" : {
+
+    },
     "Back" : {
 
     },
     "Birthday" : {
+
+    },
+    "Birthday: %@" : {
 
     },
     "Blocked stores" : {
@@ -141,6 +196,9 @@
 
     },
     "Gifts" : {
+
+    },
+    "Good to know" : {
 
     },
     "Home" : {
@@ -219,7 +277,23 @@
     "Not here" : {
 
     },
+    "Nothing here yet. Tap Add item to start the list." : {
+
+    },
+    "Only the admin can reactivate %@. Until then, you can't change anything for %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only the admin can reactivate %1$@. Until then, you can't change anything for %2$@."
+          }
+        }
+      }
+    },
     "Open Settings" : {
+
+    },
+    "Other lists" : {
 
     },
     "Paste a link or type what you want" : {
@@ -333,6 +407,16 @@
     "Try again" : {
 
     },
+    "Turns %lld on %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turns %1$lld on %2$@"
+          }
+        }
+      }
+    },
     "Unblock" : {
 
     },
@@ -373,7 +457,16 @@
     "You can't do this any more." : {
 
     },
+    "You claimed %lld" : {
+
+    },
     "You need a new login link to sign in again." : {
+
+    },
+    "You see %@ because you're the admin. Their lists show only to people who share a group with them." : {
+
+    },
+    "You see what's been claimed here. Fully claimed items don't show." : {
 
     },
     "You use Wishbone in a browser. Open your sign-in screen there. It shows a QR code for you." : {

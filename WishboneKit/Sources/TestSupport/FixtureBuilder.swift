@@ -96,16 +96,20 @@ public struct FixtureBuilder: Sendable {
 
   // MARK: - Users
 
-  /// Makes a user, as the admin, and signs them in with a login link.
+  /// Makes a user, as the admin, and signs them in with a login link. The birthday has a year only when
+  /// `birthYear` gives one.
   public func person(
     _ name: String,
     birthday: (month: Int, day: Int) = (6, 15),
+    birthYear: Int? = nil,
     parents: [Fixture.Person] = [],
     signedIn: Bool = true
   ) async throws -> Fixture.Person {
+    var date: [String: JSON] = ["month": .number(Double(birthday.month)), "day": .number(Double(birthday.day))]
+    date["year"] = birthYear.map { .number(Double($0)) }
     let body: JSON = [
       "name": .string(self.name(name)),
-      "birthday": ["month": .number(Double(birthday.month)), "day": .number(Double(birthday.day))],
+      "birthday": .object(date),
       "parent_ids": .array(parents.map { .string($0.id) }),
     ]
     let user = try await adminSession.post("/users", body)
@@ -245,14 +249,19 @@ public struct FixtureBuilder: Sendable {
   /// Adds an item to the list, as a user who can edit the list.
   ///
   /// The item can come with store links, in the order given, each with an address and a price in cents or none.
-  /// The server reads no store's page for them.
+  /// The server reads no store's page for them. `quantity` is how many the item asks for, and `isUnlimited` makes
+  /// it always wanted.
   public func item(
     _ title: String,
     on list: Fixture.List,
     as editor: Fixture.Person,
+    quantity: Int = 1,
+    isUnlimited: Bool = false,
     storeLinks: [(url: String, priceMinor: Int?)] = []
   ) async throws -> Fixture.Item {
     var body: [String: JSON] = ["title": .string(title)]
+    if quantity != 1 { body["quantity"] = .number(Double(quantity)) }
+    if isUnlimited { body["is_unlimited"] = true }
     if !storeLinks.isEmpty {
       body["store_links"] = .array(
         storeLinks.map { link -> JSON in
@@ -288,10 +297,12 @@ public struct FixtureBuilder: Sendable {
     _ item: Fixture.Item,
     as giver: Fixture.Person,
     for occasion: Fixture.Occasion? = nil,
+    quantity: Int = 1,
     fromLabel: String? = nil,
     note: String? = nil
   ) async throws -> Fixture.Gift {
     var body: [String: JSON] = [:]
+    if quantity != 1 { body["quantity"] = .number(Double(quantity)) }
     body["occasion_id"] = occasion.map { .string($0.id) }
     body["from_label"] = fromLabel.map { .string($0) }
     body["note"] = note.map { .string($0) }
