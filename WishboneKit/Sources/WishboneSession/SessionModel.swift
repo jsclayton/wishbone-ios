@@ -350,13 +350,23 @@ public final class SessionModel {
     return await next.value
   }
 
-  /// Starts a sync, as the one that runs, and returns its outcome when it ends.
+  /// Starts a sync, as the one that runs, and returns its outcome when it ends. After a sync that succeeded, it
+  /// starts the fetch of images ahead of time, which nothing waits for, and returns when the reminders are rebuilt.
+  ///
+  /// Neither is part of the sync that runs. The rebuild can wait for iOS, which took more than a minute to answer the
+  /// first ask for authorization on a simulator. A sync that waited for it held every later sync, and with them the
+  /// line "Can't reach {address}" after the instance went away.
   private func startSync() async -> SyncOutcome {
     guard !hasEnded, versionBlock == nil else { return .stopped }
     let task = Task { await runSync() }
     running = task
     let outcome = await task.value
     if running == task { running = nil }
+    // Only a sync that succeeded rebuilds the reminders and fetches images. A failed sync leaves both as they are.
+    if outcome == .succeeded, !hasEnded {
+      fetchImagesAhead()
+      await rebuildReminders()
+    }
     return outcome
   }
 
@@ -375,11 +385,6 @@ public final class SessionModel {
       await endedByServer(self)
     }
     let outcome = syncEnded(end)
-    // Only a sync that succeeded rebuilds the reminders. A failed sync leaves the set as it is.
-    if outcome == .succeeded, !hasEnded {
-      await rebuildReminders()
-      fetchImagesAhead()
-    }
     diagnostics.leave(.syncEnded(outcome.end))
     return outcome
   }
