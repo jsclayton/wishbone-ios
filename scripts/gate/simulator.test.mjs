@@ -20,6 +20,9 @@ import {
   pickDevice,
   readinessAnswerLimitMs,
   readinessCallLimitMs,
+  resendAnswerLimitMs,
+  resendFlake,
+  resendLines,
   resultBundles,
   runAgainOnLaunchFlake,
   settingCallLimitMs,
@@ -590,4 +593,65 @@ test('a run that died before it wrote its bundle or its log has nothing to move 
   const kept = keepFirstTry(directory, path.join(directory, 'journeys-settings.xcresult'), 'journeys-settings.log');
   assert.equal(existsSync(kept[0]), false);
   assert.equal(existsSync(kept[1]), false);
+});
+
+test("the settings helper sends a change again from the setting before it, and remembers it with what the simulator read", async (t) => {
+  const { applier, ran } = fakeSimulator();
+  await applier.apply(settings[0]);
+  const limits = [];
+  const helper = await startSettingsHelper(
+    (setting, options) => {
+      limits.push(options?.answerLimitMs);
+      return applier.apply(setting, options);
+    },
+    { readSettings: () => applier.read() },
+  );
+  t.after(() => helper.close());
+  const post = (path) => fetch(`${helper.address}/settings/${path}`, { method: 'POST' });
+  assert.equal((await post('dark-mode')).status, 204);
+  ran.splice(0);
+  // The app went on showing the light screen, so the journey sends the change to dark mode again.
+  assert.equal((await post('dark-mode?after=default')).status, 204);
+  assert.deepEqual(ran.splice(0), ['read appearance', 'read increase_contrast', 'read content_size', 'appearance light', 'appearance dark']);
+  // And back to the default, from dark mode.
+  assert.equal((await post('default')).status, 204);
+  assert.equal((await post('default?after=dark-mode')).status, 204);
+  assert.deepEqual(ran.splice(-3), ['read content_size', 'appearance dark', 'appearance light']);
+  // A change sent again is a read and two changes, which share the helper's answer limit, so the journey's wait
+  // still holds. Each change has time for a call that hangs once, a read, and the call again.
+  const share = resendAnswerLimitMs;
+  assert.deepEqual(limits, [undefined, share, share, undefined, share, share]);
+  assert.ok(3 * settingReadLimitMs + 2 * share <= helperAnswerLimitMs);
+  assert.ok(2 * settingCallLimitMs + settingPauseMs + settingReadLimitMs <= share);
+  assert.deepEqual(helper.resends(), [
+    { setting: 'dark mode', after: 'the default settings', read: 'appearance dark, increase_contrast disabled, content_size large' },
+    { setting: 'the default settings', after: 'dark mode', read: 'appearance light, increase_contrast disabled, content_size large' },
+  ]);
+  // A change from a setting that doesn't exist, or from the setting itself, is no change.
+  assert.equal((await post('dark-mode?after=double-length')).status, 404);
+  assert.equal((await post('dark-mode?after=dark-mode')).status, 404);
+  assert.equal(helper.resends().length, 2);
+});
+
+test("the settings applier reads each option back, and says which it couldn't read", async () => {
+  const { applier } = fakeSimulator();
+  await applier.apply(settings[1]);
+  assert.equal(await applier.read(), 'appearance light, increase_contrast disabled, content_size accessibility-extra-extra-extra-large');
+  const failing = settingsApplier('SIM', {
+    run: async (command) => {
+      if (command[2] === 'appearance') throw new Error('No devices are booted.');
+      return 'enabled\n';
+    },
+  });
+  assert.equal(await failing.read(), 'appearance unread, increase_contrast enabled, content_size enabled');
+  assert.equal(failing.calls(), 0, 'a read is not a call that changes a setting');
+});
+
+test('the line after the journeys names each change that was sent again, and the flake, and there is none when none was', () => {
+  assert.deepEqual(resendLines([]), []);
+  assert.deepEqual(resendLines([{ setting: 'dark mode', after: 'the default settings', read: 'appearance dark, increase_contrast disabled, content_size large' }]), [
+    `  The journeys sent 1 change of setting again, because the app went on showing the screen as it was (the named flake "${resendFlake}"):`,
+    '    the default settings to dark mode. The simulator read: appearance dark, increase_contrast disabled, content_size large.',
+  ]);
+  assert.match(resendLines([{}, {}])[0], /sent 2 changes of setting again/);
 });
