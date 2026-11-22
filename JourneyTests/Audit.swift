@@ -247,9 +247,12 @@ enum Audit {
       }
       // Content that scrolls under the tab bar: at the largest text size, a screen's rows go on below the bar, and
       // the audit measures the text there against the system's glass, which a person reads only after scrolling
-      // it out. The exception is for contrast only, and only for an element that the tab bar covers in part.
-      if issue.auditType == .contrast, let element = issue.element,
-        case let bar = app.tabBars.firstMatch, bar.exists, element.frame.intersects(bar.frame)
+      // it out. The exception is for contrast only, only at the largest text size, and only for an element that
+      // starts above the bar and goes on below its top edge. An element wholly inside the bar, such as a tab, is
+      // never exempt.
+      if issue.auditType == .contrast, setting == largestText.label, let element = issue.element,
+        case let bar = app.tabBars.firstMatch, bar.exists,
+        element.frame.minY < bar.frame.minY, element.frame.maxY > bar.frame.minY
       {
         return true
       }

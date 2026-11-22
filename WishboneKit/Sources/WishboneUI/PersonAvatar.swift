@@ -50,10 +50,9 @@ struct PersonAvatar: View {
 /// it.
 struct PersonName: View {
   let user: UserRow
-  var alignment = HorizontalAlignment.leading
 
   var body: some View {
-    VStack(alignment: alignment, spacing: 2) {
+    VStack(alignment: .leading, spacing: 2) {
       Text(user.name)
         .fixedSize(horizontal: false, vertical: true)
       if user.isDeactivated {
@@ -63,6 +62,5 @@ struct PersonName: View {
           .fixedSize(horizontal: false, vertical: true)
       }
     }
-    .multilineTextAlignment(alignment == .center ? .center : .leading)
   }
 }

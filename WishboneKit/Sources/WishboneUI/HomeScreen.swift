@@ -139,7 +139,8 @@ private struct Columns: Layout {
   }
 
   func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-    let width = proposal.width ?? (minimum * 3 + spacing * 2)
+    // A width that isn't finite, such as a stack's probe for how far a view can grow, is no width.
+    let width = proposal.width.flatMap { $0.isFinite ? $0 : nil } ?? (minimum * 3 + spacing * 2)
     let (count, column) = columns(in: width)
     let heights = rowHeights(subviews, count: count, width: column)
     return CGSize(width: width, height: heights.reduce(0, +) + spacing * CGFloat(max(0, heights.count - 1)))
