@@ -1,0 +1,107 @@
+import Synchronization
+import XCTest
+
+/// The test case of a journey. While `Screenshot.take` asks XCTest for a screenshot, it keeps XCTest's own
+/// "Timed out while requesting screenshot" out of the test's issues, so `Screenshot.take` can ask again. Every other
+/// issue, and that one at any other time, is recorded as it is.
+nonisolated class JourneyTestCase: XCTestCase {
+  override func record(_ issue: XCTIssue) {
+    if Screenshot.catches(issue) { return }
+    super.record(issue)
+  }
+}
+
+/// The screenshots that a journey reads, with the named flake "XCTest doesn't get a screenshot on a CI runner" in
+/// `docs/development.md`.
+///
+/// On 2026-11-22, in CI run 45072154826, XCTest's request for a screenshot of the Add screen waited about 130
+/// seconds, and then failed with `Failed to get screenshot: Timed out while requesting screenshot.` The app was idle
+/// all through it: its main thread waited in its run loop. The screen recording got no frame for 38 seconds, and
+/// stopped some 70 seconds before the test's end. The runner's Mac had restarted its GPU (`DumpGPURestart` ran about
+/// 30 seconds into the wait), and the simulator draws its screen with that GPU. The next journey passed. So the
+/// stall is the runner's, not the app's or the journey's.
+///
+/// XCTest records the time-out as an issue, which `XCUIScreen` doesn't let a test catch. So the journey's test case
+/// (`JourneyTestCase`) holds it back while `take` waits, and `take` asks again, at most `retryLimit` times, after
+/// `retryPause`. The screenshot of a request that timed out is not read.
+nonisolated enum Screenshot {
+  /// How many times a screenshot that timed out is asked for again, after the first time.
+  static let retryLimit = 2
+
+  /// How long the journey waits before it asks again. A restart of the GPU took about 30 seconds on CI, and
+  /// XCTest's own wait is longer than that, so a short pause is enough.
+  static let retryPause: Duration = .seconds(5)
+
+  /// XCTest's words for a screenshot that it asked for and didn't get in time.
+  static let timeOutWords = "Failed to get screenshot: Timed out"
+
+  private struct State {
+    var isTaking = false
+    var timedOut = false
+  }
+
+  private static let state = Mutex(State())
+
+  /// Whether the issue is XCTest's time-out of a screenshot.
+  static func isTimeOut(_ issue: XCTIssue) -> Bool {
+    issue.compactDescription.hasPrefix(timeOutWords)
+  }
+
+  /// Whether `JourneyTestCase` keeps the issue back: only XCTest's time-out of a screenshot, and only while `take`
+  /// waits for one. It notes the time-out for `take`.
+  static func catches(_ issue: XCTIssue) -> Bool {
+    state.withLock { state in
+      guard state.isTaking, isTimeOut(issue) else { return false }
+      state.timedOut = true
+      return true
+    }
+  }
+
+  /// Runs `request` as `take` runs a request for a screenshot, and says whether XCTest timed out in it. A test
+  /// of the mechanism records an issue in it, as XCTest does.
+  static func catchingTimeOut(_ request: () -> Void) -> Bool {
+    state.withLock { $0 = State(isTaking: true) }
+    defer { state.withLock { $0 = State() } }
+    request()
+    return state.withLock { $0.timedOut }
+  }
+
+  /// A screenshot of the app, and how many requests for it timed out before it. `shown` names what the screen
+  /// shows, such as `Home, in dark mode`, for the log and the gate's line.
+  ///
+  /// A request that times out is asked again, at most `retryLimit` times. Each time is reported to the settings
+  /// helper, when the run has one, so the gate's line after the run names it. The time-out after the last try fails
+  /// the journey with the words of XCTest.
+  @MainActor
+  static func take(of app: XCUIApplication, showing shown: String) async throws -> (
+    screenshot: XCUIScreenshot, timeOuts: Int
+  ) {
+    var timeOuts = 0
+    while true {
+      var screenshot: XCUIScreenshot?
+      let timedOut = catchingTimeOut { screenshot = app.screenshot() }
+      if !timedOut, let screenshot { return (screenshot, timeOuts) }
+      timeOuts += 1
+      guard timeOuts <= retryLimit else {
+        throw AuditError(
+          "XCTest didn't get a screenshot of \(shown), \(timeOuts) times in a row: \(timeOutWords) while requesting screenshot."
+        )
+      }
+      print("XCTest didn't get a screenshot of \(shown) in time. It asks again (\(timeOuts) of \(retryLimit)).")
+      await reportRetry(shown)
+      try await Task.sleep(for: retryPause)
+    }
+  }
+
+  /// Tells the settings helper that a screenshot was asked for again, so the gate's line names the flake. A run with
+  /// no helper has only the line in the log. A report that doesn't arrive is not a failure: the retry is in the log.
+  @MainActor
+  private static func reportRetry(_ shown: String) async {
+    guard let helper = Audit.helper else { return }
+    var request = URLRequest(url: helper.appending(path: "screenshot-retries"))
+    request.httpMethod = "POST"
+    request.httpBody = Data(shown.utf8)
+    request.timeoutInterval = 10
+    _ = try? await URLSession.shared.data(for: request)
+  }
+}
