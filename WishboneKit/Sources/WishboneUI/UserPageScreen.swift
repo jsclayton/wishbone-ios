@@ -106,10 +106,7 @@ private struct Header: View {
 
   /// The name with the last name, as the locale writes a full name.
   private var fullName: String {
-    var name = PersonNameComponents()
-    name.givenName = page.user.name
-    name.familyName = page.record.lastName
-    return name.formatted(.name(style: .medium))
+    page.user.fullName
   }
 
   /// "Birthday: March 4", or "Turns 9 on March 4" when the birthday has a year.

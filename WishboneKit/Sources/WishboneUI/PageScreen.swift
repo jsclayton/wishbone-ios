@@ -1,8 +1,8 @@
 import SwiftUI
 import WishboneSession
 
-/// A pushed page. A user's page is built. Until the other pages are, a list and People are each one plain page with
-/// the thing's name. A page whose thing is not in the copy is the "not found" page, also when the thing goes away
+/// A pushed page. A user's page and the People page are built. Until a list's page is, it is one plain page with the
+/// list's name. A page whose thing is not in the copy is the "not found" page, also when the thing goes away
 /// while the page shows.
 struct PageScreen: View {
   let page: Page
@@ -17,7 +17,7 @@ struct PageScreen: View {
       } else {
         NotFoundPage()
       }
-    case .people: standIn(named: Text("People", bundle: #bundle))
+    case .people: PeopleScreen(session: session)
     case .notFound: NotFoundPage()
     }
   }

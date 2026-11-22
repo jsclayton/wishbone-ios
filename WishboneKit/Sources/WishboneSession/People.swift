@@ -1,3 +1,4 @@
+import Foundation
 import WishboneAPI
 
 // Home's People: the users whom the session's user gives to, by part. See "Home" in `docs/spec.md`, People in
@@ -75,5 +76,38 @@ extension SessionModel {
       parts.append(PeoplePart(kind: .group(group, through: through), users: users))
     }
     return parts
+  }
+}
+
+extension UserRow {
+  /// The name with the last name, as the locale writes a full name: "Robin Clark". Only the name when the
+  /// session's user gets the user as a summary, or the user has no last name.
+  public var fullName: String {
+    var name = PersonNameComponents()
+    name.givenName = self.name
+    name.familyName = record?.lastName.flatMap { $0.allSatisfy(\.isWhitespace) ? nil : $0 }
+    return name.formatted(.name(style: .medium))
+  }
+}
+
+// The People page: everyone whom the session's user sees, by group. See "People" in `docs/spec.md`, and
+// `docs/screens/people.md`.
+
+/// The People page, as everyone sees it: "Your children", then "Your parents", then one part for each of the user's
+/// groups. These are the parts of Home's People, in the same order. The admin's parts come later.
+public struct PeoplePage: Equatable, Sendable {
+  /// The parts, from top to bottom. A part with no users is left out, so a user with nobody to see gets none.
+  public let parts: [PeoplePart]
+
+  /// Whether the page has anyone to show. With nobody, the page shows the empty state once a sync has ended.
+  public var isEmpty: Bool {
+    parts.isEmpty
+  }
+}
+
+extension SessionModel {
+  /// The People page, from the copy. Its parts are Home's People: see `people`.
+  public var peoplePage: PeoplePage {
+    PeoplePage(parts: people)
   }
 }

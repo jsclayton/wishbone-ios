@@ -97,9 +97,10 @@ public struct FixtureBuilder: Sendable {
   // MARK: - Users
 
   /// Makes a user, as the admin, and signs them in with a login link. The birthday has a year only when
-  /// `birthYear` gives one.
+  /// `birthYear` gives one, and the user has a last name only when `lastName` gives one.
   public func person(
     _ name: String,
+    lastName: String? = nil,
     birthday: (month: Int, day: Int) = (6, 15),
     birthYear: Int? = nil,
     parents: [Fixture.Person] = [],
@@ -107,12 +108,13 @@ public struct FixtureBuilder: Sendable {
   ) async throws -> Fixture.Person {
     var date: [String: JSON] = ["month": .number(Double(birthday.month)), "day": .number(Double(birthday.day))]
     date["year"] = birthYear.map { .number(Double($0)) }
-    let body: JSON = [
+    var body: [String: JSON] = [
       "name": .string(self.name(name)),
       "birthday": .object(date),
       "parent_ids": .array(parents.map { .string($0.id) }),
     ]
-    let user = try await adminSession.post("/users", body)
+    body["last_name"] = lastName.map { .string($0) }
+    let user = try await adminSession.post("/users", .object(body))
     let person = Fixture.Person(id: try id(of: user), name: self.name(name), session: nil)
     guard signedIn else { return person }
     return Fixture.Person(
