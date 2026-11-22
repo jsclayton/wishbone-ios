@@ -90,7 +90,9 @@ private struct ImagePager: View {
   let tileUserID: String
 
   @State private var shown = 0
-  @ScaledMetric(relativeTo: .body) private var height: CGFloat = 200
+  /// The row's height. A photo doesn't grow with the text size, so at the largest sizes the item's words still
+  /// come soon after it.
+  private let height: CGFloat = 200
 
   var body: some View {
     Group {
@@ -111,7 +113,7 @@ private struct ImagePager: View {
       }
     }
     .frame(maxWidth: .infinity)
-    .frame(height: min(height, 420))
+    .frame(height: height)
   }
 
   private var pager: some View {
