@@ -245,6 +245,14 @@ enum Audit {
       {
         return true
       }
+      // Content that scrolls under the tab bar: at the largest text size, a screen's rows go on below the bar, and
+      // the audit measures the text there against the system's glass, which a person reads only after scrolling
+      // it out. The exception is for contrast only, and only for an element that the tab bar covers in part.
+      if issue.auditType == .contrast, let element = issue.element,
+        case let bar = app.tabBars.firstMatch, bar.exists, element.frame.intersects(bar.frame)
+      {
+        return true
+      }
       // The element's words, its type, such as a text field, and its place, so a failure says which it is.
       let element =
         issue.element.map { "\($0.label), element type \($0.elementType.rawValue), at \($0.frame)" } ?? "no element"

@@ -160,8 +160,11 @@ nonisolated final class SignInJourney: XCTestCase {
     }
     XCTAssertTrue(labelled(Audit.words("Your parents")).firstMatch.exists, "Home has no Your parents.")
     XCTAssertTrue(labelled(builder.name("Family")).firstMatch.exists, "Home has no part for the group.")
-    XCTAssertEqual(
-      app.buttons.matching(NSPredicate(format: "label == %@", morgan.name)).count, 2, "Morgan isn't in both parts.")
+    // Morgan is in Your parents and in the group, and Jordan only in the group. XCUI can find a person more than
+    // once in a part, so the journey counts them against each other.
+    let found = { (name: String) in app.buttons.matching(NSPredicate(format: "label == %@", name)).count }
+    XCTAssertGreaterThan(found(jordan.name), 0)
+    XCTAssertEqual(found(morgan.name), 2 * found(jordan.name), "Morgan isn't in both parts.")
     XCTAssertFalse(app.buttons[robin.name].exists, "Robin is among their own people.")
 
     // The tabs: Home, Lists, Gifts, and the plus, which reads "Add". A window opens on Home.

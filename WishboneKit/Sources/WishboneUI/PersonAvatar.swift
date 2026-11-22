@@ -9,25 +9,31 @@ import WishboneSession
 struct PersonAvatar: View {
   let user: UserRow
 
-  /// The avatar grows with the text size.
-  @ScaledMetric(relativeTo: .title3) private var size: CGFloat = 56
+  /// The avatar grows with the text size, up to a size that leaves the name beside it its room.
+  @ScaledMetric(relativeTo: .title3) private var scaled: CGFloat = 56
+  private var size: CGFloat { min(scaled, 88) }
 
   var body: some View {
     let color = PersonPalette.color(forUserID: user.id)
-    Text(initials)
-      .font(.title3.weight(.semibold))
-      .foregroundStyle(.white)
-      .lineLimit(1)
-      .minimumScaleFactor(0.5)
-      .padding(4)
-      .frame(width: size, height: size)
+    // A drawing, not a view of text: the initials are a picture of the name that sits beside them. As text, the
+    // accessibility audit measured them against the corners of their frame, outside the circle.
+    Canvas { context, canvas in
+      let circle = Path(ellipseIn: CGRect(origin: .zero, size: canvas))
       // The lightest stop is the palette's color, so the initials have at least its contrast everywhere.
-      .background(
-        Circle().fill(
-          LinearGradient(
-            colors: [color, color.mix(with: .black, by: 0.2)], startPoint: .top, endPoint: .bottom))
-      )
-      .accessibilityHidden(true)
+      context.fill(
+        circle,
+        with: .linearGradient(
+          Gradient(colors: [color, color.mix(with: .black, by: 0.2)]), startPoint: .zero,
+          endPoint: CGPoint(x: 0, y: canvas.height)))
+      let text = context.resolve(Text(initials).font(.title3.weight(.semibold)).foregroundStyle(.white))
+      let fits = text.measure(in: canvas)
+      let scale = min(1, canvas.width * 0.75 / max(fits.width, 1))
+      context.translateBy(x: canvas.width / 2, y: canvas.height / 2)
+      context.scaleBy(x: scale, y: scale)
+      context.draw(text, at: .zero)
+    }
+    .frame(width: size, height: size)
+    .accessibilityHidden(true)
   }
 
   /// The user's initials, as the locale abbreviates a name: from the name, and the last name when the session's

@@ -8,16 +8,17 @@ import WishboneSession
 /// Its states are the ones that every screen shares. "Nobody to see" is People's empty line, after a sync that
 /// found nobody.
 ///
+/// A person is one button, whose words are the ones that show: the name, then "Deactivated" when it applies. The
+/// avatar beside it is a drawing that VoiceOver skips, and a tap on it opens the person too.
+///
 /// **Provisional.** Plain default: a system list. The "People" heading is a row that pushes the People page. Each
-/// part is a section, whose avatars flow into as many columns as fit. At the largest text sizes, the avatars
-/// become rows with the name beside each.
+/// part is a section. Each person is a row, with the avatar and the name beside it, at every text size, and the rows
+/// flow into as many columns as fit: one in a narrow window, more in a wide one.
 struct HomeScreen: View {
   let session: SessionModel
 
   /// The pages pushed on Home. A tap on a person pushes their page.
   @Binding var pages: [Page]
-
-  @Environment(\.dynamicTypeSize) private var textSize
 
   var body: some View {
     let people = session.people
@@ -39,35 +40,15 @@ struct HomeScreen: View {
       }
       ForEach(people) { part in
         Section {
-          if textSize.isAccessibilitySize {
+          Columns(minimum: 200) {
             ForEach(part.users) { user in
-              NavigationLink(value: Page.user(id: user.id)) {
-                HStack(spacing: 12) {
-                  PersonAvatar(user: user)
-                  PersonName(user: user)
-                }
+              HStack(spacing: 12) {
+                avatar(of: user)
+                name(of: user)
               }
             }
-          } else {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 88), alignment: .top)], alignment: .leading) {
-              ForEach(part.users) { user in
-                Button {
-                  pages.append(.user(id: user.id))
-                } label: {
-                  VStack(spacing: 6) {
-                    PersonAvatar(user: user)
-                    PersonName(user: user, alignment: .center)
-                  }
-                  .frame(maxWidth: .infinity, minHeight: 44)
-                  .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-                .accessibilityElement(children: .combine)
-                .accessibilityAddTraits(.isButton)
-              }
-            }
-            .padding(.vertical, 8)
           }
+          .padding(.vertical, 8)
         } header: {
           PartHeading(part: part)
         }
@@ -78,6 +59,32 @@ struct HomeScreen: View {
       EmptyView()
     }
     .navigationTitle(Text("Home", bundle: #bundle))
+  }
+
+  /// A person's avatar. A tap on it opens the person, as a tap on the name does. VoiceOver skips it, and reads the
+  /// name's button.
+  private func avatar(of user: UserRow) -> some View {
+    PersonAvatar(user: user)
+      .contentShape(.circle)
+      .onTapGesture { open(user) }
+  }
+
+  /// A person's name, as the button that opens them. The button holds only words, so its element is the name, then
+  /// "Deactivated" when it applies, and its text grows with the text size.
+  private func name(of user: UserRow) -> some View {
+    Button {
+      open(user)
+    } label: {
+      PersonName(user: user)
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .contentShape(.rect)
+    }
+    .buttonStyle(.plain)
+  }
+
+  /// Pushes the user's page on Home.
+  private func open(_ user: UserRow) {
+    pages.append(.user(id: user.id))
   }
 }
 
@@ -108,5 +115,49 @@ private struct PartHeading: View {
     .fixedSize(horizontal: false, vertical: true)
     .accessibilityElement(children: .combine)
     .accessibilityAddTraits(.isHeader)
+  }
+}
+
+/// Columns of one width, as many as fit, each at least `minimum` wide: the people of a part flow into them. It is
+/// not lazy: a part is family-sized, and each change of the text size lays every person out again.
+private struct Columns: Layout {
+  var minimum: CGFloat = 88
+  var spacing: CGFloat = 8
+
+  private func columns(in width: CGFloat) -> (count: Int, width: CGFloat) {
+    let count = max(1, Int((width + spacing) / (minimum + spacing)))
+    return (count, (width - spacing * CGFloat(count - 1)) / CGFloat(count))
+  }
+
+  /// The height of each row, from the tallest person in it.
+  private func rowHeights(_ subviews: Subviews, count: Int, width: CGFloat) -> [CGFloat] {
+    stride(from: 0, to: subviews.count, by: count).map { start in
+      subviews[start..<min(start + count, subviews.count)]
+        .map { $0.sizeThatFits(ProposedViewSize(width: width, height: nil)).height }
+        .max() ?? 0
+    }
+  }
+
+  func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+    let width = proposal.width ?? (minimum * 3 + spacing * 2)
+    let (count, column) = columns(in: width)
+    let heights = rowHeights(subviews, count: count, width: column)
+    return CGSize(width: width, height: heights.reduce(0, +) + spacing * CGFloat(max(0, heights.count - 1)))
+  }
+
+  func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+    let (count, column) = columns(in: bounds.width)
+    let heights = rowHeights(subviews, count: count, width: column)
+    var y = bounds.minY
+    for (row, height) in heights.enumerated() {
+      for place in 0..<count {
+        let index = row * count + place
+        guard index < subviews.count else { break }
+        let x = bounds.minX + CGFloat(place) * (column + spacing)
+        subviews[index].place(
+          at: CGPoint(x: x, y: y), anchor: .topLeading, proposal: ProposedViewSize(width: column, height: height))
+      }
+      y += height + spacing
+    }
   }
 }
