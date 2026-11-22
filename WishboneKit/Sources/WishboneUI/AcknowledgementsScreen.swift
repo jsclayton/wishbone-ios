@@ -12,23 +12,36 @@ struct AcknowledgementsScreen: View {
   /// A readable width in a wide window.
   @ScaledMetric(relativeTo: .body) private var readableWidth: CGFloat = 640
 
+  /// What ends a paragraph of a notice: an empty line. It shows no words.
+  private static let paragraphBreak = "\n\n"
+
+  /// A notice, one text for each of its paragraphs. The accessibility audit reads one text of several paragraphs as
+  /// clipped at larger sizes, where all of it shows. The texts never change, so a paragraph's place is its identity.
+  private static func paragraphs(of notice: String) -> some View {
+    let paragraphs = notice.components(separatedBy: paragraphBreak).filter { !$0.isEmpty }
+    return VStack(alignment: .leading, spacing: 12) {
+      ForEach(Array(paragraphs.enumerated()), id: \.offset) { _, paragraph in
+        Text(paragraph)
+      }
+    }
+  }
+
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 24) {
-        Text(Acknowledgements.notice)
+        Self.paragraphs(of: Acknowledgements.notice)
         Text("Wishbone uses these open source packages.", bundle: #bundle)
         ForEach(Acknowledgements.packages) { package in
           VStack(alignment: .leading, spacing: 8) {
             Text(package.name)
               .font(.headline)
               .accessibilityAddTraits(.isHeader)
-            Text(package.license)
+            Self.paragraphs(of: package.license)
               .font(.footnote)
           }
         }
       }
       .textSelection(.enabled)
-      .fixedSize(horizontal: false, vertical: true)
       .frame(maxWidth: readableWidth, alignment: .leading)
       .frame(maxWidth: .infinity)
       .padding()
