@@ -86,8 +86,9 @@ struct HomeScreen: View {
   @ViewBuilder private func countdown(_ occasions: [HomeOccasion]) -> some View {
     Section {
       if occasions.isEmpty {
+        // In the primary color: the line can sit under the tab bar's glass, where the secondary color fails the
+        // contrast rule.
         Text("Nothing in the next 60 days.", bundle: #bundle)
-          .foregroundStyle(.secondary)
       }
       ForEach(occasions) { occasion in
         Group {
@@ -111,8 +112,9 @@ struct HomeScreen: View {
   @ViewBuilder private func comingUp(_ occasions: [HomeOccasion]) -> some View {
     Section {
       if occasions.isEmpty {
+        // In the primary color: the line can sit under the tab bar's glass, where the secondary color fails the
+        // contrast rule.
         Text("Nothing in the next 60 days.", bundle: #bundle)
-          .foregroundStyle(.secondary)
       }
       ForEach(occasions) { occasion in
         if let destination = occasion.destination {
