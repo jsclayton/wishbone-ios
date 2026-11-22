@@ -5,7 +5,8 @@ import XCTest
 /// signed-out screen, against a real test server. See "Sign out" in `docs/spec.md`, and "The simulator tier" in
 /// `docs/development.md`.
 ///
-/// It audits the Settings sheet and Acknowledgements, and attaches a screenshot of each as evidence for a person.
+/// It audits the Settings sheet, the Reminders screen and Acknowledgements, and attaches a screenshot of each as
+/// evidence for a person.
 nonisolated final class SignOutJourney: XCTestCase {
   @MainActor
   func testSignOut() async {
@@ -68,6 +69,19 @@ nonisolated final class SignOutJourney: XCTestCase {
     app.navigationBars[Audit.words("Acknowledgements")].buttons.firstMatch.tap()
     XCTAssertTrue(
       app.navigationBars[Audit.words("Settings")].waitForExistence(timeout: 10), "Back didn't go to Settings.")
+
+    // Reminders, pushed inside the sheet. VoiceOver reads Remind me early as one button, with its value, and the
+    // audit holds the screen's contrast: the value is drawn in the primary color, not the form's secondary gray.
+    app.buttons[Audit.words("Reminders")].firstMatch.tap()
+    XCTAssertTrue(
+      app.navigationBars[Audit.words("Reminders")].waitForExistence(timeout: 10), "The Reminders screen didn't show.")
+    let early = app.buttons[Audit.words("Remind me early")]
+    XCTAssertTrue(early.waitForExistence(timeout: 10), "Reminders has no Remind me early row.")
+    XCTAssertEqual(early.value as? String, Audit.words("2 weeks"))
+    try await Audit.run(on: app, showing: "Reminders", in: self)
+    app.navigationBars[Audit.words("Reminders")].buttons.firstMatch.tap()
+    XCTAssertTrue(
+      app.navigationBars[Audit.words("Settings")].waitForExistence(timeout: 10), "Back didn't show Settings.")
 
     // Sign out, after its warning.
     app.buttons[Audit.words("Sign out")].tap()

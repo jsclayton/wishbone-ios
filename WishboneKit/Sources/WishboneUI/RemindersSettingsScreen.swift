@@ -26,14 +26,15 @@ struct RemindersSettingsScreen: View {
           Text("Reminders", bundle: #bundle)
         }
         if settings.isOn {
-          Picker(selection: setting(\.early)) {
-            ForEach(EarlyReminder.allCases, id: \.self) { early in
-              Text(Self.words(of: early)).tag(early)
+          MenuRow(label: Text("Remind me early", bundle: #bundle), value: Text(Self.words(of: settings.early))) {
+            Picker(selection: setting(\.early)) {
+              ForEach(EarlyReminder.allCases, id: \.self) { early in
+                Text(Self.words(of: early)).tag(early)
+              }
+            } label: {
+              Text("Remind me early", bundle: #bundle)
             }
-          } label: {
-            Text("Remind me early", bundle: #bundle)
           }
-          .pickerStyle(.menu)
           Toggle(isOn: setting(\.onTheDay)) {
             Text("On the day", bundle: #bundle)
           }
