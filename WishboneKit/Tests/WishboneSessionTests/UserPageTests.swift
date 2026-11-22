@@ -21,13 +21,15 @@ struct UserPageTests {
     }
   }
 
-  /// A new device, signed in as the person. Its first sync has ended. Each device has a keychain of its own, so a
-  /// test can sign several people in on one server.
+  /// A new device, signed in as the person. Its first sync has ended, and the session publishes all that it
+  /// wrote. Each device has a keychain of its own, so a test can sign several people in on one server.
   private func signedIn(as person: Fixture.Person, on instance: Instance) async throws -> SessionModel {
     let instance = try await Instance(server: instance.server)
     let device = instance.device()
     await device.signIn(pasting: try await instance.loginLink(for: person))
-    return try #require(device.session)
+    let session = try #require(device.session)
+    try await untilInStep(session, as: person)
+    return session
   }
 
   private func rows(of page: UserPage) -> [Row] {
@@ -122,7 +124,8 @@ struct UserPageTests {
 
   @Test("The admin gets the admin's-access line, and no items, for a user they see only that way")
   func adminAccess() async throws {
-    let instance = try await Instance()
+    // The admin sees every user and group of the instance, so the test has a server of its own.
+    let instance = try await Instance(server: try await TestServer.start())
     let family = try await instance.builder.standardFamily()
     let session = try await signedIn(as: family.admin, on: instance)
 

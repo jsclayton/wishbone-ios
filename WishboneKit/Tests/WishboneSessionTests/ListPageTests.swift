@@ -22,12 +22,15 @@ struct ListPageTests {
     }
   }
 
-  /// A new device, signed in as the person. Its first sync has ended.
+  /// A new device, signed in as the person. Its first sync has ended, and the session publishes all that it
+  /// wrote.
   private func signedIn(as person: Fixture.Person, on instance: Instance) async throws -> SessionModel {
     let instance = try await Instance(server: instance.server)
     let device = instance.device()
     await device.signIn(pasting: try await instance.loginLink(for: person))
-    return try #require(device.session)
+    let session = try #require(device.session)
+    try await untilInStep(session, as: person)
+    return session
   }
 
   private func rows(_ items: [UserPage.Item]) -> [Row] {
@@ -176,6 +179,7 @@ struct ListPageTests {
     let device = instance.device()
     await device.signIn(pasting: try await instance.loginLink(for: family.relative))
     let session = try #require(device.session)
+    try await untilInStep(session, as: family.relative)
     #expect(session.listPage(id: list.id) != nil)
 
     _ = try await family.child.signedIn().send("DELETE", "/lists/\(list.id)").expecting(204)

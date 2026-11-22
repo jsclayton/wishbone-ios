@@ -410,6 +410,7 @@ struct GiftsTests {
     // Nobody holds an open gift that someone else gives.
     for signed in [relative, child, parent] {
       await signed.session.syncNow()
+      try await inStep(signed)
       #expect(signed.session.gifts.filter { $0.state == .open }.allSatisfy { $0.giverID == signed.person.id })
     }
   }
@@ -702,6 +703,9 @@ struct GiftsTests {
     let admin = try await signedIn(as: family.admin)
     try await inStep(admin)
     try await expectEveryField(of: admin)
+    // The blocked stores are not in the versions, so `inStep` doesn't wait for them. The pull reads them last, in
+    // a change of their own.
+    await until { admin.session.blockedStores.map(\.id) == [family.blockedStore.id] }
     #expect(admin.session.blockedStores.map(\.id) == [family.blockedStore.id])
     #expect(admin.session.blockedStores.first?.store == family.blockedStore.store)
     #expect(admin.session.blockedStores.first?.canDelete == true)
@@ -714,6 +718,7 @@ struct GiftsTests {
     await admin.session.syncNow()
     #expect(admin.asked(since: mark) == ["GET /versions", Self.blockedStoresRequest])
     #expect(admin.sentKeptETag(since: mark))
+    await until { admin.session.blockedStores.map(\.id) == [more.id] }
     #expect(admin.session.blockedStores.map(\.id) == [more.id])
     #expect(admin.session.blockedStores.map(\.store) == [more.store])
 
@@ -750,6 +755,8 @@ struct GiftsTests {
         let signed = try await signedIn(as: person, storage: .folder(folder.url))
         try await inStep(signed)
         let session = signed.session
+        // The blocked stores are not in the versions, so `inStep` doesn't wait for them.
+        if held == "blocked stores" { await until { !session.blockedStores.isEmpty } }
         saved = (session.gifts, session.blockedStores, entries(of: session))
         instance = signed.instance
       }

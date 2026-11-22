@@ -128,8 +128,14 @@ struct PullTests {
       .expecting(200)
     try await own.send("DELETE", "/items/\(try item("Puzzle", in: session).id)").expecting(204)
 
+    // The removal at the start of the pull takes both items off the primary list, and the camping list comes in a
+    // later change, with Tent. The session publishes each change, so the wait is for both lists, never for the
+    // primary list alone.
     await session.syncNow()
-    await until { session.primaryListItems.map(\.title) == ["Kite"] }
+    await until {
+      session.primaryListItems.map(\.title) == ["Kite"] && session.items(onList: camping.id).map(\.title) == ["Tent"]
+    }
+    #expect(session.primaryListItems.map(\.title) == ["Kite"])
     #expect(session.items(onList: camping.id).map(\.title) == ["Tent"])
     #expect(!session.isInstanceUnreachable)
   }

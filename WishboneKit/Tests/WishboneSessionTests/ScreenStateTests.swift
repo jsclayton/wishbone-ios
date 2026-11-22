@@ -21,18 +21,25 @@ struct ScreenStateTests {
     instance = try await Instance()
   }
 
-  /// A device signed in as the person. Its first sync has ended.
-  private func signedIn(as person: Fixture.Person, clock: any Clock<Duration> = ContinuousClock()) async throws
-    -> SessionModel
-  {
+  /// A device signed in as the person. Its first sync has ended, and the session publishes the titles on the
+  /// primary list: a sync can end a moment before the session publishes its last write.
+  private func signedIn(
+    as person: Fixture.Person,
+    expecting titles: [String],
+    clock: any Clock<Duration> = ContinuousClock()
+  ) async throws -> SessionModel {
     let device = instance.device(clock: clock)
     await device.signIn(pasting: try await instance.loginLink(for: person))
-    return try #require(device.session)
+    let session = try #require(device.session)
+    await until { session.primaryListItems.map(\.title) == titles }
+    return session
   }
 
   /// A device that keeps the session of a sign-in, with nothing saved: a launch whose copy is empty.
-  private func keptWithNothingSaved(as person: Fixture.Person) async throws -> SessionModel {
-    _ = try await signedIn(as: person)
+  private func keptWithNothingSaved(as person: Fixture.Person, expecting titles: [String]) async throws
+    -> SessionModel
+  {
+    _ = try await signedIn(as: person, expecting: titles)
     let relaunched = instance.device()
     let session = try #require(relaunched.session)
     #expect(session.primaryListItems.isEmpty && session.user == nil, "The copy holds rows.")
@@ -47,7 +54,7 @@ struct ScreenStateTests {
   @Test("A sync with the network dropped publishes \"can't reach\", and the saved rows still read")
   func droppedNetwork() async throws {
     let robin = try await instance.person(items: ["Kite", "Puzzle"])
-    let session = try await signedIn(as: robin)
+    let session = try await signedIn(as: robin, expecting: ["Kite", "Puzzle"])
     #expect(session.screenState(hasRows: !session.primaryListItems.isEmpty) == .saved(cantReach: false))
 
     instance.conditioner.dropEverything()
@@ -61,7 +68,7 @@ struct ScreenStateTests {
   @Test("The next sync that succeeds clears \"can't reach\"")
   func clears() async throws {
     let robin = try await instance.person(items: ["Kite"])
-    let session = try await signedIn(as: robin)
+    let session = try await signedIn(as: robin, expecting: ["Kite"])
     instance.conditioner.dropEverything()
     await session.syncNow()
     #expect(session.screenState(hasRows: true) == .saved(cantReach: true))
@@ -77,7 +84,7 @@ struct ScreenStateTests {
   func unreachableAnswers() async throws {
     let robin = try await instance.person(items: ["Kite"])
     let clock = TestClock()
-    let session = try await signedIn(as: robin, clock: clock)
+    let session = try await signedIn(as: robin, expecting: ["Kite"], clock: clock)
 
     let html = Data("<html><body>Sign in to the network</body></html>".utf8)
     let answers: [(String, NetworkConditioner.CannedAnswer)] = [
@@ -113,7 +120,7 @@ struct ScreenStateTests {
   @Test("Before any sync has finished, nothing saved and no network is \"can't reach\", never \"empty\"")
   func neverEmptyBeforeASync() async throws {
     let robin = try await instance.person(items: ["Kite"])
-    let session = try await keptWithNothingSaved(as: robin)
+    let session = try await keptWithNothingSaved(as: robin, expecting: ["Kite"])
     #expect(session.screenState(hasRows: false) == .loading)
 
     instance.conditioner.dropEverything()
@@ -126,6 +133,7 @@ struct ScreenStateTests {
     instance.conditioner.passEverything()
     #expect(await session.syncNow() == .succeeded)
     #expect(session.hasSynced)
+    await until { session.primaryListItems.map(\.title) == ["Kite"] }
     #expect(session.giving.isEmpty)
     #expect(session.screenState(hasRows: !session.giving.isEmpty) == .empty)
     #expect(session.screenState(hasRows: !session.primaryListItems.isEmpty) == .saved(cantReach: false))
@@ -134,7 +142,7 @@ struct ScreenStateTests {
   @Test("During the first sync the state is \"loading\", and rows read as they arrive")
   func loadingDuringTheFirstSync() async throws {
     let robin = try await instance.person(items: ["Kite", "Puzzle"])
-    let session = try await keptWithNothingSaved(as: robin)
+    let session = try await keptWithNothingSaved(as: robin, expecting: ["Kite", "Puzzle"])
     #expect(!session.isSyncing)
 
     // A list's items come after the users, so the hold stops the first sync between them.
@@ -153,6 +161,7 @@ struct ScreenStateTests {
     hold.release()
     #expect(await outcome == .succeeded)
     #expect(!session.isSyncing)
+    await until { session.primaryListItems.map(\.title) == ["Kite", "Puzzle"] }
     #expect(session.primaryListItems.map(\.title) == ["Kite", "Puzzle"])
     #expect(session.screenState(hasRows: !session.primaryListItems.isEmpty) == .saved(cantReach: false))
   }
@@ -160,7 +169,7 @@ struct ScreenStateTests {
   @Test("Try again, which is Sync now, starts one sync")
   func tryAgain() async throws {
     let robin = try await instance.person(items: ["Kite"])
-    let session = try await keptWithNothingSaved(as: robin)
+    let session = try await keptWithNothingSaved(as: robin, expecting: ["Kite"])
     instance.conditioner.dropEverything()
     await session.syncNow()
     #expect(session.screenState(hasRows: false) == .cantReach)
@@ -169,6 +178,7 @@ struct ScreenStateTests {
     let before = pulls
     #expect(await session.syncNow() == .succeeded)
     #expect(pulls == before + 1)
+    await until { session.primaryListItems.map(\.title) == ["Kite"] }
     #expect(session.screenState(hasRows: !session.primaryListItems.isEmpty) == .saved(cantReach: false))
   }
 
@@ -181,6 +191,7 @@ struct ScreenStateTests {
       let device = instance.device(storage: .folder(folder.url))
       await device.signIn(pasting: try await instance.loginLink(for: robin))
       let first = try #require(device.session)
+      await until { first.primaryListItems.map(\.title) == ["Kite"] }
       #expect(first.screenState(hasRows: !first.giving.isEmpty) == .empty)
       #expect(first.screenState(hasRows: !first.primaryListItems.isEmpty) == .saved(cantReach: false))
     }
@@ -200,6 +211,7 @@ struct ScreenStateTests {
 
     instance.conditioner.passEverything()
     await session.syncNow()
+    await until { session.primaryListItems.map(\.title) == ["Kite"] }
     #expect(session.screenState(hasRows: !session.giving.isEmpty) == .empty)
     #expect(session.screenState(hasRows: !session.primaryListItems.isEmpty) == .saved(cantReach: false))
   }

@@ -499,6 +499,9 @@ struct PeopleTests {
     await session.syncNow()
     try await inStep(parent)
     #expect(try user(family.relative, in: session).name == renamed)
+    // The list is the lists' data, which the pull writes after Home's, in a later change. `inStep` waits for Home's
+    // kinds only, so the wait for the list is its own.
+    await until { session.list(id: relativesList)?.name == renamed }
     #expect(session.list(id: relativesList)?.name == renamed)
     #expect(
       parent.asked(since: mark) == [
@@ -521,6 +524,7 @@ struct PeopleTests {
     #expect(session.members(.usersOfOccasion, of: family.groupOccasion.id)?.contains(family.outsider.id) == true)
     #expect(session.members(.usersOfOccasion, of: try birthday(of: family.outsider).id) == [family.outsider.id])
     let outsidersList = try #require(try user(family.outsider, in: session).record?.primaryListID)
+    await until { session.list(id: outsidersList)?.recipientIDs == [family.outsider.id] }
     #expect(session.list(id: outsidersList)?.recipientIDs == [family.outsider.id])
     #expect(
       parent.asked(since: mark) == [

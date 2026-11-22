@@ -122,6 +122,7 @@ docs/               The spec, the ADRs, and the guides
 ### What to test, and where
 
 - **The session model is the one seam for behavior.** A test calls its public actions (sign in, add, move, mark bought, sync, sign out), and checks what it publishes: the rows that screens read, the reminders that it hands to the notification center, and the widget's file.
+- **A test waits for what it reads.** A pull writes each thing when its answer arrives, and the session publishes each write as a change of its own, a moment after the write. So a sync, and a sign-in, can end before the session publishes the last write, and a wait for one write returns before the writes after it show. A test that reads published rows after a sync waits, with `until`, for those rows, or for the whole copy to be in step with the instance. Seen on CI on 2026-11-22: a test waited for Home's data and read a list (run 45004682219 attempt 4), and another waited for the primary list and read another list (run 45028988078 attempt 3).
 - The API is on the far side, at the network edge, so the client's encoding and decoding are tested too.
 - Pure parts with their own interface, such as the reminder plan and the shift rule, are tested directly.
 - Don't test the API client on its own (beyond the contract test), private helpers, or screens.
