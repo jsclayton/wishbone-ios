@@ -1,8 +1,8 @@
 import SwiftUI
 import WishboneSession
 
-/// A pushed page: a list's page, a user's page, an item's page, or the People page. A page whose thing is not in the copy is the
-/// "not found" page, also when the thing goes away while the page shows.
+/// A pushed page: a list's page, a user's page, an item's page, the People page, or one of the admin's lists on it.
+/// A page whose thing is not in the copy is the "not found" page, also when the thing goes away while the page shows.
 struct PageScreen: View {
   let page: Page
   let session: SessionModel
@@ -31,6 +31,7 @@ struct PageScreen: View {
         NotFoundPage()
       }
     case .people: PeopleScreen(session: session)
+    case .forAdmin(let page): ForAdminScreen(page: page, session: session)
     case .notFound: NotFoundPage()
     }
   }

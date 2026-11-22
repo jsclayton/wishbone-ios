@@ -93,21 +93,64 @@ extension UserRow {
 // The People page: everyone whom the session's user sees, by group. See "People" in `docs/spec.md`, and
 // `docs/screens/people.md`.
 
-/// The People page, as everyone sees it: "Your children", then "Your parents", then one part for each of the user's
-/// groups. These are the parts of Home's People, in the same order. The admin's parts come later.
+/// The People page: "Your children", then "Your parents", then one part for each of the user's groups. These are
+/// the parts of Home's People, in the same order. For the admin, "For the admin" comes after them.
 public struct PeoplePage: Equatable, Sendable {
   /// The parts, from top to bottom. A part with no users is left out, so a user with nobody to see gets none.
   public let parts: [PeoplePart]
 
+  /// For the admin: All users, All groups, and Deactivated. Nil for anyone else, so an everyday user never meets
+  /// it. See "Scope" under "The admin" in `docs/spec.md`.
+  public let forAdmin: ForAdmin?
+
   /// Whether the page has anyone to show. With nobody, the page shows the empty state once a sync has ended.
   public var isEmpty: Bool {
-    parts.isEmpty
+    parts.isEmpty && forAdmin == nil
+  }
+
+  /// The admin's part of the People page. It holds users and groups only: the admin's access shows no list, item,
+  /// or gift.
+  public struct ForAdmin: Equatable, Sendable {
+    /// Every user, by name: also a user in no group, the deactivated users, and the admin.
+    public let allUsers: [UserRow]
+
+    /// Every group, by name.
+    public let allGroups: [GroupRow]
+
+    /// The deactivated users, by name. Empty hides the Deactivated row.
+    public let deactivated: [UserRow]
+
+    /// All users whose name with the last name holds the search, in the locale's way: case and diacritics don't
+    /// count. An empty search, or one of spaces only, has every user. An empty answer says that nobody has that
+    /// name.
+    public func users(matching search: String) -> [UserRow] {
+      let search = search.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !search.isEmpty else { return allUsers }
+      return allUsers.filter { $0.fullName.localizedStandardContains(search) }
+    }
   }
 }
 
 extension SessionModel {
-  /// The People page, from the copy. Its parts are Home's People: see `people`.
+  /// The People page, from the copy. Its parts are Home's People: see `people`. For the admin, who has every user
+  /// and every group in the copy, it has For the admin too.
   public var peoplePage: PeoplePage {
-    PeoplePage(parts: people)
+    PeoplePage(parts: people, forAdmin: forAdmin)
+  }
+
+  /// For the admin, from the copy. Nil when the session's user is not the admin. A summary has no page, so it is
+  /// left out, though the admin's copy holds every user in full.
+  ///
+  /// The names sort in the locale's order, so "alice" comes before "Zoe". The copy's own order is the bytes'.
+  private var forAdmin: PeoplePage.ForAdmin? {
+    guard isAdmin else { return nil }
+    let allUsers = users.filter { !$0.isSummary }.sorted {
+      $0.fullName.localizedStandardCompare($1.fullName) == .orderedAscending
+    }
+    return PeoplePage.ForAdmin(
+      allUsers: allUsers,
+      allGroups: groups.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending },
+      deactivated: allUsers.filter(\.isDeactivated)
+    )
   }
 }

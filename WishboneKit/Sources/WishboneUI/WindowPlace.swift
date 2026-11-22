@@ -23,12 +23,21 @@ public enum Page: Codable, Hashable, Sendable {
   case item(id: String)
   case people
 
+  /// For the admin, on the People page: every user, with a search field.
+  case allUsers
+
+  /// For the admin, on the People page: every group.
+  case allGroups
+
+  /// For the admin, on the People page: the deactivated users.
+  case deactivatedUsers
+
   /// The tab that owns the page, for a sidebar shortcut: one of your lists is in Lists, and People, a user, or an
   /// item is on Home.
   public var owner: WindowTab {
     switch self {
     case .list: .lists
-    case .user, .item, .people: .home
+    case .user, .item, .people, .allUsers, .allGroups, .deactivatedUsers: .home
     }
   }
 }
@@ -119,6 +128,10 @@ extension Page {
     case item(id: String)
     case people
 
+    /// For the admin: All users, All groups, or Deactivated. The page reads what it shows from the session model:
+    /// see `SessionModel.peoplePage`.
+    case forAdmin(Page)
+
     /// The "not found" page: the page's thing is not in the copy. A missing thing and a hidden thing are the
     /// same, because the copy holds neither. See `docs/screens/not-found.md`.
     case notFound
@@ -132,6 +145,8 @@ extension Page {
     case .user(let id): session.userPage(id: id) == nil ? .notFound : .user(id: id)
     case .item(let id): session.itemPage(id: id) == nil ? .notFound : .item(id: id)
     case .people: .people
+    // Only the admin has For the admin. A window restored for anyone else doesn't get the page.
+    case .allUsers, .allGroups, .deactivatedUsers: session.peoplePage.forAdmin == nil ? .notFound : .forAdmin(self)
     }
   }
 }
@@ -157,7 +172,8 @@ extension Page {
     case .list: .listPage
     case .user: .userPage
     case .item: .itemPage
-    case .people: .people
+    // The admin's lists are a part of the People page. Diagnostics name no more than that.
+    case .people, .allUsers, .allGroups, .deactivatedUsers: .people
     }
   }
 }

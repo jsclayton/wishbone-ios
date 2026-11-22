@@ -3,7 +3,9 @@ import WishboneSession
 
 /// The People page: everyone whom the user sees, by group. "Your children", then "Your parents", then one part for
 /// each of the user's groups, with "through {group}" for a group that the user is in by nesting. A tap on a row
-/// pushes the user's page. The admin's parts and the add menu come later. See `docs/screens/people.md`.
+/// pushes the user's page. For the admin, "For the admin" follows, with rows that push All users, All groups, and
+/// Deactivated. Deactivated is hidden when nobody is deactivated. The add menu comes later. See
+/// `docs/screens/people.md`.
 ///
 /// Its states are the ones that every screen shares. "Nobody to see" says so, as Home does, after a sync that found
 /// nobody.
@@ -34,6 +36,28 @@ struct PeopleScreen: View {
           PartHeading(part: part)
         }
       }
+      if let forAdmin = page.forAdmin {
+        Section {
+          NavigationLink(value: Page.allUsers) {
+            Text("All users", bundle: #bundle)
+          }
+          NavigationLink(value: Page.allGroups) {
+            Text("All groups", bundle: #bundle)
+          }
+          if !forAdmin.deactivated.isEmpty {
+            NavigationLink(value: Page.deactivatedUsers) {
+              Text("Deactivated", bundle: #bundle)
+            }
+          }
+        } header: {
+          Text("For the admin", bundle: #bundle)
+            .font(.headline)
+            .foregroundStyle(.primary)
+            .textCase(nil)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityAddTraits(.isHeader)
+        }
+      }
     }
     .contentMargins(.horizontal, max(0, (width - readableWidth) / 2), for: .scrollContent)
     .onGeometryChange(for: CGFloat.self) {
@@ -52,7 +76,7 @@ struct PeopleScreen: View {
 
 /// A user's row on the People page: the avatar, then the name with the last name, and "Deactivated" when it
 /// applies. It is one element, whose words are the ones that show.
-private struct PeopleRow: View {
+struct PeopleRow: View {
   let user: UserRow
 
   var body: some View {
