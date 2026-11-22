@@ -8,8 +8,9 @@ import SwiftUI
 /// headings (as small headings), bold, italic, inline code, and links to `http` and `https` addresses. Anything else
 /// shows as typed, raw HTML included, and a link to another scheme shows as the text that was typed.
 ///
-/// A web link opens in the default browser, never in the app: the system opens an `https` address there. VoiceOver
-/// reads each link's words, then "opens in browser".
+/// A web link opens in the default browser, never in the app: the system opens an `https` address there. A line
+/// reads as it shows, so VoiceOver's Links rotor and Voice Control reach each link by its words. Each web link of a
+/// block also shows as a web link row under the block, which reads its words, then "opens in browser".
 public enum Markdown {
   /// A block of the text.
   public enum Block: Equatable, Sendable {
@@ -64,19 +65,30 @@ public enum Markdown {
     }
   }
 
-  /// What VoiceOver reads for a line: its words, with "opens in browser" after the words of each web link.
-  public static func spoken(_ line: AttributedString) -> String {
-    var spoken = AttributedString()
-    for run in line.runs {
-      let words = AttributedString(line[run.range].characters)
-      if run.link != nil {
-        spoken.append(
-          AttributedString(String(localized: "\(String(words.characters)), opens in browser", bundle: #bundle)))
-      } else {
-        spoken.append(words)
-      }
+  /// A web link of a line: its words, and its address.
+  public struct Link: Equatable, Sendable {
+    public let words: String
+    public let url: URL
+
+    public init(words: String, url: URL) {
+      self.words = words
+      self.url = url
     }
-    return String(spoken.characters)
+  }
+
+  /// The web links of a line, in order. A link with marks inside it, such as a bold word, is one link.
+  public static func links(in line: AttributedString) -> [Link] {
+    line.runs[\.link].compactMap { url, range in
+      url.map { Link(words: String(line[range].characters), url: $0) }
+    }
+  }
+
+  /// The web links of a block, in order.
+  public static func links(in block: Block) -> [Link] {
+    switch block {
+    case .paragraph(let lines), .bullets(let lines), .numbers(let lines): lines.flatMap { links(in: $0) }
+    case .heading(let text): links(in: text)
+    }
   }
 
   // MARK: - Blocks
@@ -199,8 +211,9 @@ public enum Markdown {
   }
 }
 
-/// Markdown, as the web's subset renders it, in the body's text style. Each block is one element for VoiceOver,
-/// which reads each web link's words, then "opens in browser".
+/// Markdown, as the web's subset renders it, in the body's text style, as the rows of a list's section: one row for
+/// each block, then a web link row for each web link of the block. Each line of a block is one element for
+/// VoiceOver, and reads as it shows, its links with them. A numbered list reads each item's number.
 struct MarkdownView: View {
   let blocks: [Markdown.Block]
 
@@ -209,8 +222,8 @@ struct MarkdownView: View {
   }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+    ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+      Group {
         switch block {
         case .paragraph(let lines):
           VStack(alignment: .leading, spacing: 0) {
@@ -227,13 +240,18 @@ struct MarkdownView: View {
             Image(systemName: "circle.fill")
               .font(.system(.caption2))
               .imageScale(.small)
+              .accessibilityHidden(true)
           }
         case .numbers(let items):
+          // VoiceOver reads the number before the item, as it shows.
           list(items) { index in Text(index + 1, format: .number) }
         }
       }
+      .frame(maxWidth: .infinity, alignment: .leading)
+      ForEach(Array(Markdown.links(in: block).enumerated()), id: \.offset) { _, link in
+        WebLinkRow(title: link.words, destination: link.url)
+      }
     }
-    .frame(maxWidth: .infinity, alignment: .leading)
   }
 
   /// A list's items, each with its marker.
@@ -244,7 +262,6 @@ struct MarkdownView: View {
       ForEach(Array(items.enumerated()), id: \.offset) { index, item in
         HStack(alignment: .firstTextBaseline, spacing: 8) {
           marker(index)
-            .accessibilityHidden(true)
           MarkdownLine(text: item)
         }
       }
@@ -252,14 +269,13 @@ struct MarkdownView: View {
   }
 }
 
-/// One line of markdown. A line with a web link reads its words, then "opens in browser", after each link.
+/// One line of markdown. It reads as it shows: its label is its words, and each web link in it is a link, so the
+/// Links rotor reaches it.
 private struct MarkdownLine: View {
   let text: AttributedString
 
   var body: some View {
-    let hasLink = text.runs.contains { $0.link != nil }
     Text(text)
       .fixedSize(horizontal: false, vertical: true)
-      .accessibilityLabel(hasLink ? Text(Markdown.spoken(text)) : Text(text))
   }
 }

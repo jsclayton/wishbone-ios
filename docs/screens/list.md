@@ -115,7 +115,7 @@ Decided in the spec: "Move to…", "Reorder", "Add item", "Open in New Window".
 - An item row is one element: the title, the price, then for a giver how many are still wanted and the user's own claim. Its actions are Open, I'll get this, Move to…, Copy link, Edit, and Delete, as allowed.
 - Reorder uses the system's move up and move down actions. Move to… is the way to move an item without a drag.
 - Each recipient's avatar reads their name. The "For {names}" line is one element.
-- A web link in the description reads "opens in browser".
+- The description is read as it shows, and each web link in it is a link, for the Links rotor and Voice Control. Each web link also has a row under its block, which reads its words, then "opens in browser".
 - At the largest text sizes, an item's image sits above its text, and the price moves under the title.
 
 ## Secrecy

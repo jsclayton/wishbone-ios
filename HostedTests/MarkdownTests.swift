@@ -2,8 +2,8 @@ import Foundation
 import Testing
 import WishboneUI
 
-/// The app's own markdown renderer: the web's subset renders, a web link is marked as one that opens in the
-/// browser, and anything else shows as typed. See "Dependencies" in `docs/architecture.md`.
+/// The app's own markdown renderer: the web's subset renders, each web link is a link and is listed under its block,
+/// and anything else shows as typed. See "Dependencies" in `docs/architecture.md`.
 @Suite("The markdown renderer", .timeLimit(.minutes(1)))
 @MainActor
 struct MarkdownTests {
@@ -69,17 +69,40 @@ struct MarkdownTests {
       ])
   }
 
-  @Test("A web link is a link, read as one that opens in the browser")
+  @Test("A web link is a link, and is one of the block's web links")
   func webLink() throws {
     let text = try line("See [the shop](https://shop.example/a?b=1) for sizes.")
     #expect(
       runs(text) == [
         Run(words: "See "), Run(words: "the shop", link: "https://shop.example/a?b=1"), Run(words: " for sizes."),
       ])
-    #expect(Markdown.spoken(text) == "See the shop, opens in browser for sizes.")
+    #expect(Markdown.links(in: text) == [link("the shop", "https://shop.example/a?b=1")])
     #expect(runs(try line("[Plain](http://shop.example)")).first?.link == "http://shop.example")
-    // A line with no link reads as it shows.
-    #expect(Markdown.spoken(try line("Likes tea")) == "Likes tea")
+    // A line with no link has no web links.
+    #expect(Markdown.links(in: try line("Likes tea")).isEmpty)
+    // Each block has its own links, in order.
+    let blocks = Markdown.blocks("- [a](https://a.example)\n- b [c](https://c.example)\n\n## [d](https://d.example)")
+    #expect(
+      blocks.map { Markdown.links(in: $0) } == [
+        [link("a", "https://a.example"), link("c", "https://c.example")], [link("d", "https://d.example")],
+      ])
+    // A link to another scheme is not a web link.
+    #expect(Markdown.links(in: try line("[click](javascript:alert(1))")).isEmpty)
+  }
+
+  @Test("A link with a mark inside it is one link, with all of its words")
+  func markInsideLink() throws {
+    let text = try line("A [**Lego** set](https://shop.example/lego) please")
+    #expect(
+      runs(text) == [
+        Run(words: "A "), Run(words: "Lego", strong: true, link: "https://shop.example/lego"),
+        Run(words: " set", link: "https://shop.example/lego"), Run(words: " please"),
+      ])
+    #expect(Markdown.links(in: text) == [link("Lego set", "https://shop.example/lego")])
+  }
+
+  private func link(_ words: String, _ address: String) -> Markdown.Link {
+    Markdown.Link(words: words, url: URL(string: address)!)
   }
 
   @Test("Anything else shows as typed: raw HTML, a link to another scheme, and stray marks")
