@@ -13,7 +13,7 @@ import WishboneSession
 ///
 /// **Provisional.** Plain default: a system list. The "People" heading is a row that pushes the People page. Each
 /// part is a section. Each person is a row, with the avatar and the name beside it, at every text size, and the rows
-/// flow into as many columns as fit: one in a narrow window, more in a wide one.
+/// flow into as many columns as fit, in a system grid: one in a narrow window, more in a wide one.
 struct HomeScreen: View {
   let session: SessionModel
 
@@ -40,7 +40,7 @@ struct HomeScreen: View {
       }
       ForEach(people) { part in
         Section {
-          Columns(minimum: 200) {
+          LazyVGrid(columns: [GridItem(.adaptive(minimum: 200), spacing: 8)], alignment: .leading, spacing: 8) {
             ForEach(part.users) { user in
               HStack(spacing: 12) {
                 avatar(of: user)
@@ -115,50 +115,5 @@ private struct PartHeading: View {
     .fixedSize(horizontal: false, vertical: true)
     .accessibilityElement(children: .combine)
     .accessibilityAddTraits(.isHeader)
-  }
-}
-
-/// Columns of one width, as many as fit, each at least `minimum` wide: the people of a part flow into them. It is
-/// not lazy: a part is family-sized, and each change of the text size lays every person out again.
-private struct Columns: Layout {
-  var minimum: CGFloat = 88
-  var spacing: CGFloat = 8
-
-  private func columns(in width: CGFloat) -> (count: Int, width: CGFloat) {
-    let count = max(1, Int((width + spacing) / (minimum + spacing)))
-    return (count, (width - spacing * CGFloat(count - 1)) / CGFloat(count))
-  }
-
-  /// The height of each row, from the tallest person in it.
-  private func rowHeights(_ subviews: Subviews, count: Int, width: CGFloat) -> [CGFloat] {
-    stride(from: 0, to: subviews.count, by: count).map { start in
-      subviews[start..<min(start + count, subviews.count)]
-        .map { $0.sizeThatFits(ProposedViewSize(width: width, height: nil)).height }
-        .max() ?? 0
-    }
-  }
-
-  func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-    // A width that isn't finite, such as a stack's probe for how far a view can grow, is no width.
-    let width = proposal.width.flatMap { $0.isFinite ? $0 : nil } ?? (minimum * 3 + spacing * 2)
-    let (count, column) = columns(in: width)
-    let heights = rowHeights(subviews, count: count, width: column)
-    return CGSize(width: width, height: heights.reduce(0, +) + spacing * CGFloat(max(0, heights.count - 1)))
-  }
-
-  func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-    let (count, column) = columns(in: bounds.width)
-    let heights = rowHeights(subviews, count: count, width: column)
-    var y = bounds.minY
-    for (row, height) in heights.enumerated() {
-      for place in 0..<count {
-        let index = row * count + place
-        guard index < subviews.count else { break }
-        let x = bounds.minX + CGFloat(place) * (column + spacing)
-        subviews[index].place(
-          at: CGPoint(x: x, y: y), anchor: .topLeading, proposal: ProposedViewSize(width: column, height: height))
-      }
-      y += height + spacing
-    }
   }
 }
