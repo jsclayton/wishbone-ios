@@ -390,7 +390,12 @@ public final class SessionModel {
   private func fetchImagesAhead() {
     let earlier = fetchingImages
     fetchingImages = Task { [database, images] in
-      await earlier?.value
+      // A cancelled fetch cancels the one it waits for, so the end of the session stops the whole chain.
+      await withTaskCancellationHandler {
+        await earlier?.value
+      } onCancel: {
+        earlier?.cancel()
+      }
       guard !Task.isCancelled, let wanted = try? await database.imagesToFetchAhead() else { return }
       await images.fetchAhead(wanted)
     }
@@ -399,7 +404,11 @@ public final class SessionModel {
   /// Waits until the fetch of images ahead of time, after the last sync that succeeded, has ended. It returns at
   /// once when none runs.
   public func imagesFetchedAhead() async {
-    await fetchingImages?.value
+    // A sync that ended meanwhile starts the next fetch: wait for that one too.
+    while let fetching = fetchingImages {
+      await fetching.value
+      if fetchingImages == fetching { return }
+    }
   }
 
   /// Where every sync ends, and gets its outcome. It publishes whether the instance could be reached, and starts or
@@ -600,11 +609,13 @@ public final class SessionModel {
     _ = await running?.value
     // The device removes every reminder after this, so a rebuild that runs must end first.
     await rebuildingReminders?.value
-    // The device removes the image cache's folder after this, so nothing may write to it then.
+    // The device removes the image cache's folder after this, so nothing may write to it then. The cache ends
+    // first: it cancels its loads in flight, and waits for their writes, so the fetch ahead of time ends at once
+    // and a sign-out never waits for a download.
+    await images.end()
     fetchingImages?.cancel()
     await fetchingImages?.value
     fetchingImages = nil
-    await images.end()
     observation?.cancel()
     observation = nil
     user = nil

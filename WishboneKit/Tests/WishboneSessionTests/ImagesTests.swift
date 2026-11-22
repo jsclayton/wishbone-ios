@@ -215,6 +215,51 @@ struct ImagesTests {
     #expect(!exists(imagesFolder(in: folder)))
   }
 
+  @Test("Sign-out doesn't wait for an image that is still loading")
+  func signOutDoesntWait() async throws {
+    let family = try await family()
+    let held = instance.conditioner.hold(Route("GET", "/images/{id}"), at: .request)
+    let device = instance.device()
+    await device.signIn(pasting: try await instance.loginLink(for: family.robin))
+    // The fetch ahead of time, after the first sync, waits for its first image.
+    await held.waitUntilHeld()
+    let releasing = Task {
+      try? await Task.sleep(for: .seconds(5))
+      held.release()
+    }
+    defer { releasing.cancel() }
+
+    let start = ContinuousClock.now
+    await device.signOut()
+    let took = ContinuousClock.now - start
+
+    #expect(device.session == nil)
+    #expect(took < .seconds(2), "Sign-out took \(took)")
+  }
+
+  @Test("An upload that ends with the session leaves no folder")
+  func uploadEndingWithTheSession() async throws {
+    let robin = try await instance.person("Robin")
+    let folder = try ScratchDirectory("device")
+    let device = instance.device(storage: .folder(folder.url), images: .folder(folder.url))
+    await device.signIn(pasting: try await instance.loginLink(for: robin))
+    let session = try #require(device.session)
+    var draft = ProfileDraft(try #require(session.user))
+    draft.photo = .new(FixtureBuilder.onePixelPNG)
+
+    // The upload has reached the server, and its answer comes as the sign-out starts. The cache keeps the photo
+    // then, or keeps nothing, but writes nothing after the sign-out removed the folder.
+    let upload = instance.conditioner.hold(Route("POST", "/images"))
+    let confirming = Task { await session.confirmProfile(draft) }
+    await upload.waitUntilHeld()
+    upload.release()
+    await device.signOut()
+    _ = await confirming.value
+
+    #expect(device.session == nil)
+    #expect(!exists(imagesFolder(in: folder)))
+  }
+
   @Test("The API's own 401 deletes the folder")
   func unauthorizedDeletes() async throws {
     let family = try await family()

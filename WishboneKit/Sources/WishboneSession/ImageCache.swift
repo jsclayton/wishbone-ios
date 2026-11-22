@@ -40,6 +40,9 @@ public final class ImageCache: Sendable {
     /// The loads under way, by the image's address, so two asks for one image make one request.
     var loading: [String: Task<Data?, Never>] = [:]
 
+    /// The writes of the images that the app keeps, such as an upload, so the end of the session waits for them.
+    var writing: Set<Task<Void, Never>> = []
+
     /// The session is over: the cache keeps nothing more, and loads nothing.
     var hasEnded = false
   }
@@ -131,13 +134,13 @@ public final class ImageCache: Sendable {
       if let loading = state.loading[image.url] { return loading }
       let task = Task { [client] () -> Data? in
         if let data = await self.read(image) {
-          self.remember(data, for: image)
+          _ = self.remember(data, for: image)
           return data
         }
         guard let data = await client.imageBytes(image, onlyOnALowCostNetwork: onlyOnALowCostNetwork) else {
           return nil
         }
-        await self.keep(data, for: image)
+        if self.remember(data, for: image) { await self.writeFile(data, for: image) }
         return data
       }
       state.loading[image.url] = task
@@ -155,45 +158,58 @@ public final class ImageCache: Sendable {
 
   /// Keeps the bytes of an image, in memory and on disk. An image that the user just uploaded goes in under its new
   /// address, so it shows with no download.
+  ///
+  /// The write is one that `end()` waits for, so nothing is written after the session ended.
   func keep(_ data: Data, for image: ImageSummary) async {
-    guard remember(data, for: image) else { return }
-    await write(data, for: image)
+    let task: Task<Void, Never>? = state.withLock { state in
+      guard Self.remember(data, for: image, in: &state) else { return nil }
+      let task = Task { await self.writeFile(data, for: image) }
+      state.writing.insert(task)
+      return task
+    }
+    guard let task else { return }
+    await task.value
+    state.withLock { _ = $0.writing.remove(task) }
+  }
+
+  /// Keeps the bytes in memory. False after the session ended, when nothing is kept.
+  private func remember(_ data: Data, for image: ImageSummary) -> Bool {
+    state.withLock { Self.remember(data, for: image, in: &$0) }
   }
 
   /// Keeps the bytes in memory. Past the limit, the images used longest ago go first. False after the session
   /// ended, when nothing is kept.
-  @discardableResult
-  private func remember(_ data: Data, for image: ImageSummary) -> Bool {
-    state.withLock { state in
-      guard !state.hasEnded else { return false }
-      if let earlier = state.memory[image.url] { state.memoryBytes -= earlier.data.count }
-      state.clock += 1
-      state.memory[image.url] = (data, state.clock)
-      state.memoryBytes += data.count
-      while state.memoryBytes > Self.memoryLimit, state.memory.count > 1,
-        let oldest = state.memory.min(by: { $0.value.used < $1.value.used })
-      {
-        state.memory[oldest.key] = nil
-        state.memoryBytes -= oldest.value.data.count
-      }
-      return true
+  private static func remember(_ data: Data, for image: ImageSummary, in state: inout State) -> Bool {
+    guard !state.hasEnded else { return false }
+    if let earlier = state.memory[image.url] { state.memoryBytes -= earlier.data.count }
+    state.clock += 1
+    state.memory[image.url] = (data, state.clock)
+    state.memoryBytes += data.count
+    while state.memoryBytes > memoryLimit, state.memory.count > 1,
+      let oldest = state.memory.min(by: { $0.value.used < $1.value.used })
+    {
+      state.memory[oldest.key] = nil
+      state.memoryBytes -= oldest.value.data.count
     }
+    return true
   }
 
-  /// Ends the cache with its session: it keeps nothing more, and forgets what it holds in memory. The device then
-  /// removes the folder.
+  /// Ends the cache with its session: it keeps nothing more, and forgets what it holds in memory. It cancels the
+  /// loads in flight, and waits for them and for every write, so the device can then remove the folder.
   func end() async {
-    let loads = state.withLock { state in
+    let (loads, writes) = state.withLock { state in
       state.hasEnded = true
       state.memory = [:]
       state.memoryBytes = 0
-      defer { state.loading = [:] }
-      return Array(state.loading.values)
+      defer {
+        state.loading = [:]
+        state.writing = []
+      }
+      return (Array(state.loading.values), Array(state.writing))
     }
-    for load in loads {
-      load.cancel()
-      _ = await load.value
-    }
+    for load in loads { load.cancel() }
+    for load in loads { _ = await load.value }
+    for write in writes { await write.value }
   }
 
   // MARK: - The folder
@@ -226,7 +242,7 @@ public final class ImageCache: Sendable {
   /// Writes the bytes to the folder, which it makes the first time. Past the limit, the files used longest ago go
   /// first. A write that fails leaves the image in memory only.
   @concurrent
-  private func write(_ data: Data, for image: ImageSummary) async {
+  private func writeFile(_ data: Data, for image: ImageSummary) async {
     guard var folder, let file = file(of: image) else { return }
     do {
       if !FileManager.default.fileExists(atPath: folder.path(percentEncoded: false)) {
