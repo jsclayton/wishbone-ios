@@ -117,6 +117,11 @@ nonisolated final class SignInJourney: XCTestCase {
         "You use Wishbone in a browser.", "You're signed in to the app on another device.",
         "Nobody in your family runs Wishbone yet.",
         "Running your own Wishbone",
+      ],
+      // At the largest text size, the same rows are below the fold, so the journey scrolls each on the screen.
+      rowsToScrollTo: [
+        "You use Wishbone in a browser.", "You're signed in to the app on another device.",
+        "Nobody in your family runs Wishbone yet.", "Running your own Wishbone",
       ])
     // The sheet's close button has the system's words, so the journey finds it by its place.
     app.navigationBars.firstMatch.buttons.firstMatch.tap()
@@ -134,9 +139,10 @@ nonisolated final class SignInJourney: XCTestCase {
     XCTAssertTrue(privacyPolicy.exists, "The Share diagnostics sheet has no link to the privacy policy.")
     // The Dynamic Type check reports the web link row as "partially unsupported" in the default settings, where the
     // row is on the screen whole, as it does the help sheet's link row. It is allowed as there, and never at the
-    // largest text size, where the check measures every row that shows.
+    // largest text size, where the row is below the fold, and the journey scrolls it on the screen.
     try await Audit.run(
-      on: app, showing: "the Share diagnostics sheet", in: self, rowsThatLeaveTheScreen: ["Privacy policy"])
+      on: app, showing: "the Share diagnostics sheet", in: self, rowsThatLeaveTheScreen: ["Privacy policy"],
+      rowsToScrollTo: ["Privacy policy"])
     app.navigationBars.buttons[Audit.words("Done")].tap()
     XCTAssertTrue(scan.waitForExistence(timeout: 10))
     XCTAssertFalse(share.exists, "The Share diagnostics sheet didn't close.")

@@ -5,7 +5,7 @@ import XCTest
 /// signed-out screen, against a real test server. See "Sign out" in `docs/spec.md`, and "The simulator tier" in
 /// `docs/development.md`.
 ///
-/// It audits the Settings sheet, and attaches a screenshot of it as evidence for a person.
+/// It audits the Settings sheet and Acknowledgements, and attaches a screenshot of each as evidence for a person.
 nonisolated final class SignOutJourney: XCTestCase {
   @MainActor
   func testSignOut() async {
@@ -50,9 +50,24 @@ nonisolated final class SignOutJourney: XCTestCase {
       NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", robin.name, address)
     ).firstMatch
     XCTAssertTrue(signedIn.waitForExistence(timeout: 10), "Settings doesn't show the name and \(address).")
+    // The rows under Sign out, which a larger text pushes off. At the largest text size they are below the fold,
+    // so the journey scrolls each on the screen there.
+    let rowsBelow = ["Share diagnostics", "About", "Source code", "Acknowledgements", "Version"]
     try await Audit.run(
-      on: app, showing: "Settings", in: self,
-      rowsThatLeaveTheScreen: ["Share diagnostics", "About", "Source code", "Acknowledgements", "Version"])
+      on: app, showing: "Settings", in: self, rowsThatLeaveTheScreen: rowsBelow, rowsToScrollTo: rowsBelow)
+
+    // Acknowledgements: the app's own notice, then the license of each package. Back goes to Settings.
+    app.buttons[Audit.words("Acknowledgements")].tap()
+    XCTAssertTrue(
+      app.navigationBars[Audit.words("Acknowledgements")].waitForExistence(timeout: 10),
+      "Acknowledgements didn't show.")
+    XCTAssertTrue(
+      app.staticTexts[Audit.words("Wishbone uses these open source packages.")].exists,
+      "Acknowledgements doesn't say what it lists.")
+    try await Audit.run(on: app, showing: "Acknowledgements", in: self)
+    app.navigationBars[Audit.words("Acknowledgements")].buttons.firstMatch.tap()
+    XCTAssertTrue(
+      app.navigationBars[Audit.words("Settings")].waitForExistence(timeout: 10), "Back didn't go to Settings.")
 
     // Sign out, after its warning.
     app.buttons[Audit.words("Sign out")].tap()
