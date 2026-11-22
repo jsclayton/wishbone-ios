@@ -262,9 +262,9 @@ private struct OtherListRow: View {
   }
 }
 
-/// A part's heading on a user's page: "Good to know" and "Other lists". It is a headline in the primary color, as
-/// a part's heading on Home is, because a list draws a section's header in the system's secondary gray, which is below
-/// 4.5:1. It is a heading for the VoiceOver rotor.
+/// A part's heading on a user's page: "Good to know" and "Other lists". It is a headline in the label color itself,
+/// because a list draws a section's header in the system's secondary gray, which is below 4.5:1. The hierarchical
+/// `.primary` of a section's header is that gray. It is a heading for the VoiceOver rotor.
 private struct SectionHeading: View {
   let text: Text
 
@@ -275,7 +275,7 @@ private struct SectionHeading: View {
   var body: some View {
     text
       .font(.headline)
-      .foregroundStyle(.primary)
+      .foregroundStyle(Color.primary)
       .textCase(nil)
       .fixedSize(horizontal: false, vertical: true)
       .accessibilityAddTraits(.isHeader)

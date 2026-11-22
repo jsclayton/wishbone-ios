@@ -74,9 +74,12 @@ nonisolated final class PeopleJourney: XCTestCase {
     XCTAssertTrue(app.staticTexts["1"].exists, "The numbered list doesn't read its numbers.")
     XCTAssertTrue(app.staticTexts["Size medium"].exists)
     // The rows below Good to know's first line, which the larger text pushes down and off: the link's row, the
-    // numbered list's numbers and items, the item, and the other list. The page has one item, so that in the
+    // numbered list's numbers and items, the item and its price, Other lists' heading, and the other list with its
+    // count. The page has one item, so that in the
     // default settings no row is under the tab bar, where the audit measures the bar's glass.
-    let pageRows = ["Lego set,", "1", "Size medium", "2", "No glitter", "Kite", camping.name]
+    let pageRows = [
+      "Lego set,", "1", "Size medium", "2", "No glitter", "Kite", "$20", "Other lists", camping.name, "3 items",
+    ]
     try await Audit.run(
       on: app, showing: "a person's page", in: self, rowsThatLeaveTheScreen: pageRows,
       rowsToScrollTo: ["Lego set,", "Size medium", "Kite", camping.name])
