@@ -18,8 +18,8 @@ struct SettingsSheet: View {
     NavigationStack {
       List {
         if session.isInstanceUnreachable {
-          // The line blocks nothing: every row still opens. The primary color: the system's secondary gray is below
-          // 4.5:1 on the row.
+          // The line blocks nothing: every row still opens. It keeps the default style, the primary color: the
+          // system's secondary gray is below 4.5:1 on the row.
           Text("Can't reach \(session.session.instance.text)", bundle: #bundle)
         }
         ForEach(sections, id: \.self) { section in
