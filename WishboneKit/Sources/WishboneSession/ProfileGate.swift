@@ -90,6 +90,8 @@ extension SessionModel {
   /// `PATCH /users/me`, and then confirms with `POST /users/me/confirm-profile`. It waits for the server, and is
   /// never an unsent change. See "Other writes that wait for the server" in `docs/spec.md`.
   ///
+  /// After the confirmation, it rebuilds the reminders, which asks iOS for provisional authorization the first time.
+  ///
   /// Each answer goes into the copy as it comes. So after a save that worked and a confirmation that could not be
   /// sent, Try again sends only the confirmation.
   ///
@@ -111,6 +113,8 @@ extension SessionModel {
         try await keep(try await client.updateMe(changes))
       }
       try await keep(try await client.confirmProfile())
+      // The gate is behind the user now: the app asks for provisional authorization, and schedules the reminders.
+      await rebuildReminders()
       return .confirmed
     } catch let error as APIError {
       return await outcome(of: error, photo: false)

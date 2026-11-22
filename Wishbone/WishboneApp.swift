@@ -91,7 +91,8 @@ final class DiagnosticsSettings: DiagnosticsSwitch {
 
 extension Device.Setup {
   /// What the app gives its device: the session keychain in the shared access group, the install marker in the app
-  /// group's shared container, the database in the app's own Application Support folder, and diagnostics.
+  /// group's shared container, the database in the app's own Application Support folder, diagnostics, and the
+  /// system's notification center for the reminders, with the String Catalog's words.
   static func app(diagnostics: any DiagnosticsReporter) -> Device.Setup {
     let info = Bundle.main
     let version = info.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
@@ -107,7 +108,8 @@ extension Device.Setup {
       storage: .folder(.applicationSupportDirectory),
       network: .system,
       refresh: SystemRefreshScheduler(),
-      diagnostics: diagnostics
+      diagnostics: diagnostics,
+      reminders: Reminders(center: SystemReminderCenter(), words: .catalog)
     )
   }
 

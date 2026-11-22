@@ -100,6 +100,10 @@ public final class Device {
     /// Where the app's own faults and breadcrumbs go. Only the app gives one: an extension sends nothing.
     public var diagnostics: any DiagnosticsReporter
 
+    /// Where the sessions schedule their reminders. The default schedules none: only the app gives the system's
+    /// notification center.
+    public var reminders: Reminders
+
     public init(
       userAgent: UserAgent,
       keychain: any SessionKeychain,
@@ -110,7 +114,8 @@ public final class Device {
       network: any NetworkChanges = .unchanging,
       refresh: any RefreshScheduler = .none,
       timeZone: TimeZoneSource = .system,
-      diagnostics: any DiagnosticsReporter = .none
+      diagnostics: any DiagnosticsReporter = .none,
+      reminders: Reminders = .none
     ) {
       self.userAgent = userAgent
       self.keychain = keychain
@@ -122,6 +127,7 @@ public final class Device {
       self.refresh = refresh
       self.timeZone = timeZone
       self.diagnostics = diagnostics
+      self.reminders = reminders
     }
   }
 
@@ -166,8 +172,9 @@ public final class Device {
     }
     guard let kept else {
       LocalDatabase.removeAll(in: setup.storage)
-      // With no session, nothing is scheduled.
+      // With no session, nothing is scheduled, and no reminder is left.
       setup.refresh.cancelRefresh()
+      setup.reminders.center.removeAll()
       return
     }
     guard setup.marker.isPresent else {
@@ -196,6 +203,7 @@ public final class Device {
     }
     LocalDatabase.removeAll(in: setup.storage)
     setup.refresh.cancelRefresh()
+    setup.reminders.center.removeAll()
     let client = APIClient(
       session: leftOver, userAgent: setup.userAgent, clock: setup.clock, diagnostics: setup.diagnostics)
     revokingLeftOver = Task {
@@ -383,8 +391,8 @@ public final class Device {
     signInState = .signedOutByServer(model.session.instance)
   }
 
-  /// Forgets everything of the session on the device: its session model, the session keychain's item, and the
-  /// local databases. Nothing of the session is left.
+  /// Forgets everything of the session on the device: its session model, the session keychain's item, the local
+  /// databases, and every reminder. Nothing of the session is left.
   private func forget(_ model: SessionModel) async {
     await model.end()
     do {
@@ -394,8 +402,9 @@ public final class Device {
       Log.fault(.session, "The session keychain can't forget the session.", detail: "\(error.status)")
     }
     LocalDatabase.removeAll(in: setup.storage)
-    // With no session, nothing is scheduled.
+    // With no session, nothing is scheduled, and no reminder is left.
     setup.refresh.cancelRefresh()
+    setup.reminders.center.removeAll()
     // The device has no instance now, so no event names a version.
     setup.diagnostics.wishboneVersion(nil)
   }
@@ -410,6 +419,6 @@ public final class Device {
     return SessionModel(
       session: session, client: client, database: database, timeZone: setup.timeZone,
       timerClock: setup.timerClock, network: setup.network, refresh: setup.refresh, diagnostics: setup.diagnostics,
-      endedByServer: { [weak self] model in await self?.endedByServer(model) })
+      reminders: setup.reminders, endedByServer: { [weak self] model in await self?.endedByServer(model) })
   }
 }

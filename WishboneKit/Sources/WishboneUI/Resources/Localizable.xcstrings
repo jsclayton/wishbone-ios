@@ -1,6 +1,15 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "%@ is in 1 week" : {
+
+    },
+    "%@ is in 2 weeks" : {
+
+    },
+    "%@ is in 4 weeks" : {
+
+    },
     "%@ runs Wishbone %@. The app needs %@ or later. Ask whoever runs it to update." : {
       "localizations" : {
         "en" : {
@@ -10,6 +19,45 @@
           }
         }
       }
+    },
+    "%@'s %@ is in 1 week" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@'s %2$@ is in 1 week"
+          }
+        }
+      }
+    },
+    "%@'s %@ is in 2 weeks" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@'s %2$@ is in 2 weeks"
+          }
+        }
+      }
+    },
+    "%@'s %@ is in 4 weeks" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@'s %2$@ is in 4 weeks"
+          }
+        }
+      }
+    },
+    "%@'s birthday is in 1 week" : {
+
+    },
+    "%@'s birthday is in 2 weeks" : {
+
+    },
+    "%@'s birthday is in 4 weeks" : {
+
     },
     "A birthday is required." : {
 
@@ -102,6 +150,28 @@
 
     },
     "It never sends anything from your family's lists, names, birthdays, or the address of your Wishbone." : {
+
+    },
+    "It's %@ today" : {
+
+    },
+    "It's %@'s %@ today" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It's %1$@'s %2$@ today"
+          }
+        }
+      }
+    },
+    "It's %@'s birthday today" : {
+
+    },
+    "It's your %@ today" : {
+
+    },
+    "It's your birthday today" : {
 
     },
     "Last name" : {
@@ -310,6 +380,24 @@
 
     },
     "You're signed in to the app on another device. Open Wishbone there, and use Sign in on another device." : {
+
+    },
+    "Your %@ is in 1 week" : {
+
+    },
+    "Your %@ is in 2 weeks" : {
+
+    },
+    "Your %@ is in 4 weeks" : {
+
+    },
+    "Your birthday is in 1 week" : {
+
+    },
+    "Your birthday is in 2 weeks" : {
+
+    },
+    "Your birthday is in 4 weeks" : {
 
     },
     "Your lists" : {

@@ -140,6 +140,20 @@ public final class SessionModel {
   /// Where the sync's breadcrumbs go.
   private let diagnostics: any DiagnosticsReporter
 
+  /// Where the session schedules its reminders, with their words and the clock of the plan.
+  let reminders: Reminders
+
+  /// The reminder settings. Every session has the defaults until the Reminders screen exists.
+  var reminderSettings = ReminderSettings()
+
+  /// The rebuild of the reminders that runs, or the last one. One runs at a time.
+  var rebuildingReminders: Task<Void, Never>?
+
+  /// The IANA name of the device's zone now.
+  var timeZoneIdentifier: String {
+    timeZone.identifier()
+  }
+
   init(
     session: Session,
     client: APIClient,
@@ -149,6 +163,7 @@ public final class SessionModel {
     network: any NetworkChanges,
     refresh: any RefreshScheduler,
     diagnostics: any DiagnosticsReporter,
+    reminders: Reminders,
     endedByServer: @escaping @MainActor (SessionModel) async -> Void
   ) {
     self.session = session
@@ -158,6 +173,7 @@ public final class SessionModel {
     self.timerClock = timerClock
     self.refresh = refresh
     self.diagnostics = diagnostics
+    self.reminders = reminders
     self.endedByServer = endedByServer
     // The first snapshot comes at once, so a screen shows what is saved before anything is asked of the instance.
     observation = LocalDatabase.snapshots(ofUser: session.userID).start(
@@ -351,6 +367,8 @@ public final class SessionModel {
       await endedByServer(self)
     }
     let outcome = syncEnded(end)
+    // Only a sync that succeeded rebuilds the reminders. A failed sync leaves the set as it is.
+    if outcome == .succeeded, !hasEnded { await rebuildReminders() }
     diagnostics.leave(.syncEnded(outcome.end))
     return outcome
   }
@@ -551,6 +569,8 @@ public final class SessionModel {
     watchingNetwork = nil
     windowsInForeground = []
     _ = await running?.value
+    // The device removes every reminder after this, so a rebuild that runs must end first.
+    await rebuildingReminders?.value
     observation?.cancel()
     observation = nil
     user = nil
