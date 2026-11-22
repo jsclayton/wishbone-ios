@@ -41,4 +41,29 @@ struct AcknowledgementsTests {
       #expect(entry.license.count > 500, "\(entry.name) has no full license text.")
     }
   }
+
+  @Test("The screen's MPL-2.0 notice has the words of the README's license block")
+  func noticeIsTheReadmes() throws {
+    let readme = try String(contentsOf: Repo.url("README.md"), encoding: .utf8)
+    let notice = try String(
+      contentsOf: Repo.url("WishboneKit/Sources/WishboneUI/Resources/Notice.txt"), encoding: .utf8)
+
+    // The block is the first `text` block under "## License".
+    let license = try #require(readme.range(of: "\n## License\n"), "The README has no License section.")
+    let rest = readme[license.upperBound...]
+    let open = try #require(rest.range(of: "```text\n"), "The License section has no text block.")
+    let close = try #require(rest[open.upperBound...].range(of: "\n```"), "The text block doesn't end.")
+    let block = String(rest[open.upperBound..<close.lowerBound])
+
+    #expect(!block.isEmpty)
+    #expect(Self.paragraphs(notice) == Self.paragraphs(block))
+  }
+
+  /// The paragraphs of a text, each with its lines joined by one space, so that the README's wrapped lines and the
+  /// resource's one line for each paragraph compare equal. A change of any word still differs.
+  private static func paragraphs(_ text: String) -> [String] {
+    text.components(separatedBy: "\n\n").map { paragraph in
+      paragraph.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    }.filter { !$0.isEmpty }
+  }
 }
