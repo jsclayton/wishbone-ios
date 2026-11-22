@@ -61,9 +61,10 @@ nonisolated final class ClaimJourney: XCTestCase {
     XCTAssertTrue(holding("2 of 2 still wanted").exists, "The page doesn't say how many.")
     // How many, and the button, are the last rows: a larger text pushes them off the screen. The journey doesn't
     // scroll to them at the largest text size: the audit of the scrolled screen reports issues with no element, so
-    // they can't be told apart.
+    // they can't be told apart. In the double-length pseudo-language, how many starts "1$lld of 2$lld" (see above).
     try await Audit.run(
-      on: app, showing: "an item's page", in: self, rowsThatLeaveTheScreen: ["2 of 2 still wanted", "I'll get this"])
+      on: app, showing: "an item's page", in: self,
+      rowsThatLeaveTheScreen: ["2 of 2 still wanted", "1$lld of 2$lld still wanted", "I'll get this"])
 
     // The claim waits for the server. Then the line, which names the occasion, takes the button's place, and one
     // fewer is still wanted.
