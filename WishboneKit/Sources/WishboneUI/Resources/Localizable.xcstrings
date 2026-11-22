@@ -37,12 +37,33 @@
         }
       }
     },
+    "%@ turns %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ turns %2$lld"
+          }
+        }
+      }
+    },
     "%@ · read %@" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$@ · read %2$@"
+          }
+        }
+      }
+    },
+    "%@'s %@" : {
+      "comment" : "The first is the person's name. The second is the name of their occasion, such as graduation.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@'s %2$@"
           }
         }
       }
@@ -79,6 +100,9 @@
           }
         }
       }
+    },
+    "%@'s birthday" : {
+
     },
     "%@'s birthday is in 1 week" : {
 
@@ -121,6 +145,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$@–%2$@"
+          }
+        }
+      }
+    },
+    "%lld from you" : {
+
+    },
+    "%lld from you · %lld still to buy" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld from you · %2$lld still to buy"
           }
         }
       }
@@ -244,6 +281,9 @@
     "Claiming" : {
 
     },
+    "Coming up" : {
+
+    },
     "Continue" : {
 
     },
@@ -266,6 +306,9 @@
 
     },
     "Enter your name." : {
+
+    },
+    "Everyone" : {
 
     },
     "Finish your profile" : {
@@ -381,7 +424,13 @@
     "Not here" : {
 
     },
+    "Nothing from you yet" : {
+
+    },
     "Nothing here yet. Tap Add item to start the list." : {
+
+    },
+    "Nothing in the next 60 days." : {
 
     },
     "Nothing on this list yet." : {
@@ -669,6 +718,9 @@
     "You're signed in to the app on another device. Open Wishbone there, and use Sign in on another device." : {
 
     },
+    "Your %@" : {
+      "comment" : "The name of the user's own occasion, such as graduation."
+    },
     "Your %@ is in 1 week" : {
 
     },
@@ -676,6 +728,9 @@
 
     },
     "Your %@ is in 4 weeks" : {
+
+    },
+    "Your birthday" : {
 
     },
     "Your birthday is in 1 week" : {
@@ -699,6 +754,9 @@
     "example.com, or paste a link" : {
 
     },
+    "in %lld days" : {
+
+    },
     "no price" : {
 
     },
@@ -706,6 +764,12 @@
 
     },
     "through %@" : {
+
+    },
+    "today" : {
+
+    },
+    "tomorrow" : {
 
     }
   },

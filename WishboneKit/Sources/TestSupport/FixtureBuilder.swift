@@ -232,6 +232,15 @@ public struct FixtureBuilder: Sendable {
     return Fixture.Occasion(id: try id(of: made), name: self.name(name))
   }
 
+  /// The user's birthday, as the viewer sees it: every user has one.
+  public func birthday(of person: Fixture.Person, as viewer: Fixture.Person) async throws -> Fixture.Occasion {
+    let rows = try await viewer.signedIn().all("/occasions?user_id=\(person.id)&kind=birthday")
+    guard let row = rows.first(where: { $0["user"]["id"].string == person.id }), let id = row["id"].string else {
+      throw Unreadable(what: "a birthday of user \(person.id)", json: .array(rows))
+    }
+    return Fixture.Occasion(id: id, name: row["name"].string ?? "Birthday")
+  }
+
   /// Blocks a store, as the admin. The store's host name holds this builder's tag.
   public func blockedStore(_ name: String = "blocked") async throws -> Fixture.BlockedStore {
     let store = "\(name)-\(tag).example"
@@ -311,13 +320,15 @@ public struct FixtureBuilder: Sendable {
     for occasion: Fixture.Occasion? = nil,
     quantity: Int = 1,
     fromLabel: String? = nil,
-    note: String? = nil
+    note: String? = nil,
+    isBought: Bool = false
   ) async throws -> Fixture.Gift {
     var body: [String: JSON] = [:]
     if quantity != 1 { body["quantity"] = .number(Double(quantity)) }
     body["occasion_id"] = occasion.map { .string($0.id) }
     body["from_label"] = fromLabel.map { .string($0) }
     body["note"] = note.map { .string($0) }
+    if isBought { body["is_bought"] = .bool(true) }
     let made = try await giver.signedIn().post("/items/\(item.id)/gifts", .object(body))
     return Fixture.Gift(id: try id(of: made), item: item, giver: giver)
   }
