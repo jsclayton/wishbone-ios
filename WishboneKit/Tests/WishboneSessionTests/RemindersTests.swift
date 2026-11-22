@@ -96,6 +96,30 @@ struct RemindersTests {
     #expect(Set(center.identifiers) == (try identifiers(of: recital, party, for: robin)))
   }
 
+  @Test("A rebuild that waits for iOS holds no sync: the next sync runs at once, and finds the instance gone")
+  func slowCenterHoldsNoSync() async throws {
+    let robin = try await person()
+    let center = HeldReminderCenter()
+    let device = instance.device(reminders: Reminders(center: center))
+    let link = try await instance.loginLink(for: robin)
+    let signingIn = Task { await device.signIn(pasting: link) }
+    // The sync at sign-in succeeded, and its rebuild waits for iOS to answer the ask.
+    await center.waitUntilAsked()
+    let session = try #require(device.session)
+
+    // The instance goes away, and the window comes to the foreground. The sync doesn't wait for the rebuild: the
+    // line shows while iOS has not answered. A sync that waited would hold the line until the suite's time limit.
+    instance.conditioner.dropEverything()
+    let syncing = Task { await session.syncNow() }
+    await until { session.isInstanceUnreachable }
+    #expect(session.isInstanceUnreachable)
+
+    // The sign-in ends when iOS answers.
+    center.answer()
+    #expect(await syncing.value == .unreachable)
+    await signingIn.value
+  }
+
   @Test("With notifications off for the app in iOS, a sync schedules none, and asks for nothing")
   func notificationsOff() async throws {
     let robin = try await person()
