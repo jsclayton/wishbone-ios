@@ -26,8 +26,8 @@ nonisolated final class SignOutJourney: XCTestCase {
     let robin = try await builder.person("Robin")
     // A user who confirmed their profile, so the app shows them no profile gate.
     try await builder.confirmProfile(of: robin)
-    let list = try await builder.primaryList(of: robin)
-    _ = try await builder.item("Kite", on: list, as: robin)
+    let morgan = try await builder.person("Morgan", signedIn: false)
+    _ = try await builder.group("Family", users: [robin, morgan])
     let link = try await builder.loginLink(for: robin).absoluteString
     let address = try XCTUnwrap(link.components(separatedBy: "/login/").first)
 
@@ -36,10 +36,10 @@ nonisolated final class SignOutJourney: XCTestCase {
     app.launchEnvironment["WISHBONE_JOURNEY_START_SIGNED_OUT"] = "1"
     app.launchEnvironment["WISHBONE_JOURNEY_LOGIN_LINK"] = link
     app.launch()
-    XCTAssertTrue(app.staticTexts["Kite"].waitForExistence(timeout: 60), "Home didn't show after the sign-in.")
+    XCTAssertTrue(app.buttons[morgan.name].waitForExistence(timeout: 60), "Home didn't show after the sign-in.")
 
     // The avatar, at the top trailing corner, reads "Settings", and opens the Settings sheet.
-    let avatar = app.navigationBars[robin.name].buttons[Audit.words("Settings")]
+    let avatar = app.navigationBars[Audit.words("Home")].buttons[Audit.words("Settings")]
     XCTAssertTrue(avatar.waitForExistence(timeout: 10), "Home has no avatar.")
     avatar.tap()
     XCTAssertTrue(
@@ -79,7 +79,7 @@ nonisolated final class SignOutJourney: XCTestCase {
     // The signed-out screen, with no message: the instance was reached.
     let scan = app.buttons[Audit.words("Scan QR code")]
     XCTAssertTrue(scan.waitForExistence(timeout: 60), "The signed-out screen didn't show after Sign out.")
-    XCTAssertFalse(app.staticTexts["Kite"].exists)
+    XCTAssertFalse(app.buttons[morgan.name].exists)
     app.terminate()
 
     // A relaunch stays signed out.

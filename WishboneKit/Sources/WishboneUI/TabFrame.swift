@@ -3,7 +3,8 @@ import WishboneAPI
 import WishboneSession
 
 /// The frame around every screen behind the sign-in: Home, Lists, Gifts, and the plus. In a narrow window it is a
-/// tab bar. In a wide window it is a sidebar, with shortcuts to the user's lists and to People. See
+/// tab bar. In a wide window it is a sidebar, with shortcuts to the user's lists, to People, and to the users of
+/// each of the user's groups. See
 /// `docs/screens/tabs-and-sidebar.md` and ADR 0001.
 ///
 /// The frame shows the window's place, and changes it. The window owns the place, and saves it.
@@ -36,7 +37,7 @@ public struct TabFrame: View {
   public var body: some View {
     TabView(selection: tab) {
       Tab(value: WindowTab.home) {
-        stack(on: .home) { HomeStandInScreen(session: session).toolbar { avatar } }
+        stack(on: .home) { HomeScreen(session: session, pages: $place[pagesOn: .home]).toolbar { avatar } }
       } label: {
         Label {
           Text("Home", bundle: #bundle)
@@ -103,8 +104,8 @@ public struct TabFrame: View {
     }
   }
 
-  /// The sidebar's shortcuts: your lists, then People. They are rows under the tabs, in the sidebar only, so a
-  /// tab bar never shows them.
+  /// The sidebar's shortcuts: your lists, then People, then one section for each of the user's groups, with its
+  /// users. They are rows under the tabs, in the sidebar only, so a tab bar never shows them.
   private var shortcuts: some View {
     VStack(alignment: .leading, spacing: 0) {
       if !session.yourLists.isEmpty {
@@ -116,6 +117,26 @@ public struct TabFrame: View {
       SidebarShortcut(name: String(localized: "People", bundle: #bundle), systemImage: "person.2") {
         place.open(.people)
       }
+      ForEach(groupParts) { part in
+        if case .group(let group, let through) = part.kind {
+          SidebarHeading(
+            words: group.name,
+            detail: through.map { String(localized: "through \($0.name)", bundle: #bundle) })
+        }
+        ForEach(part.users) { user in
+          SidebarShortcut(
+            name: user.name, systemImage: "person.crop.circle",
+            detail: user.isDeactivated ? String(localized: "Deactivated", bundle: #bundle) : nil
+          ) { place.open(.user(id: user.id)) }
+        }
+      }
+    }
+  }
+
+  /// The parts of Home's People that are groups: the sidebar has a section for each. With no groups, it has none.
+  private var groupParts: [PeoplePart] {
+    session.people.filter { part in
+      if case .group = part.kind { true } else { false }
     }
   }
 

@@ -39,8 +39,9 @@ nonisolated final class SignInJourney: XCTestCase {
     let server = try await TestServer.shared()
     let builder = try await FixtureBuilder(server: server)
     let sam = try await builder.person("Sam")
-    let list = try await builder.primaryList(of: sam)
-    _ = try await builder.item("Tent", on: list, as: sam)
+    // Someone to give to, so Home shows People.
+    let ash = try await builder.person("Ash", signedIn: false)
+    _ = try await builder.group("Camp", users: [sam, ash])
 
     let app = Audit.app()
     app.launchEnvironment["WISHBONE_JOURNEY_START_SIGNED_OUT"] = "1"
@@ -65,7 +66,7 @@ nonisolated final class SignInJourney: XCTestCase {
 
     // Continue confirms the profile, and the window shows Home.
     gate.buttons[Audit.words("Continue")].tap()
-    XCTAssertTrue(app.staticTexts["Tent"].waitForExistence(timeout: 60), "Home didn't show after Continue.")
+    XCTAssertTrue(app.buttons[ash.name].waitForExistence(timeout: 60), "Home didn't show after Continue.")
     XCTAssertTrue(app.tabBars.firstMatch.buttons[Audit.words("Home")].isSelected)
     XCTAssertFalse(title.exists)
     app.terminate()
@@ -73,7 +74,7 @@ nonisolated final class SignInJourney: XCTestCase {
     // A relaunch goes straight to the tabs.
     let relaunched = Audit.app()
     relaunched.launch()
-    XCTAssertTrue(relaunched.staticTexts["Tent"].waitForExistence(timeout: 60), "The relaunch didn't show Home.")
+    XCTAssertTrue(relaunched.buttons[ash.name].waitForExistence(timeout: 60), "The relaunch didn't show Home.")
     XCTAssertFalse(relaunched.staticTexts[Audit.words("Finish your profile")].exists)
     relaunched.terminate()
   }
@@ -82,13 +83,13 @@ nonisolated final class SignInJourney: XCTestCase {
   private func signIn() async throws {
     let server = try await TestServer.shared()
     let builder = try await FixtureBuilder(server: server)
-    let robin = try await builder.person("Robin")
+    // Home's People: Robin's parent, and the people of Robin's group.
+    let morgan = try await builder.person("Morgan", signedIn: false)
+    let jordan = try await builder.person("Jordan", signedIn: false)
+    let robin = try await builder.person("Robin", parents: [morgan])
+    _ = try await builder.group("Family", users: [robin, morgan, jordan])
     // A user who confirmed their profile, so the app shows them no profile gate.
     try await builder.confirmProfile(of: robin)
-    let list = try await builder.primaryList(of: robin)
-    for title in ["Kite", "Puzzle"] {
-      _ = try await builder.item(title, on: list, as: robin)
-    }
 
     // The signed-out screen.
     let app = Audit.app()
@@ -151,9 +152,17 @@ nonisolated final class SignInJourney: XCTestCase {
     // The same launch, with a login link passed in as if pasted.
     app.launchEnvironment["WISHBONE_JOURNEY_LOGIN_LINK"] = try await builder.loginLink(for: robin).absoluteString
     app.launch()
-    XCTAssertTrue(app.staticTexts["Kite"].waitForExistence(timeout: 60), "Home didn't show after the sign-in.")
-    XCTAssertTrue(app.staticTexts["Puzzle"].exists)
-    XCTAssertTrue(app.navigationBars[robin.name].exists)
+    // Home: People, with Your parents and the group. Robin is not among their own people.
+    XCTAssertTrue(app.buttons[jordan.name].waitForExistence(timeout: 60), "Home didn't show after the sign-in.")
+    XCTAssertTrue(app.navigationBars[Audit.words("Home")].exists)
+    let labelled = { (words: String) in
+      app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", words))
+    }
+    XCTAssertTrue(labelled(Audit.words("Your parents")).firstMatch.exists, "Home has no Your parents.")
+    XCTAssertTrue(labelled(builder.name("Family")).firstMatch.exists, "Home has no part for the group.")
+    XCTAssertEqual(
+      app.buttons.matching(NSPredicate(format: "label == %@", morgan.name)).count, 2, "Morgan isn't in both parts.")
+    XCTAssertFalse(app.buttons[robin.name].exists, "Robin is among their own people.")
 
     // The tabs: Home, Lists, Gifts, and the plus, which reads "Add". A window opens on Home.
     let tabs = app.tabBars.firstMatch
@@ -174,7 +183,7 @@ nonisolated final class SignInJourney: XCTestCase {
 
     // Home kept its place. Then the plus opens the Add screen, with the system search field and its prompt.
     tabs.buttons[Audit.words("Home")].tap()
-    XCTAssertTrue(app.staticTexts["Kite"].waitForExistence(timeout: 10), "Home didn't show again.")
+    XCTAssertTrue(app.buttons[jordan.name].waitForExistence(timeout: 10), "Home didn't show again.")
     tabs.buttons[Audit.words("Add")].tap()
     let field = app.searchFields[Audit.words("Paste a link or type what you want")]
     XCTAssertTrue(field.waitForExistence(timeout: 10), "The Add screen's field didn't show.")
@@ -212,7 +221,8 @@ nonisolated final class SignInJourney: XCTestCase {
     let builder = try await FixtureBuilder(server: server)
     let sky = try await builder.person("Sky")
     try await builder.confirmProfile(of: sky)
-    _ = try await builder.item("Lantern", on: try await builder.primaryList(of: sky), as: sky)
+    let rowan = try await builder.person("Rowan", signedIn: false)
+    _ = try await builder.group("Friends", users: [sky, rowan])
     let link = try await builder.loginLink(for: sky)
     let parts = try XCTUnwrap(URLComponents(url: link, resolvingAgainstBaseURL: false))
     let address = "\(parts.scheme ?? "")://\(parts.host ?? "")\(parts.port.map { ":\($0)" } ?? "")"
@@ -224,7 +234,7 @@ nonisolated final class SignInJourney: XCTestCase {
     app.launchEnvironment["WISHBONE_JOURNEY_START_SIGNED_OUT"] = "1"
     app.launchEnvironment["WISHBONE_JOURNEY_LOGIN_LINK"] = link.absoluteString
     app.launch()
-    XCTAssertTrue(app.staticTexts["Lantern"].waitForExistence(timeout: 60), "Home didn't show after the sign-in.")
+    XCTAssertTrue(app.buttons[rowan.name].waitForExistence(timeout: 60), "Home didn't show after the sign-in.")
     XCTAssertFalse(app.staticTexts.matching(lineWords).firstMatch.exists)
 
     // The instance goes away. A window that comes to the foreground syncs, and finds it gone. The journey never
@@ -233,7 +243,7 @@ nonisolated final class SignInJourney: XCTestCase {
     try sendHomeAndBack(app)
     XCTAssertTrue(
       app.staticTexts.matching(lineWords).firstMatch.waitForExistence(timeout: 60), "The line didn't show on Home.")
-    XCTAssertTrue(app.staticTexts["Lantern"].exists, "What is saved went with the instance.")
+    XCTAssertTrue(app.buttons[rowan.name].exists, "What is saved went with the instance.")
     try await Audit.run(on: app, showing: "Home, with the line", in: self)
     app.terminate()
 
@@ -241,7 +251,7 @@ nonisolated final class SignInJourney: XCTestCase {
     // launch: the unreachable view with Try again, never an empty state.
     let relaunched = Audit.app()
     relaunched.launch()
-    XCTAssertTrue(relaunched.staticTexts["Lantern"].waitForExistence(timeout: 60), "The relaunch didn't show Home.")
+    XCTAssertTrue(relaunched.buttons[rowan.name].waitForExistence(timeout: 60), "The relaunch didn't show Home.")
     XCTAssertTrue(
       relaunched.staticTexts.matching(lineWords).firstMatch.waitForExistence(timeout: 60),
       "The line didn't show after the relaunch.")
