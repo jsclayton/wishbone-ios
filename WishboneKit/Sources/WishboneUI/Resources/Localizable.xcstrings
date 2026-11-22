@@ -116,6 +116,9 @@
     "Day" : {
 
     },
+    "Deactivated" : {
+
+    },
     "Diagnostics settings" : {
 
     },
@@ -210,10 +213,10 @@
     "Nobody in your family runs Wishbone yet." : {
 
     },
-    "Not here" : {
+    "Nobody is here yet. The admin adds people to your groups." : {
 
     },
-    "Nothing on this list yet." : {
+    "Not here" : {
 
     },
     "Open Settings" : {
@@ -400,13 +403,22 @@
     "Your birthday is in 4 weeks" : {
 
     },
+    "Your children" : {
+
+    },
     "Your lists" : {
+
+    },
+    "Your parents" : {
 
     },
     "example.com, or paste a link" : {
 
     },
     "opens in browser" : {
+
+    },
+    "through %@" : {
 
     }
   },

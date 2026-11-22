@@ -8,33 +8,42 @@ import SwiftUI
 // passes the system's views there. The system's cell content also gives a row the look and the sizes of the rows
 // above it. The package also builds on macOS, for its tests, so each row has a plain SwiftUI form there.
 
-/// The heading of a part of the sidebar's shortcuts, such as "Your lists".
+/// The heading of a part of the sidebar's shortcuts, such as "Your lists", or a group's name. `detail` is a line
+/// under it, such as "through {group}".
 struct SidebarHeading: View {
   let words: String
+  var detail: String?
 
   var body: some View {
     #if os(iOS)
-      SystemHeading(words: words)
+      SystemHeading(words: words, detail: detail)
     #else
-      Text(words)
-        .accessibilityAddTraits(.isHeader)
+      VStack(alignment: .leading) {
+        Text(words)
+        if let detail { Text(detail) }
+      }
+      .accessibilityElement(children: .combine)
+      .accessibilityAddTraits(.isHeader)
     #endif
   }
 }
 
-/// A shortcut's row in the sidebar. It reads its name: the name of its list, or of its page.
+/// A shortcut's row in the sidebar. It reads its name: the name of its list, of its user, or of its page. `detail`
+/// is a line under the name, such as "Deactivated", which VoiceOver reads after it.
 struct SidebarShortcut: View {
   let name: String
   let systemImage: String
+  var detail: String?
   let open: () -> Void
 
   var body: some View {
     #if os(iOS)
-      SystemShortcut(name: name, systemImage: systemImage, open: open)
+      SystemShortcut(name: name, systemImage: systemImage, detail: detail, open: open)
     #else
       Button(action: open) {
         Label {
           Text(name)
+          if let detail { Text(detail) }
         } icon: {
           Image(systemName: systemImage)
         }
@@ -46,29 +55,69 @@ struct SidebarShortcut: View {
 #if os(iOS)
   private struct SystemHeading: UIViewRepresentable {
     let words: String
+    let detail: String?
 
-    func makeUIView(context: Context) -> UILabel {
-      let label = UILabel()
+    func makeUIView(context: Context) -> HeadingView {
+      HeadingView()
+    }
+
+    func updateUIView(_ heading: HeadingView, context: Context) {
+      heading.show(words: words, detail: detail)
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView heading: HeadingView, context: Context) -> CGSize? {
+      SidebarRow.size(of: heading, in: proposal)
+    }
+  }
+
+  /// A heading, and the line under it when it has one. It is one element: a header, with both lines' words.
+  private final class HeadingView: UIView {
+    private let label = UILabel()
+    private let detailLabel = UILabel()
+
+    init() {
+      super.init(frame: .zero)
       let style = UIFontDescriptor.preferredFontDescriptor(withTextStyle: .subheadline)
       label.font = UIFont(descriptor: style.withSymbolicTraits(.traitBold) ?? style, size: 0)
-      label.adjustsFontForContentSizeCategory = true
-      label.numberOfLines = 0
-      label.accessibilityTraits = .header
-      return label
+      detailLabel.font = .preferredFont(forTextStyle: .footnote)
+      detailLabel.textColor = .secondaryLabel
+      let stack = UIStackView(arrangedSubviews: [label, detailLabel])
+      stack.axis = .vertical
+      stack.alignment = .leading
+      stack.translatesAutoresizingMaskIntoConstraints = false
+      for line in [label, detailLabel] {
+        line.adjustsFontForContentSizeCategory = true
+        line.numberOfLines = 0
+      }
+      addSubview(stack)
+      NSLayoutConstraint.activate([
+        stack.topAnchor.constraint(equalTo: topAnchor),
+        stack.bottomAnchor.constraint(equalTo: bottomAnchor),
+        stack.leadingAnchor.constraint(equalTo: leadingAnchor),
+        stack.trailingAnchor.constraint(equalTo: trailingAnchor),
+      ])
+      isAccessibilityElement = true
+      accessibilityTraits = .header
     }
 
-    func updateUIView(_ label: UILabel, context: Context) {
+    /// A heading is made in code, never from a file.
+    required init?(coder: NSCoder) {
+      nil
+    }
+
+    func show(words: String, detail: String?) {
       label.text = words
-    }
-
-    func sizeThatFits(_ proposal: ProposedViewSize, uiView label: UILabel, context: Context) -> CGSize? {
-      SidebarRow.size(of: label, in: proposal)
+      detailLabel.text = detail
+      detailLabel.isHidden = detail == nil
+      accessibilityLabel = words
+      accessibilityValue = detail
     }
   }
 
   private struct SystemShortcut: UIViewRepresentable {
     let name: String
     let systemImage: String
+    let detail: String?
     let open: () -> Void
 
     func makeUIView(context: Context) -> ShortcutControl {
@@ -77,7 +126,7 @@ struct SidebarShortcut: View {
 
     func updateUIView(_ control: ShortcutControl, context: Context) {
       control.open = open
-      control.show(name: name, systemImage: systemImage)
+      control.show(name: name, systemImage: systemImage, detail: detail)
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView control: ShortcutControl, context: Context) -> CGSize? {
@@ -118,9 +167,10 @@ struct SidebarShortcut: View {
       nil
     }
 
-    func show(name: String, systemImage: String) {
-      var configuration = UIListContentConfiguration.cell()
+    func show(name: String, systemImage: String, detail: String?) {
+      var configuration = detail == nil ? UIListContentConfiguration.cell() : .subtitleCell()
       configuration.text = name
+      configuration.secondaryText = detail
       configuration.image = UIImage(systemName: systemImage)
       // The sidebar's footer has the margins at the sides already.
       configuration.axesPreservingSuperviewLayoutMargins = []
@@ -128,6 +178,7 @@ struct SidebarShortcut: View {
       configuration.directionalLayoutMargins.trailing = 0
       content.configuration = configuration
       accessibilityLabel = name
+      accessibilityValue = detail
     }
 
     /// VoiceOver's double tap opens the row, as a tap does.
