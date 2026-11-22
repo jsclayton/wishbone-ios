@@ -226,6 +226,7 @@ private struct ItemTile: View {
     SessionImage(image: image) { tile }
       .frame(width: side, height: side)
       .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+      .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
       .accessibilityHidden(true)
   }
 

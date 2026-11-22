@@ -190,6 +190,7 @@ private struct AvatarInitials: View {
       SessionImage(image: photo) { mark }
         .frame(width: size, height: size)
         .clipShape(Circle())
+        .contentShape(Circle())
     } else {
       mark
     }

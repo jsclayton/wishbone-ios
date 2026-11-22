@@ -17,6 +17,8 @@ struct PersonAvatar: View {
     SessionImage(image: user.avatar) { initialsAvatar }
       .frame(width: size, height: size)
       .clipShape(Circle())
+      // A wide photo draws past the frame, and the clip doesn't change where a tap lands.
+      .contentShape(Circle())
       .accessibilityHidden(true)
   }
 
