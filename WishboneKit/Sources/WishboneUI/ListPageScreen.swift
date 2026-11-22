@@ -38,7 +38,7 @@ struct ListPageScreen: View {
           NoItemsLine(noItems: noItems)
         }
         ForEach(page.items(sortedBy: sort)) { item in
-          ItemRowView(item: item, tileUserID: page.list.recipientIDs.first ?? "")
+          ItemRowLink(item: item, tileUserID: page.list.recipientIDs.first ?? "", session: session, pages: $pages)
         }
       }
     }
@@ -104,8 +104,8 @@ private struct NoItemsLine: View {
 
 /// The "For {names}" line: the recipients' avatars, then "For" and their names. A name links to the user's page
 /// only when the session's user sees that user, and "Deactivated" follows it for a viewer who gets it. VoiceOver
-/// reads the line as one element, and offers each linked name as a link.
-private struct ForLine: View {
+/// reads the line as one element, and offers each linked name as a link. A list's page and an item's page show it.
+struct ForLine: View {
   let recipients: [ListPage.Recipient]
 
   /// Opens the page of the user with the ID.

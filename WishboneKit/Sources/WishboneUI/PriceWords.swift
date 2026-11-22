@@ -17,6 +17,24 @@ public enum PriceWords {
     return String(localized: "\(low)–\(high)", bundle: #bundle, locale: locale, comment: "A price range on a row")
   }
 
+  /// The price, or the range, as an item's page shows it: "$20 to $35". Nil when the item has no price.
+  public static func page(
+    priceMinor: Int?, topPriceMinor: Int?, currency: String?, locale: Locale = .current
+  ) -> String? {
+    guard let priceMinor, let currency else { return nil }
+    let low = amount(priceMinor, currency: currency, locale: locale)
+    guard let topPriceMinor else { return low }
+    let high = amount(topPriceMinor, currency: currency, locale: locale)
+    return String(
+      localized: "\(low) to \(high)", bundle: #bundle, locale: locale, comment: "A price range on an item's page")
+  }
+
+  /// The price of a store link: "$24.99". Nil when the link has no price.
+  public static func storeLink(priceMinor: Int?, currency: String?, locale: Locale = .current) -> String? {
+    guard let priceMinor, let currency else { return nil }
+    return amount(priceMinor, currency: currency, locale: locale)
+  }
+
   /// One amount in the currency, short.
   static func amount(_ minor: Int, currency: String, locale: Locale) -> String {
     let digits = fractionDigits(of: currency, locale: locale)

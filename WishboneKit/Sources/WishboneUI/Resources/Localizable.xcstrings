@@ -26,6 +26,27 @@
         }
       }
     },
+    "%@ to %@" : {
+      "comment" : "A price range on an item's page",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ to %2$@"
+          }
+        }
+      }
+    },
+    "%@ · read %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · read %2$@"
+          }
+        }
+      }
+    },
     "%@'s %@ is in 1 week" : {
       "comment" : "The first is the person's name. The second is the name of their occasion, such as graduation.",
       "localizations" : {
@@ -144,6 +165,9 @@
     "Add a photo" : {
 
     },
+    "Added by %@" : {
+
+    },
     "Always wanted" : {
 
     },
@@ -187,6 +211,9 @@
 
     },
     "Continue" : {
+
+    },
+    "Copy link" : {
 
     },
     "Day" : {
@@ -333,6 +360,9 @@
         }
       }
     },
+    "Open" : {
+
+    },
     "Open Settings" : {
 
     },
@@ -347,6 +377,16 @@
     },
     "Photo" : {
 
+    },
+    "Photo %lld of %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Photo %1$lld of %2$lld"
+          }
+        }
+      }
     },
     "Photo, %@" : {
 
@@ -503,6 +543,9 @@
         }
       }
     },
+    "Wants %lld" : {
+
+    },
     "Wishbone" : {
 
     },
@@ -579,6 +622,9 @@
 
     },
     "example.com, or paste a link" : {
+
+    },
+    "no price" : {
 
     },
     "opens in browser" : {

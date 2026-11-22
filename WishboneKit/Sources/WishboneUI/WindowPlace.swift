@@ -18,14 +18,17 @@ public enum WindowTab: String, Codable, Sendable, CaseIterable {
 public enum Page: Codable, Hashable, Sendable {
   case list(id: String)
   case user(id: String)
+
+  /// An item's page. Its address has no list, so the page stays when the item moves.
+  case item(id: String)
   case people
 
-  /// The tab that owns the page, for a sidebar shortcut: one of your lists is in Lists, and People or a user is
-  /// on Home.
+  /// The tab that owns the page, for a sidebar shortcut: one of your lists is in Lists, and People, a user, or an
+  /// item is on Home.
   public var owner: WindowTab {
     switch self {
     case .list: .lists
-    case .user, .people: .home
+    case .user, .item, .people: .home
     }
   }
 }
@@ -111,6 +114,9 @@ extension Page {
 
     /// A user's page. The page reads what it shows from the session model: see `SessionModel.userPage(id:today:)`.
     case user(id: String)
+
+    /// An item's page. The page reads what it shows from the session model: see `SessionModel.itemPage(id:)`.
+    case item(id: String)
     case people
 
     /// The "not found" page: the page's thing is not in the copy. A missing thing and a hidden thing are the
@@ -124,6 +130,7 @@ extension Page {
     case .list(let id): session.listPage(id: id) == nil ? .notFound : .list(id: id)
     // A user whom the copy holds only as a summary has no page, on the server or here.
     case .user(let id): session.userPage(id: id) == nil ? .notFound : .user(id: id)
+    case .item(let id): session.itemPage(id: id) == nil ? .notFound : .item(id: id)
     case .people: .people
     }
   }
@@ -149,6 +156,7 @@ extension Page {
     switch self {
     case .list: .listPage
     case .user: .userPage
+    case .item: .itemPage
     case .people: .people
     }
   }
