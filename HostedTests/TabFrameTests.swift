@@ -110,7 +110,7 @@ struct WrittenMarker: InstallMarker {
 
 /// A narrow window of the app that shows the tab frame at a place that the test owns, as a window's root does.
 @MainActor
-private final class FrameWindow {
+final class FrameWindow {
   @Observable
   @MainActor
   final class Owner {
@@ -152,6 +152,24 @@ private final class FrameWindow {
   /// The tab bar controller that the system gives the frame.
   var tabs: UITabBarController? {
     window.rootViewController.flatMap { Self.first(UITabBarController.self, under: $0) }
+  }
+
+  /// The top inset of the list on the screen that shows in the selected tab: what the navigation bar, and anything
+  /// pinned under it, take from the top of the list. Nil when the screen has no list.
+  var listTopInset: CGFloat? {
+    guard let view = stack?.topViewController?.view else { return nil }
+    return Self.first(UICollectionView.self, in: view).map(\.adjustedContentInset.top)
+  }
+
+  /// Whether the screen that shows in the selected tab has the system's progress indicator, turning.
+  var showsProgress: Bool {
+    guard let view = stack?.topViewController?.view else { return false }
+    return Self.first(UIActivityIndicatorView.self, in: view).map { $0.isAnimating && !$0.isHidden } ?? false
+  }
+
+  private static func first<View: UIView>(_ type: View.Type, in view: UIView) -> View? {
+    if let view = view as? View { return view }
+    return view.subviews.lazy.compactMap { first(type, in: $0) }.first
   }
 
   /// The navigation stack of the selected tab.

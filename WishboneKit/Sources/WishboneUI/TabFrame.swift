@@ -46,7 +46,7 @@ public struct TabFrame: View {
       }
 
       Tab(value: WindowTab.lists) {
-        stack(on: .lists) { ListsStandInScreen().toolbar { avatar } }
+        stack(on: .lists) { ListsStandInScreen(session: session).toolbar { avatar } }
       } label: {
         Label {
           Text("Lists", bundle: #bundle)
@@ -56,7 +56,7 @@ public struct TabFrame: View {
       }
 
       Tab(value: WindowTab.gifts) {
-        stack(on: .gifts) { GiftsStandInScreen().toolbar { avatar } }
+        stack(on: .gifts) { GiftsStandInScreen(session: session).toolbar { avatar } }
       } label: {
         Label {
           Text("Gifts", bundle: #bundle)
@@ -85,6 +85,11 @@ public struct TabFrame: View {
     .refreshable { await session.syncNow() }
     .sheet(isPresented: $isShowingSettings) {
       SettingsSheet(session: session)
+    }
+    // VoiceOver says when the instance can't be reached, once, as the line or the unreachable state appears.
+    .onChange(of: session.isInstanceUnreachable) { _, isUnreachable in
+      guard isUnreachable else { return }
+      AccessibilityNotification.Announcement(CantReach.words(for: session.session.instance)).post()
     }
     .onChange(of: isShowingSettings) { _, isShowing in
       if isShowing { diagnostics.leave(.placeOpened(.settings)) }

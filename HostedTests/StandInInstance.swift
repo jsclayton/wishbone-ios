@@ -10,6 +10,7 @@ nonisolated final class StandInInstance: Sendable {
   private let listener: NWListener
   private let queue = DispatchQueue(label: "StandInInstance")
   private let pulls = Mutex(0)
+  private let away = Mutex(false)
 
   /// The port it listens on.
   let port: UInt16
@@ -20,6 +21,12 @@ nonisolated final class StandInInstance: Sendable {
   /// How many times a device has asked it for the versions: once for each sync.
   var pullCount: Int {
     pulls.withLock { $0 }
+  }
+
+  /// Whether it is away: it closes each connection with no answer, as an instance that can't be reached does.
+  var isAway: Bool {
+    get { away.withLock { $0 } }
+    set { away.withLock { $0 = newValue } }
   }
 
   /// Starts a stand-in on a free port of the loopback.
@@ -61,6 +68,7 @@ nonisolated final class StandInInstance: Sendable {
 
   private func accept(_ connection: NWConnection) {
     connection.start(queue: queue)
+    if isAway { return connection.cancel() }
     read(connection, Data())
   }
 
