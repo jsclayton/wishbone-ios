@@ -52,7 +52,7 @@ nonisolated final class SignOutJourney: XCTestCase {
     XCTAssertTrue(signedIn.waitForExistence(timeout: 10), "Settings doesn't show the name and \(address).")
     // The rows under Sign out, which a larger text pushes off. At the largest text size they are below the fold,
     // so the journey scrolls each on the screen there.
-    let rowsBelow = ["Share diagnostics", "About", "Source code", "Acknowledgements", "Version"]
+    let rowsBelow = ["Reminders", "Share diagnostics", "About", "Source code", "Acknowledgements", "Version"]
     try await Audit.run(
       on: app, showing: "Settings", in: self, rowsThatLeaveTheScreen: rowsBelow, rowsToScrollTo: rowsBelow)
 
