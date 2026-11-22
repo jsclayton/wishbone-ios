@@ -204,6 +204,13 @@ export const settingPauseMs = 5_000;
 export const helperAnswerLimitMs = 180_000;
 
 /**
+ * The time that each of the two changes of a change sent again may take (see `startSettingsHelper`). With the
+ * read of the three options before them, they fit in `helperAnswerLimitMs`, so the journey still gets the helper's
+ * own error. A call can hang once, be read back, and run again, in it.
+ */
+export const resendAnswerLimitMs = (helperAnswerLimitMs - 3 * settingReadLimitMs) / 2;
+
+/**
  * How long a `simctl` call may take at the step's start. Just after a new simulator's first boot, its calls wait
  * minutes for the simulator to be ready, so they are not hung until much later than a journey's.
  */
@@ -257,8 +264,13 @@ export function simctlWithLimit(args, limitMs = settingCallLimitMs, { file = 'xc
  *
  * `now` and `sleep` are the clock, so a test runs it on its own clock.
  *
- * Returns `{ apply(setting, { limitMs, answerLimitMs }), calls(), hangs(), ms() }`: the number of calls that changed
- * a setting, how many of them hung, and the time that the changes took.
+ * `read()` reads each option of the settings back from the simulator, in the same queue, and resolves with them in
+ * words, such as `appearance light, increase_contrast disabled, content_size large`. An option that it can't read
+ * is `<option> unread`. The helper reads them when a journey sends a change again (`startSettingsHelper`), so the
+ * gate's line says whether the simulator had the setting that the app didn't show.
+ *
+ * Returns `{ apply(setting, { limitMs, answerLimitMs }), read(), calls(), hangs(), ms() }`: the number of calls
+ * that changed a setting, how many of them hung, and the time that the changes took.
  */
 export function settingsApplier(
   simulator,
@@ -329,6 +341,22 @@ export function settingsApplier(
       queue = applied.catch(() => {});
       return applied;
     },
+    read() {
+      const read = queue.then(async () => {
+        const values = [];
+        for (const command of settingCommands(settings[0], simulator)) {
+          const [, , name] = command;
+          try {
+            values.push(`${name} ${(await run(command.slice(0, 3), readLimitMs)).trim()}`);
+          } catch {
+            values.push(`${name} unread`);
+          }
+        }
+        return values.join(', ');
+      });
+      queue = read.catch(() => {});
+      return read;
+    },
     calls: () => calls,
     hangs: () => hangs,
     ms: () => ms,
@@ -341,14 +369,24 @@ export function settingsApplier(
  * answers 204 when it is applied. A name that is not a setting gets 404. The journey gets the helper's address in
  * its environment, because a test can't change text size or Increase Contrast from inside the simulator.
  *
+ * `POST /settings/<name>?after=<previous>` sends a change again: the named flake "a change of setting doesn't show
+ * in the app" in docs/development.md, where `simctl` applied the change but the app went on showing the screen as it
+ * was. The helper reads the settings back with `readSettings`, then applies `previous` and then the setting, so each
+ * option of the change is set once more. The read and the two changes share the helper's answer limit:
+ * `applySetting(setting, options)` gets `{ answerLimitMs: resendAnswerLimitMs }` for each. It remembers each change
+ * that it sent again, with what it read.
+ *
  * It also knows which screens the run has audited. `POST /screens`, with a screen's name as the body, answers
  * 201 when the name is new in the run, so the journey audits the screen, and 200 when a journey audited it
  * already, so the journey doesn't audit it again. Only the run in the four settings has a helper, and it starts
  * its own, so the screens that it remembers are that run's.
  *
- * Resolves with `{ address, close, screens }`, where `screens()` gives the names, in the order they came.
+ * Resolves with `{ address, close, screens, resends }`, where `screens()` gives the names, in the order they came,
+ * and `resends()` gives each change that a journey sent again: `{ setting, after, read }`, with the settings' labels
+ * and what `readSettings` read before the change was sent again.
  */
-export function startSettingsHelper(applySetting) {
+export function startSettingsHelper(applySetting, { readSettings = async () => 'not read' } = {}) {
+  const resends = [];
   const screens = new Set();
   const server = createServer((request, response) => {
     if (request.url === '/screens') {
@@ -370,14 +408,26 @@ export function startSettingsHelper(applySetting) {
       });
       return;
     }
-    const match = /^\/settings\/([a-z-]+)$/.exec(request.url ?? '');
+    const url = new URL(request.url ?? '/', 'http://helper');
+    const match = /^\/settings\/([a-z-]+)$/.exec(url.pathname);
     const setting = settings.find((one) => one.name === match?.[1]);
-    if (request.method !== 'POST' || setting === undefined) {
+    const afterName = url.searchParams.get('after');
+    const after = afterName === null ? null : settings.find((one) => one.name === afterName);
+    if (request.method !== 'POST' || setting === undefined || after === undefined || after === setting) {
       response.writeHead(404).end();
       return;
     }
     Promise.resolve()
-      .then(() => applySetting(setting))
+      .then(async () => {
+        if (after === null) {
+          await applySetting(setting);
+          return;
+        }
+        const answerLimitMs = resendAnswerLimitMs;
+        resends.push({ setting: setting.label, after: after.label, read: await readSettings() });
+        await applySetting(after, { answerLimitMs });
+        await applySetting(setting, { answerLimitMs });
+      })
       .then(
         () => response.writeHead(204).end(),
         (error) => response.writeHead(500, { 'Content-Type': 'text/plain' }).end(String(error?.message ?? error)),
@@ -390,9 +440,26 @@ export function startSettingsHelper(applySetting) {
         address: `http://127.0.0.1:${server.address().port}`,
         close: () => new Promise((done) => server.close(() => done())),
         screens: () => [...screens],
+        resends: () => resends.map((one) => ({ ...one })),
       });
     });
   });
+}
+
+/** The name of the flake that a journey meets by sending a change again. See `startSettingsHelper`. */
+export const resendFlake = "a change of setting doesn't show in the app";
+
+/**
+ * The lines after a run of the journeys, one for each change that a journey sent again (`resends()` of
+ * `startSettingsHelper`), with what the simulator read before it. None when no change was sent again.
+ */
+export function resendLines(resends) {
+  if (resends.length === 0) return [];
+  const changes = resends.length === 1 ? '1 change' : `${resends.length} changes`;
+  return [
+    `  The journeys sent ${changes} of setting again, because the app went on showing the screen as it was (the named flake "${resendFlake}"):`,
+    ...resends.map(({ setting, after, read }) => `    ${after} to ${setting}. The simulator read: ${read}.`),
+  ];
 }
 
 /**
@@ -563,7 +630,7 @@ export async function runSimulatorTier({ root, directory, build = true, say = co
         const helperMs = applier.ms();
         // Only the run in the four settings has a helper, so the screens that it remembers are that run's.
         await helper?.close();
-        helper = journeys.helper ? await startSettingsHelper((setting) => applier.apply(setting)) : null;
+        helper = journeys.helper ? await startSettingsHelper((setting, options) => applier.apply(setting, options), { readSettings: () => applier.read() }) : null;
         // xcodebuild gives the test runner each variable that starts with TEST_RUNNER_, without that start.
         const env = {
           TEST_RUNNER_WISHBONE_SETTINGS_HELPER: helper?.address ?? '',
@@ -575,6 +642,7 @@ export async function runSimulatorTier({ root, directory, build = true, say = co
           const hung = applier.hangs() - helperHangs;
           const again = hung === 0 ? '' : `, and ${hung} of them hung (the named flake "a \`simctl ui\` call hangs on a CI runner")`;
           say(`  The settings helper made ${applier.calls() - helperCalls} simctl calls, in ${duration(applier.ms() - helperMs)}${again}.`);
+          for (const line of resendLines(helper.resends())) say(line);
         }
         return { passed, reading };
       };

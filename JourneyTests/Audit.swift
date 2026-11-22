@@ -88,13 +88,14 @@ enum Audit {
       app, screen, in: settings[0].label, screenshot: current.screenshot, rows: rowsThatLeaveTheScreen, test: test)
     for setting in settings.dropFirst() {
       try await apply(setting, helper: helper)
-      let before = current.pixels
-      let shown = try await settledScreen(of: app, in: setting, where: { $0 != before })
+      let toSetting = Change(from: settings[0], before: current.pixels, helper: helper)
+      let shown = try await settledScreen(of: app, in: setting, after: toSetting)
       // The largest text size gets no rows, so it checks Dynamic Type on every row that shows. See above.
       let rows = setting.name == largestText.name ? [] : rowsThatLeaveTheScreen
       try audit(app, screen, in: setting.label, screenshot: shown.screenshot, rows: rows, test: test)
       try await apply(settings[0], helper: helper)
-      current = try await settledScreen(of: app, in: settings[0], where: { $0 != shown.pixels })
+      let toDefault = Change(from: setting, before: shown.pixels, helper: helper)
+      current = try await settledScreen(of: app, in: settings[0], after: toDefault)
     }
   }
 
@@ -183,8 +184,13 @@ enum Audit {
   }
 
   /// Asks the settings helper to put the simulator in the setting. It answers when `simctl` has applied it.
-  private static func apply(_ setting: Setting, helper: URL) async throws {
-    var request = URLRequest(url: helper.appending(path: "settings/\(setting.name)"))
+  ///
+  /// With `previous`, the helper sends the change again: it puts the simulator in `previous`, and then in the
+  /// setting, so each option of the change is set once more. See `settledScreen(of:in:after:)`.
+  private static func apply(_ setting: Setting, after previous: Setting? = nil, helper: URL) async throws {
+    var address = helper.appending(path: "settings/\(setting.name)")
+    if let previous { address.append(queryItems: [URLQueryItem(name: "after", value: previous.name)]) }
+    var request = URLRequest(url: address)
     request.httpMethod = "POST"
     request.timeoutInterval = helperTimeout
     let (body, response) = try await URLSession.shared.data(for: request)
@@ -193,20 +199,78 @@ enum Audit {
     }
   }
 
+  /// A change of setting that the helper applied: the setting that the simulator was in, and the screen as it was.
+  private struct Change {
+    let from: Setting
+    let before: Data
+    let helper: URL
+  }
+
+  /// How long the screen may show exactly what it showed before a change, before the change is sent again. A
+  /// change shows within a few seconds, also on a slow runner.
+  private static let unchangedLimit: Duration = .seconds(15)
+
+  /// How many times a change is sent again, after the first time.
+  private static let resendLimit = 2
+
+  /// Waits until two screenshots in a row are the same, and differ from the screen before the change: the screen
+  /// shows the setting, and is still.
+  ///
+  /// This is where the named flake "a change of setting doesn't show in the app" in `docs/development.md` is met:
+  /// `simctl` applied the change, but the app goes on showing the screen as it was. So when the screen has shown
+  /// exactly what it showed before for `unchangedLimit` since the change was sent, the journey asks the helper to
+  /// send the change again, up to `resendLimit` times. Each send gets the whole `settleTimeout`. A screen that
+  /// moved is only slow, so its change isn't sent again.
+  private static func settledScreen(
+    of app: XCUIApplication, in setting: Setting, after change: Change
+  ) async throws -> (screenshot: XCUIScreenshot, pixels: Data) {
+    var resends = 0
+    while true {
+      do {
+        return try await settledScreen(
+          of: app, in: setting, where: { $0 != change.before }, before: change.before,
+          unchangedLimit: resends < resendLimit ? unchangedLimit : nil)
+      } catch is Unchanged {
+        resends += 1
+        try await apply(setting, after: change.from, helper: change.helper)
+      } catch let error as AuditError where resends > 0 {
+        let times = resends == 1 ? "once" : resends == 2 ? "twice" : "\(resends) times"
+        throw AuditError("\(error.description) The change was sent again \(times).")
+      }
+    }
+  }
+
+  /// The screen still showed exactly what it showed before a change, at the limit. See `settledScreen(of:in:after:)`.
+  private struct Unchanged: Error {}
+
   /// Waits until two screenshots in a row are the same, and pass `accept`: the screen shows the setting, and is
   /// still. The gate holds the status bar's clock still, so a still screen gives the same pixels each time.
+  ///
+  /// `before` is the screen before a change. With `unchangedLimit`, it throws `Unchanged` when every screenshot
+  /// was exactly `before` for that long.
   private static func settledScreen(
-    of app: XCUIApplication, in setting: Setting, where accept: (Data) -> Bool
+    of app: XCUIApplication, in setting: Setting, where accept: (Data) -> Bool, before: Data? = nil,
+    unchangedLimit: Duration? = nil
   ) async throws -> (screenshot: XCUIScreenshot, pixels: Data) {
-    let deadline = ContinuousClock.now + settleTimeout
+    let started = ContinuousClock.now
+    let deadline = started + settleTimeout
     var last: Data?
+    var moved = false
     while true {
       let screenshot = app.screenshot()
       let pixels = screenshot.pngRepresentation
       if pixels == last, accept(pixels) { return (screenshot, pixels) }
       last = pixels
+      if let before, !moved {
+        if pixels != before {
+          moved = true
+        } else if let unchangedLimit, ContinuousClock.now - started >= unchangedLimit {
+          throw Unchanged()
+        }
+      }
       guard ContinuousClock.now < deadline else {
-        throw AuditError("The screen didn't settle in \(setting.label) within \(settleTimeout).")
+        let unchanged = moved || before == nil ? "" : " It showed the screen as it was before the change."
+        throw AuditError("The screen didn't settle in \(setting.label) within \(settleTimeout).\(unchanged)")
       }
       try await Task.sleep(for: .milliseconds(250))
     }
