@@ -121,7 +121,7 @@ extension DiagnosticsTests {
     #expect(breadcrumb["data"] as? [String: String] == ["method": "GET", "path": "/users", "status_class": "2xx"])
     for secret in ["127.0.0.1", ":\(port)", "group-of-robin", "group_id", "limit=", Self.token, "Bearer", "User-Agent"]
     {
-      #expect(!envelope.text.contains(secret), "The envelope holds \(secret).")
+      #expect(!envelope.strings.contains { $0.contains(secret) }, "The envelope holds \(secret).")
     }
   }
 
@@ -135,18 +135,32 @@ extension DiagnosticsTests {
       "/login/\(Self.token)", "localhost:8080",
     ]
     // The runtime's own free text, such as a `fatalError` message, goes in every field of free text too.
-    diagnostics.sendPlanted(secrets.joined(separator: " "), words: "Fatal error: Robin's bike")
+    let words = "Fatal error: Robin's bike"
+    diagnostics.sendPlanted(secrets.joined(separator: " "), words: words)
     await diagnostics.flush()
     diagnostics.isOn = false
 
     let envelope = try #require(receiver.envelopes.first { !$0.events.isEmpty })
     let event = try #require(envelope.events.first)
+    // The parts of the planted values that could name them. The envelope has random IDs (`event_id`, `trace_id`, a
+    // `debug_id`, an image's address) and numbers (a time, the memory), which can hold a short run of hex or of
+    // digits by chance: `890a` was once in a `trace_id`. So each part is in a shape that none of them can take: an
+    // address's group or a port with its colon, which no ID and no time of day has (a time's fields are two digits),
+    // and the check reads the envelope's strings, not its numbers. A leak still shows: the scrubber replaces a whole
+    // address, or a host with its port, so a part of one that it left has its colon.
     let parts = [
-      Self.token, "smith-family", "192.168.1.20", "fe80", "890a", "robin@", "8443", "8080", "localhost", "Robin",
-      "Fatal error",
+      Self.token, "smith-family", "192.168.1.20", "fe80:", ":4567:", ":890a", "robin@", ":8443", ":8080", "localhost",
+      "Robin", "Fatal error",
     ]
     for part in parts {
-      #expect(!envelope.text.contains(part), "The envelope holds \(part).")
+      #expect(part.contains { !"0123456789ABCDEFabcdefx-".contains($0) }, "A random ID can hold \(part).")
+      #expect(!envelope.strings.contains { $0.contains(part) }, "The envelope holds \(part).")
+    }
+    // The check can fail: each part is found in an envelope with the planted values unscrubbed.
+    let unscrubbed = try JSONSerialization.data(withJSONObject: ["message": ([words] + secrets).joined(separator: " ")])
+    let planted = EnvelopeReceiver.envelope(Data(#"{}\#n{"type":"event"}\#n"#.utf8) + unscrubbed)
+    for part in parts {
+      #expect(planted.strings.contains { $0.contains(part) }, "The check can't find \(part).")
     }
     // The event still went: the scrubber strips what it carries, and drops only what is not the app's.
     #expect(user(event)["id"] != nil)
@@ -243,7 +257,7 @@ extension DiagnosticsTests {
       ])
     #expect(syncs.allSatisfy { $0["message"] == nil })
     for secret in ["127.0.0.1", ":\(instance.port)", "a-token-for-the-test"] {
-      #expect(!envelope.text.contains(secret), "The envelope holds \(secret).")
+      #expect(!envelope.strings.contains { $0.contains(secret) }, "The envelope holds \(secret).")
     }
   }
 
