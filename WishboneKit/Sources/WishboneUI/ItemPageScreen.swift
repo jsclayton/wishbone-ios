@@ -5,8 +5,8 @@ import WishboneSession
 /// An item's page: the images, the title and the price, the list and its recipients, how many are still wanted or
 /// wanted, the notes, the store links, and "Added by {name}". See `docs/screens/item.md`.
 ///
-/// Claim state shows only as the server sends it, and the page never says who else claimed. I'll get this and the
-/// edit controls come later.
+/// Claim state shows only as the server sends it, and the page never says who else claimed. For a giver, I'll get
+/// this claims one at once, and waits for the server: see `ClaimSection`. The edit controls come later.
 ///
 /// **Provisional.** Plain default: a system list, one column at every size. The images are a row that pages
 /// sideways, the title is large text under it, and each part is a section. Copy link is in the toolbar's menu.
@@ -34,6 +34,7 @@ struct ItemPageScreen: View {
         Section {
           if let stillWanted = page.stillWanted {
             StillWantedLine(stillWanted: stillWanted)
+            ClaimSection(page: page, session: session)
           }
           if let wanted = page.wanted {
             WantedLine(wanted: wanted)
@@ -171,6 +172,87 @@ private struct StillWantedLine: View {
     case .count(let count, let quantity): Text("\(count) of \(quantity) still wanted", bundle: #bundle)
     case .always: Text("Always wanted", bundle: #bundle)
     }
+  }
+}
+
+/// For a giver: one line for each of their own open gifts on the item, or else I'll get this, and what the last
+/// claim said in place. The button waits for the server's answer, and says "Claiming" while it waits. A claim that
+/// the server grants plays the system's success haptic, and the result is announced. See `docs/screens/item.md`.
+///
+/// **Provisional.** Plain default: the lines and the button are rows of the section, under how many are still
+/// wanted.
+private struct ClaimSection: View {
+  let page: ItemPage
+  let session: SessionModel
+
+  @State private var isClaiming = false
+  @State private var result: Result?
+  @State private var granted = 0
+
+  /// What the last claim said, in place, and whether the button stays beside it.
+  private struct Result: Equatable {
+    let words: String
+    /// Someone else got the last one: the words take the button's place.
+    let replacesButton: Bool
+  }
+
+  var body: some View {
+    Group {
+      ForEach(page.claims) { claim in
+        // The line opens the gift's page in a later step.
+        Text(ClaimWords.line(claim))
+          .font(.body.weight(.semibold))
+      }
+      if page.claims.isEmpty {
+        if page.offersClaim, result?.replacesButton != true {
+          claimButton
+        }
+        if let result {
+          Text(result.words)
+        }
+      }
+    }
+    .sensoryFeedback(.success, trigger: granted)
+    // A new item in the same window starts with nothing said.
+    .onChange(of: page.item.id) {
+      result = nil
+    }
+  }
+
+  private var claimButton: some View {
+    Button {
+      Task { await claim() }
+    } label: {
+      if isClaiming {
+        HStack(spacing: 8) {
+          ProgressView()
+          Text("Claiming", bundle: #bundle)
+        }
+      } else {
+        Text("I'll get this", bundle: #bundle)
+      }
+    }
+    .disabled(isClaiming)
+  }
+
+  private func claim() async {
+    guard !isClaiming else { return }
+    isClaiming = true
+    result = nil
+    let id = page.item.id
+    let outcome = await session.claim(item: id)
+    isClaiming = false
+    let words: String?
+    if outcome == .claimed {
+      granted += 1
+      words = session.itemPage(id: id)?.claims.first.map(ClaimWords.line)
+    } else {
+      let said = ClaimWords.result(
+        of: outcome, address: session.session.instance, recipients: page.recipients.map(\.user))
+      result = said.map { Result(words: $0, replacesButton: outcome == .someoneElseGotIt) }
+      words = said
+    }
+    if let words { AccessibilityNotification.Announcement(words).post() }
   }
 }
 

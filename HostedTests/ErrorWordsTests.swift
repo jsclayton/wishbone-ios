@@ -1,5 +1,7 @@
+import Foundation
 import Testing
 import WishboneAPI
+import WishboneSession
 import WishboneUI
 
 /// The app's words for each error code of the API: the one lookup that every screen uses. See "Words for error
@@ -27,6 +29,9 @@ struct ErrorWordsTests {
       "birthday_required": "A birthday is required.",
       "admin_has_no_parents": "The admin can't have parents.",
       "login_link_invalid": "That link was already used, or it has expired. Ask for a new one.",
+      "item_fully_claimed": "Someone else just got this.",
+      "recipient_cannot_claim": "You can't claim on a list that is for you.",
+      "occasion_not_allowed": "That occasion can't be used for this gift. Pick another.",
     ]
     for (code, expected) in table {
       #expect(words(code) == expected, "\(code)")
@@ -48,5 +53,27 @@ struct ErrorWordsTests {
     for code in ["unknown_filter", "unknown_sort", "cursor_mismatch", "image_attached", "resource_changed"] {
       #expect(words(code, status: 400) == "Something went wrong in Wishbone. Try again.", "\(code)")
     }
+  }
+
+  @Test("A claim's line names the occasion, or the reveal date, and a claim that made no gift says why, never who")
+  func claimWords() throws {
+    let christmas = ItemPage.ClaimLine(id: "1", quantity: 1, occasion: .named("Christmas"))
+    #expect(ClaimWords.line(christmas) == "You claimed 1 for Christmas")
+    let march = try #require(Calendar.current.date(from: DateComponents(year: 2027, month: 3, day: 4, hour: 12)))
+    let hidden = ItemPage.ClaimLine(id: "2", quantity: 1, occasion: .hiddenUntil(march))
+    #expect(ClaimWords.line(hidden) == "You claimed 1 · hidden until Mar 4")
+
+    let address = try #require(InstanceAddress("https://wishbone.example"))
+    #expect(ClaimWords.result(of: .claimed, address: address, recipients: []) == nil)
+    #expect(
+      ClaimWords.result(of: .someoneElseGotIt, address: address, recipients: []) == "Someone else just got this.")
+    #expect(
+      ClaimWords.result(of: .unreachable, address: address, recipients: [])
+        == "Can't reach \(address.text). Nothing was claimed.")
+    let refusal = APIError.Refusal(
+      route: .claim, status: 403, code: ErrorCode("recipient_cannot_claim"), detail: "The server's own words.")
+    #expect(
+      ClaimWords.result(of: .refused(refusal), address: address, recipients: [])
+        == "You can't claim on a list that is for you.")
   }
 }

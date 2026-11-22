@@ -30,6 +30,12 @@ public enum ErrorWords {
       return String(localized: "A birthday is required.", bundle: #bundle)
     case .adminHasNoParents:
       return String(localized: "The admin can't have parents.", bundle: #bundle)
+    case .itemFullyClaimed:
+      return someoneElseGotIt
+    case .recipientCannotClaim:
+      return String(localized: "You can't claim on a list that is for you.", bundle: #bundle)
+    case .occasionNotAllowed:
+      return String(localized: "That occasion can't be used for this gift. Pick another.", bundle: #bundle)
     case .unknownFilter, .unknownSort, .cursorMismatch, .imageAttached, .resourceChanged:
       return fault
     case .unauthorized, .apiVersionRemoved, .userDeactivated, .parentLoop, .unknown:
@@ -41,6 +47,18 @@ public enum ErrorWords {
       // These count as success: see above.
       return nil
     }
+  }
+
+  /// The words for a claim that came after the last one: `item_fully_claimed`. The words never say who got it.
+  public static var someoneElseGotIt: String {
+    String(localized: "Someone else just got this.", bundle: #bundle)
+  }
+
+  /// The words for `user_deactivated`, which names the deactivated user that the write was for.
+  public static func deactivated(_ name: String) -> String {
+    String(
+      localized: "Only the admin can reactivate \(name). Until then, you can't change anything for \(name).",
+      bundle: #bundle)
   }
 
   /// The words for a login link that is used or expired. The server gives one answer for both.

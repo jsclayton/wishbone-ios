@@ -36,6 +36,52 @@ public struct ItemPage: Equatable, Sendable {
   /// deleted.
   public let addedBy: UserRow?
 
+  /// Whether the page offers I'll get this: the server's `can_claim`, while the giver has no open gift on the item.
+  /// Never for a recipient, whose `can_claim` is always false.
+  public let offersClaim: Bool
+
+  /// One line for each of the session's user's own open gifts on the item, the soonest reveal first: "You claimed 1
+  /// for Christmas". They take the place of I'll get this. Empty for anyone but a giver with a gift on it.
+  public let claims: [ClaimLine]
+
+  /// A line of the giver's own gift on the item. It names the gift's occasion, or only its reveal date when the
+  /// giver can't see the occasion.
+  public struct ClaimLine: Equatable, Sendable, Identifiable {
+    public let id: String
+    public let quantity: Int
+    public let occasion: Occasion
+
+    public enum Occasion: Equatable, Sendable {
+      /// "You claimed 1 for Christmas".
+      case named(String)
+      /// "You claimed 1 · hidden until Mar 4": the giver can't see the gift's occasion.
+      case hiddenUntil(Date)
+    }
+
+    public init(id: String, quantity: Int, occasion: Occasion) {
+      self.id = id
+      self.quantity = quantity
+      self.occasion = occasion
+    }
+
+    public init(_ gift: GiftRow) {
+      id = gift.id
+      quantity = gift.quantity
+      if gift.occasion != nil, let name = gift.occasionName {
+        occasion = .named(name)
+      } else {
+        occasion = .hiddenUntil(gift.revealAt)
+      }
+    }
+  }
+
+  /// Whether I'll get this is offered for the item: from `can_claim`, while `my_claimed_quantity` is 0 and the copy
+  /// holds no open gift of the giver's on it. The server allows one gift for each item and occasion, so a giver
+  /// with a gift raises its quantity on the gift's page instead.
+  public static func offersClaim(_ item: ItemRow, openGifts: [GiftRow]) -> Bool {
+    item.canClaim && (item.myClaimedQuantity.value ?? 0) == 0 && !openGifts.contains { $0.itemID == item.id }
+  }
+
   /// How many are still wanted, for a giver: "{n} of {m} still wanted", or "Always wanted".
   public enum StillWanted: Equatable, Sendable {
     case count(Int, of: Int)
@@ -95,7 +141,16 @@ extension SessionModel {
       stillWanted: stillWanted,
       wanted: wanted,
       storeLinks: storeLinks(ofItem: id).sorted { $0.position < $1.position },
-      addedBy: addedBy
+      addedBy: addedBy,
+      offersClaim: ItemPage.offersClaim(item, openGifts: giving),
+      claims: giving.filter { $0.itemID == id }.map(ItemPage.ClaimLine.init)
     )
+  }
+
+  /// Whether I'll get this is offered for the item, on its page and in its row's context menu. False for an item
+  /// that is not in the copy. See `ItemPage.offersClaim(_:openGifts:)`.
+  public func offersClaim(onItem id: String) -> Bool {
+    guard let item = item(id: id) else { return false }
+    return ItemPage.offersClaim(item, openGifts: giving)
   }
 }

@@ -540,6 +540,28 @@ struct LocalDatabase: Sendable {
     }
   }
 
+  /// Saves the gifts of a claim that the server has just granted, with the item as the server gives it now, in one
+  /// change, so the gift and the item's new numbers show together. The item's store links keep the versions that
+  /// the copy holds. With no item, which the instance didn't give after the claim, only the gifts are saved, and the
+  /// next sync brings the item.
+  func saveClaim(_ gifts: [Versioned<Gift>], item: Versioned<Item>?) async throws {
+    let rows = gifts.map { GiftRow($0) }
+    let itemRow = item.map { ItemRow($0) }
+    try await change { database in
+      for row in rows {
+        try row.save(database)
+      }
+      guard let item, let itemRow else { return }
+      let versions = try StoreLinkRow.filter(Column("itemID") == item.resource.id).fetchAll(database)
+        .reduce(into: [String: String]()) { $0[$1.id] = $1.version }
+      try itemRow.save(database)
+      try StoreLinkRow.filter(Column("itemID") == item.resource.id).deleteAll(database)
+      for (position, link) in item.resource.storeLinks.enumerated() {
+        try StoreLinkRow(link, ofItem: item.resource.id, at: position, version: versions[link.id] ?? "").save(database)
+      }
+    }
+  }
+
   /// Puts the blocked stores in the place of the ones that the copy holds, in one change, when they differ. The
   /// kept `ETag` stays: `GET /versions` doesn't cover blocked stores.
   func replaceBlockedStores(with stores: [Versioned<BlockedStore>]) async throws {
@@ -698,42 +720,55 @@ struct LocalDatabase: Sendable {
     ValueReducers.RemoveDuplicates<ValueReducers.Fetch<Snapshot>>
   > {
     ValueObservation.tracking { database in
-      var snapshot = Snapshot()
-      snapshot.lists = try ListRow.order(Column("name"), Column("id")).fetchAll(database)
-      let listIDs = Set(snapshot.lists.map(\.id))
-      for item in try ItemRow.order(Column("listID"), Column("position"), Column("id")).fetchAll(database)
-      where listIDs.contains(item.listID) {
-        snapshot.items[item.listID, default: []].append(item)
-      }
-      for link in try StoreLinkRow.order(Column("itemID"), Column("position"), Column("id")).fetchAll(database) {
-        snapshot.storeLinks[link.itemID, default: []].append(link)
-      }
-      // The rows of a list go in the order of the list's own recipients: the order they became recipients, as the
-      // server gives it. Two can have the same time.
-      var rows: [String: [RecipientRow]] = [:]
-      for row in try RecipientRow.order(Column("createdAt"), Column("userID")).fetchAll(database) {
-        rows[row.listID, default: []].append(row)
-      }
-      for list in snapshot.lists {
-        guard let unordered = rows[list.id] else { continue }
-        let named = list.recipientIDs.compactMap { id in unordered.first { $0.userID == id } }
-        snapshot.recipients[list.id] = named + unordered.filter { !list.recipientIDs.contains($0.userID) }
-      }
-      snapshot.invitations = try InvitationRow.order(Column("createdAt"), Column("id")).fetchAll(database)
-      snapshot.gifts = try GiftRow.order(Column("revealAt"), Column("id")).fetchAll(database)
-      snapshot.blockedStores = try BlockedStoreRow.order(Column("store"), Column("id")).fetchAll(database)
-      snapshot.users = try UserRow.order(Column("name"), Column("id")).fetchAll(database)
-      snapshot.groups = try GroupRow.order(Column("name"), Column("id")).fetchAll(database)
-      snapshot.occasions = try OccasionRow.order(
-        Column("nextDate").ascNullsLast, Column("name"), Column("id")
-      ).fetchAll(database)
-      snapshot.memberships = try MembershipRow.order(Column("kind"), Column("ownerID")).fetchAll(database)
-      snapshot.user = snapshot.users.first { $0.id == id && !$0.isSummary }
-      guard let listID = snapshot.user?.record?.primaryListID else { return snapshot }
-      snapshot.primaryList = snapshot.lists.first { $0.id == listID }
-      snapshot.primaryListItems = snapshot.items[listID] ?? []
-      return snapshot
+      try snapshot(ofUser: id, in: database)
     }.removeDuplicates()
+  }
+
+  /// The snapshot for the user, read now. A write that the screen must see at once, such as a claim, publishes
+  /// it, before the observation does.
+  func snapshot(ofUser id: String) async throws -> Snapshot {
+    try await writer.read { database in
+      try Self.snapshot(ofUser: id, in: database)
+    }
+  }
+
+  /// The snapshot for the user, from the database.
+  private static func snapshot(ofUser id: String, in database: Database) throws -> Snapshot {
+    var snapshot = Snapshot()
+    snapshot.lists = try ListRow.order(Column("name"), Column("id")).fetchAll(database)
+    let listIDs = Set(snapshot.lists.map(\.id))
+    for item in try ItemRow.order(Column("listID"), Column("position"), Column("id")).fetchAll(database)
+    where listIDs.contains(item.listID) {
+      snapshot.items[item.listID, default: []].append(item)
+    }
+    for link in try StoreLinkRow.order(Column("itemID"), Column("position"), Column("id")).fetchAll(database) {
+      snapshot.storeLinks[link.itemID, default: []].append(link)
+    }
+    // The rows of a list go in the order of the list's own recipients: the order they became recipients, as the
+    // server gives it. Two can have the same time.
+    var rows: [String: [RecipientRow]] = [:]
+    for row in try RecipientRow.order(Column("createdAt"), Column("userID")).fetchAll(database) {
+      rows[row.listID, default: []].append(row)
+    }
+    for list in snapshot.lists {
+      guard let unordered = rows[list.id] else { continue }
+      let named = list.recipientIDs.compactMap { id in unordered.first { $0.userID == id } }
+      snapshot.recipients[list.id] = named + unordered.filter { !list.recipientIDs.contains($0.userID) }
+    }
+    snapshot.invitations = try InvitationRow.order(Column("createdAt"), Column("id")).fetchAll(database)
+    snapshot.gifts = try GiftRow.order(Column("revealAt"), Column("id")).fetchAll(database)
+    snapshot.blockedStores = try BlockedStoreRow.order(Column("store"), Column("id")).fetchAll(database)
+    snapshot.users = try UserRow.order(Column("name"), Column("id")).fetchAll(database)
+    snapshot.groups = try GroupRow.order(Column("name"), Column("id")).fetchAll(database)
+    snapshot.occasions = try OccasionRow.order(
+      Column("nextDate").ascNullsLast, Column("name"), Column("id")
+    ).fetchAll(database)
+    snapshot.memberships = try MembershipRow.order(Column("kind"), Column("ownerID")).fetchAll(database)
+    snapshot.user = snapshot.users.first { $0.id == id && !$0.isSummary }
+    guard let listID = snapshot.user?.record?.primaryListID else { return snapshot }
+    snapshot.primaryList = snapshot.lists.first { $0.id == listID }
+    snapshot.primaryListItems = snapshot.items[listID] ?? []
+    return snapshot
   }
 }
 
