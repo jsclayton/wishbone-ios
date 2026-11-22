@@ -253,6 +253,14 @@ struct HomeOccasionsCopyTests {
     let device = instance.device()
     await device.signIn(pasting: try await instance.loginLink(for: giver))
     let session = try #require(device.session)
+    // The sign-in can end before the session publishes its last write, so the test waits for the rows it reads:
+    // Emma's birthday, and both of the giver's gifts. `untilInStep` leaves out the occasions, which other tests on
+    // the shared server change.
+    let birthdayID = birthday.id
+    await until {
+      session.occasions.contains { $0.id == birthdayID } && session.giving.count == 2
+        && session.user(id: emma.id) != nil
+    }
     let home = session.homeOccasions()
 
     // On a shared server, other tests' occasions for everyone can come first, so the test finds Emma's.
