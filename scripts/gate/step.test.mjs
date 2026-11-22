@@ -41,11 +41,24 @@ function limitByHand() {
   };
 }
 
+/**
+ * The process IDs in what a step wrote to its file. The shell makes the file before it writes to it, so a read can
+ * find it empty, or find its last line not yet ended. Count only ended lines that hold a process ID: an empty read
+ * must not give 0, because `process.kill(0, 0)` signals this test's own process group, and so 0 is always "alive".
+ */
+function parseProcessIDs(text) {
+  return text
+    .split('\n')
+    .slice(0, -1)
+    .map(Number)
+    .filter((pid) => Number.isInteger(pid) && pid > 0);
+}
+
 /** Waits for the step to write `count` process IDs to the file, and returns them. */
 async function processIDs(file, count) {
   for (const deadline = Date.now() + longWaitMs; Date.now() < deadline; ) {
     try {
-      const pids = readFileSync(file, 'utf8').trim().split(/\s+/).map(Number);
+      const pids = parseProcessIDs(readFileSync(file, 'utf8'));
       if (pids.length >= count) return pids;
     } catch {
       // Not written yet.
@@ -54,6 +67,14 @@ async function processIDs(file, count) {
   }
   throw new Error(`the step didn't write ${count} process IDs`);
 }
+
+test('a file that is not written yet, or not to the end of its line, holds no process ID', () => {
+  assert.deepEqual(parseProcessIDs(''), []);
+  assert.deepEqual(parseProcessIDs('\n'), []);
+  assert.deepEqual(parseProcessIDs('123'), []);
+  assert.deepEqual(parseProcessIDs('123\n45'), [123]);
+  assert.deepEqual(parseProcessIDs('123\n456\n'), [123, 456]);
+});
 
 test('a step gives its exit code, and its output goes to the log', async (t) => {
   const folder = scratch(t);
@@ -111,7 +132,8 @@ test('a step that ignores the request to stop is killed', async (t) => {
   limit.pass();
   const result = await running;
   assert.equal(result.timedOut, true);
-  assert.deepEqual(pids.filter(isAlive), []);
+  // `runStep` ends when the step's process has exited, and the system has taken it away, so it is gone now.
+  assert.deepEqual(pids.filter(isAlive), [], 'the killed process is gone');
 });
 
 test('an interrupt stops the step, with its child processes', async (t) => {
