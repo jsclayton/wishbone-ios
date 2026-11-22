@@ -78,7 +78,8 @@ nonisolated final class SignOutJourney: XCTestCase {
     let early = app.buttons[Audit.words("Remind me early")]
     XCTAssertTrue(early.waitForExistence(timeout: 10), "Reminders has no Remind me early row.")
     XCTAssertEqual(early.value as? String, Audit.words("2 weeks"))
-    try await Audit.run(on: app, showing: "Reminders", in: self)
+    // The last line is the footer, which a larger text pushes off the screen.
+    try await Audit.run(on: app, showing: "Reminders", in: self, rowsThatLeaveTheScreen: ["A reminder names"])
     app.navigationBars[Audit.words("Reminders")].buttons.firstMatch.tap()
     XCTAssertTrue(
       app.navigationBars[Audit.words("Settings")].waitForExistence(timeout: 10), "Back didn't show Settings.")
