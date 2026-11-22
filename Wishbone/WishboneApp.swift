@@ -14,6 +14,9 @@ struct WishboneApp: App {
   /// `docs/spec.md`.
   @State private var diagnostics: DiagnosticsSettings
 
+  /// The phase of the app as a whole: `.background` once no window is in the foreground.
+  @Environment(\.scenePhase) private var phase
+
   init() {
     let diagnostics = Diagnostics.app()
     diagnostics.start()
@@ -32,6 +35,15 @@ struct WishboneApp: App {
         #if DEBUG
           .task { await Journey.pasteLoginLink(into: device) }
         #endif
+    }
+    // Each time the app goes to the background, it asks iOS for the next background refresh.
+    .onChange(of: phase) { _, phase in
+      if phase == .background { device.wentToBackground() }
+    }
+    // A background refresh: one sync, after which the session asks for the next. When iOS ends the run early, it
+    // cancels this task, and the sync stops.
+    .backgroundTask(.appRefresh(BackgroundRefresh.identifier)) { [device] in
+      _ = await device.refreshInBackground()
     }
   }
 }
@@ -94,6 +106,7 @@ extension Device.Setup {
       marker: installMarker(appGroup: appGroup),
       storage: .folder(.applicationSupportDirectory),
       network: .system,
+      refresh: SystemRefreshScheduler(),
       diagnostics: diagnostics
     )
   }

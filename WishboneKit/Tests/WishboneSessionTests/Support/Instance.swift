@@ -49,6 +49,7 @@ struct Instance {
     clock: any Clock<Duration> = ContinuousClock(),
     timerClock: any Clock<Duration> = TestClock(),
     network: any NetworkChanges = .unchanging,
+    refresh: any RefreshScheduler = .none,
     timeZone: TimeZoneSource = .fixed("UTC"),
     diagnostics: any DiagnosticsReporter = .none
   ) -> Device {
@@ -59,6 +60,7 @@ struct Instance {
         clock: clock,
         timerClock: timerClock,
         network: network,
+        refresh: refresh,
         timeZone: timeZone,
         diagnostics: diagnostics))
   }

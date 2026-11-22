@@ -90,6 +90,10 @@ public final class Device {
     /// system's.
     public var network: any NetworkChanges
 
+    /// Where the session asks iOS for its next background refresh. The default never schedules: only the app gives
+    /// the system's.
+    public var refresh: any RefreshScheduler
+
     /// The device's time zone, which the session reports to the user's record.
     public var timeZone: TimeZoneSource
 
@@ -104,6 +108,7 @@ public final class Device {
       clock: any Clock<Duration> = ContinuousClock(),
       timerClock: any Clock<Duration> = ContinuousClock(),
       network: any NetworkChanges = .unchanging,
+      refresh: any RefreshScheduler = .none,
       timeZone: TimeZoneSource = .system,
       diagnostics: any DiagnosticsReporter = .none
     ) {
@@ -114,6 +119,7 @@ public final class Device {
       self.clock = clock
       self.timerClock = timerClock
       self.network = network
+      self.refresh = refresh
       self.timeZone = timeZone
       self.diagnostics = diagnostics
     }
@@ -160,6 +166,8 @@ public final class Device {
     }
     guard let kept else {
       LocalDatabase.removeAll(in: setup.storage)
+      // With no session, nothing is scheduled.
+      setup.refresh.cancelRefresh()
       return
     }
     guard setup.marker.isPresent else {
@@ -187,6 +195,7 @@ public final class Device {
       Log.fault(.session, "The session keychain can't forget the session.", detail: "\(error.status)")
     }
     LocalDatabase.removeAll(in: setup.storage)
+    setup.refresh.cancelRefresh()
     let client = APIClient(
       session: leftOver, userAgent: setup.userAgent, clock: setup.clock, diagnostics: setup.diagnostics)
     revokingLeftOver = Task {
@@ -319,6 +328,22 @@ public final class Device {
     await model.reportTimeZone()
   }
 
+  // MARK: - Background refresh
+
+  /// A background refresh, which iOS runs when it lets the app: the session's one sync, after which it asks for the
+  /// next. With no session, it does nothing, asks for nothing, and returns `.stopped`. See
+  /// `SessionModel.refreshInBackground()`.
+  public func refreshInBackground() async -> SyncOutcome {
+    guard let session else { return .stopped }
+    return await session.refreshInBackground()
+  }
+
+  /// Says that the app went to the background: the session asks for the next background refresh. With no session,
+  /// nothing is asked for.
+  public func wentToBackground() {
+    session?.wentToBackground()
+  }
+
   // MARK: - Signing out
 
   /// Signs out: asks the instance once to revoke the session, then forgets it on the device, whatever the answer.
@@ -369,6 +394,8 @@ public final class Device {
       Log.fault(.session, "The session keychain can't forget the session.", detail: "\(error.status)")
     }
     LocalDatabase.removeAll(in: setup.storage)
+    // With no session, nothing is scheduled.
+    setup.refresh.cancelRefresh()
     // The device has no instance now, so no event names a version.
     setup.diagnostics.wishboneVersion(nil)
   }
@@ -382,7 +409,7 @@ public final class Device {
       session: session, userAgent: setup.userAgent, clock: setup.clock, diagnostics: setup.diagnostics)
     return SessionModel(
       session: session, client: client, database: database, timeZone: setup.timeZone,
-      timerClock: setup.timerClock, network: setup.network,
+      timerClock: setup.timerClock, network: setup.network, refresh: setup.refresh, diagnostics: setup.diagnostics,
       endedByServer: { [weak self] model in await self?.endedByServer(model) })
   }
 }

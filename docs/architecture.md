@@ -29,7 +29,7 @@ Where each rule lives in the code, and the rules that hold the code together. Wh
 | Piece | Lives in | Notes |
 |---|---|---|
 | The reminder plan | `WishboneSession` | Pure: occasions, settings, and a clock in, and requests out. The notification center is behind a protocol. |
-| Background refresh and scheduling | The app target | Only the app registers `.backgroundTask(.appRefresh)` and calls the scheduler. The extensions never schedule. |
+| Background refresh and scheduling | The app target | Only the app registers `.backgroundTask(.appRefresh)`, permits its identifier, and has the `fetch` background mode. The extensions never schedule. When to ask is in `WishboneSession`: the session model asks for the next run when the app goes to the background and at the end of each run, and the device cancels it at sign-out and at the API's own 401. iOS's scheduler is behind a protocol: the app gives `BGTaskScheduler`'s, and every other device gets one that never schedules. A run is one Sync now, and the end of a run that iOS cuts short cancels it. |
 | When a sync starts | `WishboneSession` | The session model's Sync now runs one sync at a time, and every way that a sync starts calls it. The 60-second timer runs on its own injected clock. The network's changes are behind a protocol: the app gives the system's, and every other device gets one that never changes. |
 | Each window's foreground, and pull to refresh | `WishboneUI` | The window's root tells the session model when its scene comes to the foreground and leaves it. The tab frame attaches pull to refresh once, for every screen that scrolls. |
 | The device owner check, and the login link's Copy (this device only, 10 minutes) | `WishboneUI` | Reached only from the app's screens. |

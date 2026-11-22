@@ -159,12 +159,20 @@ public enum Breadcrumb: Sendable, Equatable {
   /// A place that a window opened, named by its kind, never by what it shows.
   case placeOpened(PlaceKind)
 
+  /// The start of a sync, whatever started it. It names nothing more: no address, and no count of anything.
+  case syncStarted
+
+  /// The outcome of a sync, whatever started it. It names only the outcome.
+  case syncEnded(SyncEnd)
+
   /// The kind of the breadcrumb.
   public var kind: Kind {
     switch self {
     case .request: .request
     case .scenePhase: .scenePhase
     case .placeOpened: .placeOpened
+    case .syncStarted: .syncStarted
+    case .syncEnded: .syncEnded
     }
   }
 
@@ -175,6 +183,8 @@ public enum Breadcrumb: Sendable, Equatable {
       ["method": route.method, "path": route.template, "status_class": status.rawValue]
     case .scenePhase(let phase): ["phase": phase.rawValue]
     case .placeOpened(let kind): ["kind": kind.rawValue]
+    case .syncStarted: [:]
+    case .syncEnded(let end): ["outcome": end.rawValue]
     }
   }
 
@@ -183,6 +193,8 @@ public enum Breadcrumb: Sendable, Equatable {
     case request
     case scenePhase = "scene_phase"
     case placeOpened = "place_opened"
+    case syncStarted = "sync_started"
+    case syncEnded = "sync_ended"
 
     /// The names of the fields that a breadcrumb of the kind has, and nothing more.
     public var fields: Set<String> {
@@ -190,6 +202,8 @@ public enum Breadcrumb: Sendable, Equatable {
       case .request: ["method", "path", "status_class"]
       case .scenePhase: ["phase"]
       case .placeOpened: ["kind"]
+      case .syncStarted: []
+      case .syncEnded: ["outcome"]
       }
     }
 
@@ -203,6 +217,8 @@ public enum Breadcrumb: Sendable, Equatable {
         ]
       case .scenePhase: ["phase": Set(ScenePhase.allCases.map(\.rawValue))]
       case .placeOpened: ["kind": Set(PlaceKind.allCases.map(\.rawValue))]
+      case .syncStarted: [:]
+      case .syncEnded: ["outcome": Set(SyncEnd.allCases.map(\.rawValue))]
       }
     }
   }
@@ -245,6 +261,19 @@ public enum ScenePhase: String, Sendable, CaseIterable {
   case active
   case inactive
   case background
+}
+
+/// How a sync ended, as its breadcrumb names it. The session's `SyncOutcome` gives one of these.
+public enum SyncEnd: String, Sendable, CaseIterable {
+  /// The sync ran to its end.
+  case succeeded
+
+  /// The instance could not be reached.
+  case unreachable
+
+  /// The sync stopped: the instance refused, the copy can't be written, the session ended, or iOS ended a
+  /// background run early.
+  case stopped
 }
 
 /// The kind of a place that a window opens. A place is named by its kind, never by what it shows.

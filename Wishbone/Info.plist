@@ -2,6 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER).refresh</string>
+	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>Wishbone uses the camera to scan the QR code of a login link, and to take your profile photo.</string>
 	<key>NSAppTransportSecurity</key>
@@ -9,6 +13,10 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+	</array>
 	<key>WishboneAppStoreURL</key>
 	<string>$(WISHBONE_APP_STORE_URL)</string>
 	<key>WishboneAppGroup</key>
