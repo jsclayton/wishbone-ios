@@ -90,7 +90,7 @@ private struct ImagePager: View {
   let tileUserID: String
 
   @State private var shown = 0
-  @ScaledMetric(relativeTo: .body) private var height: CGFloat = 280
+  @ScaledMetric(relativeTo: .body) private var height: CGFloat = 200
 
   var body: some View {
     Group {

@@ -54,7 +54,11 @@ nonisolated final class ClaimJourney: XCTestCase {
     let claim = app.buttons[Audit.words("I'll get this")]
     XCTAssertTrue(claim.waitForExistence(timeout: 10), "The item's page has no I'll get this.")
     XCTAssertTrue(app.staticTexts[Audit.words("2 of 2 still wanted")].exists, "The page doesn't say how many.")
-    try await Audit.run(on: app, showing: "an item's page", in: self)
+    // How many, and the button, are the last rows: a larger text pushes them off the screen. At the largest text
+    // size, the journey scrolls each on the screen.
+    let lastRows = ["2 of 2 still wanted", "I'll get this"]
+    try await Audit.run(
+      on: app, showing: "an item's page", in: self, rowsThatLeaveTheScreen: lastRows, rowsToScrollTo: lastRows)
 
     // The claim waits for the server. Then the line, which names the occasion, takes the button's place, and one
     // fewer is still wanted.
