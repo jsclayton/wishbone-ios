@@ -17,8 +17,8 @@ struct HomePeopleTests {
     var description: String { "\(name): \(users.sorted())" }
   }
 
-  /// A new device, signed in as the person. Its first sync has ended. Each device has a keychain of its own, so
-  /// a test can sign several people in on one server.
+  /// A new device, signed in as the person. Its first sync has ended, and the session publishes all that it
+  /// wrote. Each device has a keychain of its own, so a test can sign several people in on one server.
   private func signedIn(as person: Fixture.Person, on server: TestServer) async throws -> SessionModel {
     try await signedIn(as: person, on: try await Instance(server: server))
   }
@@ -26,7 +26,9 @@ struct HomePeopleTests {
   private func signedIn(as person: Fixture.Person, on instance: Instance) async throws -> SessionModel {
     let device = instance.device()
     await device.signIn(pasting: try await instance.loginLink(for: person))
-    return try #require(device.session)
+    let session = try #require(device.session)
+    try await untilInStep(session, as: person)
+    return session
   }
 
   /// The session's People, as parts that a test can compare.

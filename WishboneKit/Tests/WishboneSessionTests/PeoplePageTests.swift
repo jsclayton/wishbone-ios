@@ -9,8 +9,8 @@ import WishboneSession
 @Suite("The People page", .timeLimit(.minutes(1)))
 @MainActor
 struct PeoplePageTests {
-  /// A new device, signed in as the person. Each device has a keychain of its own, so a test can sign several
-  /// people in on one server.
+  /// A new device, signed in as the person. Its first sync has ended, and the session publishes all that it
+  /// wrote. Each device has a keychain of its own, so a test can sign several people in on one server.
   private func signedIn(as person: Fixture.Person, on server: TestServer) async throws -> SessionModel {
     try await signedIn(as: person, on: try await Instance(server: server))
   }
@@ -18,7 +18,9 @@ struct PeoplePageTests {
   private func signedIn(as person: Fixture.Person, on instance: Instance) async throws -> SessionModel {
     let device = instance.device()
     await device.signIn(pasting: try await instance.loginLink(for: person))
-    return try #require(device.session)
+    let session = try #require(device.session)
+    try await untilInStep(session, as: person)
+    return session
   }
 
   @Test("The page has the same parts, in the same order, as Home's People, for a parent and for a child")

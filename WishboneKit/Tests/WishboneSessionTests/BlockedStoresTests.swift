@@ -26,6 +26,10 @@ final class BlockedStoresTests {
 
   /// A device signed in as the person, with the first sync over. A second person signs in on another instance,
   /// because a device on the same one shares its session keychain, and would be the first person's relaunch.
+  ///
+  /// For the admin, the session publishes this test's own blocked stores too. The pull reads the blocked stores
+  /// last, in a change of their own, and the session publishes each change a moment after it. So the wait for the
+  /// user, the first change, is not a wait for them.
   private func signedIn(
     as person: Fixture.Person, on instance: Instance? = nil, diagnostics: RecordingDiagnostics? = nil
   ) async throws -> SessionModel {
@@ -34,6 +38,10 @@ final class BlockedStoresTests {
     await device.signIn(pasting: try await instance.loginLink(for: person))
     let session = try #require(device.session)
     await until { session.user?.record != nil }
+    if session.isAdmin {
+      let own = try await blockedOnServer().filter { $0.contains(self.instance.builder.tag) }.sorted()
+      await until { self.ownStores(of: session).sorted() == own }
+    }
     return session
   }
 
