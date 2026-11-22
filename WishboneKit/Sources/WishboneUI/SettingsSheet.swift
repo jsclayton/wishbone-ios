@@ -9,6 +9,8 @@ import WishboneSession
 struct SettingsSheet: View {
   @Environment(Device.self) private var device
   @Environment(\.dismiss) private var dismiss
+  @Environment(\.openURL) private var openURL
+  @Environment(\.supportWishbone) private var support
 
   let session: SessionModel
 
@@ -30,6 +32,7 @@ struct SettingsSheet: View {
           case .reminders: reminders
           case .shareDiagnostics: shareDiagnostics
           case .forTheAdmin: forTheAdmin
+          case .supportWishbone: supportWishbone
           case .about: about
           }
         }
@@ -52,7 +55,9 @@ struct SettingsSheet: View {
   /// the admin, and who has parents: the fewest.
   private var sections: [SettingsSection] {
     let record = session.user?.record
-    return SettingsSection.shown(isAdmin: record?.isAdmin ?? false, hasParents: !(record?.parentIDs.isEmpty ?? false))
+    return SettingsSection.shown(
+      isAdmin: record?.isAdmin ?? false, hasParents: !(record?.parentIDs.isEmpty ?? false),
+      support: support?.shownPage)
   }
 
   /// The section that holds Sign-in and devices, with the help line on Require Face ID as its footer. See "No Face
@@ -116,6 +121,38 @@ struct SettingsSheet: View {
             .frame(minHeight: 44)
         }
       }
+    }
+  }
+
+  /// Support Wishbone: one row that opens the maker's support page in the browser, at once. It shows only when
+  /// `sections` has it. No event and no breadcrumb records the tap. See "Support Wishbone" in `docs/spec.md`.
+  private var supportWishbone: some View {
+    Section {
+      Button {
+        support?.tap { openURL($0) }
+      } label: {
+        HStack {
+          Text("Buy John a coffee", bundle: #bundle)
+          Spacer()
+          // The arrow's words follow the row's, so VoiceOver reads "Buy John a coffee, opens in browser".
+          Image(systemName: "arrow.up.right")
+            .foregroundStyle(.secondary)
+            .accessibilityLabel(Text("opens in browser", bundle: #bundle))
+        }
+        .contentShape(.rect)
+      }
+      .accessibilityElement(children: .combine)
+      .accessibilityAddTraits(.isLink)
+      .accessibilityRemoveTraits(.isButton)
+      .accessibilityInputLabels([Text("Buy John a coffee", bundle: #bundle)])
+    } header: {
+      // The label color itself, as in the footers.
+      Text("Support Wishbone", bundle: #bundle)
+        .foregroundStyle(Color.primary)
+    } footer: {
+      // The label color itself, as in the footer of Sign-in and devices.
+      Text("Wishbone is free and open source. A coffee unlocks nothing in the app.", bundle: #bundle)
+        .foregroundStyle(Color.primary)
     }
   }
 

@@ -2,6 +2,7 @@ import Foundation
 import Testing
 import WishboneAPI
 @_spi(Testing) import WishboneDiagnostics
+import WishboneUI
 
 /// The app's own events, checked at the envelope that leaves the device: the one event type, the typed breadcrumbs,
 /// the Wishbone version tag, and the scrubber. See "What may be sent" and "The app's own events" in `docs/spec.md`.
@@ -319,6 +320,37 @@ extension DiagnosticsTests {
     #expect(events.count == 1)
     #expect(events.allSatisfy { tags($0)["fault"] == nil })
     #expect(events.allSatisfy { ($0["breadcrumbs"] as? [Any] ?? []).isEmpty })
+  }
+
+  @Test("A tap on the support row records nothing: no event, and no breadcrumb")
+  func supportTapRecordsNothing() async throws {
+    let (receiver, _, diagnostics) = try await running()
+    let source = FakeStorefront(current: "USA")
+    let support = SupportWishbone(source: source, address: SupportWishboneTests.page)
+    let following = Task { await support.follow() }
+    defer { following.cancel() }
+    await until { support.shownPage != nil }
+
+    // One breadcrumb before the tap, as a control, then the tap, then a fault so that an event carries the trail.
+    diagnostics.reporter.leave(.scenePhase(.active))
+    var opened: [URL] = []
+    support.tap { opened.append($0) }
+    #expect(opened == [SupportWishboneTests.page])
+    diagnostics.reporter.capture(.unknownErrorCode("brand_new_code"))
+    await diagnostics.flush()
+    diagnostics.isOn = false
+
+    let events = receiver.events
+    #expect(events.count == 1)
+    let event = try #require(events.first)
+    #expect(tags(event)["fault"] == "unknown_error_code")
+    let breadcrumbs = event["breadcrumbs"] as? [[String: Any]] ?? []
+    #expect(breadcrumbs.map { $0["category"] as? String } == ["scene_phase"], "\(breadcrumbs)")
+    // Nothing that leaves the device names the support page.
+    #expect(receiver.envelopes.allSatisfy { !$0.text.lowercased().contains("coffee") })
+    // The vocabulary has no case for it either.
+    let names = Breadcrumb.Kind.allCases.map(\.rawValue) + Fault.Kind.allCases.map(\.rawValue)
+    #expect(!names.contains { $0.contains("support") || $0.contains("coffee") || $0.contains("tip") })
   }
 
   /// The tags of an event.
