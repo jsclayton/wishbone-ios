@@ -429,6 +429,7 @@ public final class Device {
       session: session, client: client, database: database,
       imageFolder: ImageCache.folder(of: session, in: setup.images), timeZone: setup.timeZone,
       timerClock: setup.timerClock, network: setup.network, refresh: setup.refresh, diagnostics: setup.diagnostics,
-      reminders: setup.reminders, endedByServer: { [weak self] model in await self?.endedByServer(model) })
+      reminders: setup.reminders, reminderSettingsFile: ReminderSettingsFile(of: session, in: setup.storage),
+      endedByServer: { [weak self] model in await self?.endedByServer(model) })
   }
 }

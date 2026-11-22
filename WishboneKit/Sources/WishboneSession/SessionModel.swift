@@ -149,8 +149,17 @@ public final class SessionModel {
   /// Where the session schedules its reminders, with their words and the clock of the plan.
   let reminders: Reminders
 
-  /// The reminder settings. Every session has the defaults until the Reminders screen exists.
-  var reminderSettings = ReminderSettings()
+  /// The reminder settings, as the Reminders screen shows them. See `changeReminderSettings(_:)`.
+  public internal(set) var reminderSettings: ReminderSettings
+
+  /// Where the session keeps its reminder settings.
+  let reminderSettingsFile: ReminderSettingsFile
+
+  /// What iOS lets the app do with its reminders, as the app last read it. Nil until it has read it.
+  public internal(set) var reminderAuthorization: ReminderAuthorization?
+
+  /// Whether Show on Lock Screen is asking iOS now. It asks once at a time.
+  var isAskingForFullAuthorization = false
 
   /// The rebuild of the reminders that runs, or the last one. One runs at a time.
   var rebuildingReminders: Task<Void, Never>?
@@ -171,6 +180,7 @@ public final class SessionModel {
     refresh: any RefreshScheduler,
     diagnostics: any DiagnosticsReporter,
     reminders: Reminders,
+    reminderSettingsFile: ReminderSettingsFile,
     endedByServer: @escaping @MainActor (SessionModel) async -> Void
   ) {
     self.session = session
@@ -182,6 +192,8 @@ public final class SessionModel {
     self.refresh = refresh
     self.diagnostics = diagnostics
     self.reminders = reminders
+    self.reminderSettingsFile = reminderSettingsFile
+    reminderSettings = reminderSettingsFile.read()
     self.endedByServer = endedByServer
     // The first snapshot comes at once, so a screen shows what is saved before anything is asked of the instance.
     observation = LocalDatabase.snapshots(ofUser: session.userID).start(

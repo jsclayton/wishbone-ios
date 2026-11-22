@@ -53,6 +53,8 @@ final class HeldReminderCenter: ReminderCenter {
     }
   }
 
+  func requestFullAuthorization() async {}
+
   func replacePending(with requests: [ReminderRequest]) async {}
 
   func removeAll() {}

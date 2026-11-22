@@ -5,7 +5,8 @@ import XCTest
 /// signed-out screen, against a real test server. See "Sign out" in `docs/spec.md`, and "The simulator tier" in
 /// `docs/development.md`.
 ///
-/// It audits the Settings sheet and Acknowledgements, and attaches a screenshot of each as evidence for a person.
+/// It audits the Settings sheet, the Reminders screen and Acknowledgements, and attaches a screenshot of each as
+/// evidence for a person.
 nonisolated final class SignOutJourney: XCTestCase {
   @MainActor
   func testSignOut() async {
@@ -53,8 +54,11 @@ nonisolated final class SignOutJourney: XCTestCase {
     // The rows under Sign out, which a larger text pushes off. At the largest text size they are below the fold,
     // so the journey scrolls each on the screen there.
     let rowsBelow = ["Share diagnostics", "About", "Source code", "Acknowledgements", "Version"]
+    // Reminders leaves the screen too, but the journey doesn't scroll to it: the scroll stops with the long help line
+    // above it half under the bar, and the audit reports that line with no element, so it can't be told apart.
     try await Audit.run(
-      on: app, showing: "Settings", in: self, rowsThatLeaveTheScreen: rowsBelow, rowsToScrollTo: rowsBelow)
+      on: app, showing: "Settings", in: self, rowsThatLeaveTheScreen: ["Reminders"] + rowsBelow,
+      rowsToScrollTo: rowsBelow)
 
     // Acknowledgements: the app's own notice, then the license of each package. Back goes to Settings.
     app.buttons[Audit.words("Acknowledgements")].tap()
@@ -68,6 +72,25 @@ nonisolated final class SignOutJourney: XCTestCase {
     app.navigationBars[Audit.words("Acknowledgements")].buttons.firstMatch.tap()
     XCTAssertTrue(
       app.navigationBars[Audit.words("Settings")].waitForExistence(timeout: 10), "Back didn't go to Settings.")
+
+    // Reminders, pushed inside the sheet. VoiceOver reads Remind me early as one button, with its value, and the
+    // audit holds the screen's contrast: the value is drawn in the primary color, not the form's secondary gray.
+    app.buttons[Audit.words("Reminders")].firstMatch.tap()
+    XCTAssertTrue(
+      app.navigationBars[Audit.words("Reminders")].waitForExistence(timeout: 10), "The Reminders screen didn't show.")
+    let early = app.buttons[Audit.words("Remind me early")]
+    XCTAssertTrue(early.waitForExistence(timeout: 10), "Reminders has no Remind me early row.")
+    XCTAssertEqual(early.value as? String, Audit.words("2 weeks"))
+    // The rows under the timing, which a larger text pushes off the screen: Show on Lock Screen with its line, as
+    // the simulator gives provisional permission, and the footer. The journey doesn't scroll to them at the largest
+    // text size: there the line on 9:00 goes whole under the bar, and the audit reports it with no element, so it
+    // can't be told apart.
+    try await Audit.run(
+      on: app, showing: "Reminders", in: self,
+      rowsThatLeaveTheScreen: ["Show on Lock Screen", "Reminders arrive quietly", "A reminder names"])
+    app.navigationBars[Audit.words("Reminders")].buttons.firstMatch.tap()
+    XCTAssertTrue(
+      app.navigationBars[Audit.words("Settings")].waitForExistence(timeout: 10), "Back didn't show Settings.")
 
     // Sign out, after its warning.
     app.buttons[Audit.words("Sign out")].tap()

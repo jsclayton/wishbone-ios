@@ -24,6 +24,7 @@
       }
     },
     "%@'s %@ is in 1 week" : {
+      "comment" : "The first is the person's name. The second is the name of their occasion, such as graduation.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -34,6 +35,7 @@
       }
     },
     "%@'s %@ is in 2 weeks" : {
+      "comment" : "The first is the person's name. The second is the name of their occasion, such as graduation.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -44,6 +46,7 @@
       }
     },
     "%@'s %@ is in 4 weeks" : {
+      "comment" : "The first is the person's name. The second is the name of their occasion, such as graduation.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -108,10 +111,22 @@
         }
       }
     },
+    "1 week" : {
+
+    },
+    "2 weeks" : {
+
+    },
+    "4 weeks" : {
+
+    },
     "A birthday is required." : {
 
     },
     "A photo is optional." : {
+
+    },
+    "A reminder names the occasion and the person. It never says anything about gifts." : {
 
     },
     "About" : {
@@ -217,6 +232,7 @@
 
     },
     "It's %@'s %@ today" : {
+      "comment" : "The first is the person's name. The second is the name of their occasion, such as graduation.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -280,6 +296,12 @@
     "Nothing here yet. Tap Add item to start the list." : {
 
     },
+    "Notifications are off for Wishbone. Turn them on in Settings to get reminders." : {
+
+    },
+    "On the day" : {
+
+    },
     "Only the admin can reactivate %@. Until then, you can't change anything for %@." : {
       "localizations" : {
         "en" : {
@@ -314,6 +336,21 @@
     "Privacy policy" : {
 
     },
+    "Remind me early" : {
+
+    },
+    "Reminders" : {
+
+    },
+    "Reminders arrive at 9:00 in the morning." : {
+
+    },
+    "Reminders arrive quietly in Notification Center." : {
+
+    },
+    "Reminders show on the Lock Screen." : {
+
+    },
     "Remove photo" : {
 
     },
@@ -330,6 +367,9 @@
 
     },
     "Share diagnostics" : {
+
+    },
+    "Show on Lock Screen" : {
 
     },
     "Sign out" : {

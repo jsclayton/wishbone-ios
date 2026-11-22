@@ -2,8 +2,9 @@ import Foundation
 import WishboneAPI
 
 /// The reminder settings: one switch for every occasion, and the timing. See "One switch, and the timing" in
-/// `docs/spec.md`. Until the Reminders screen exists, every session has the defaults.
-public struct ReminderSettings: Sendable, Equatable {
+/// `docs/spec.md`. They belong to the session: the session keeps them in a file of its own (see
+/// `ReminderSettingsFile`), and they go at sign-out.
+public struct ReminderSettings: Sendable, Equatable, Codable {
   /// Whether the app schedules reminders at all. On by default.
   public var isOn: Bool
 
@@ -21,7 +22,7 @@ public struct ReminderSettings: Sendable, Equatable {
 }
 
 /// How long before an occasion the early reminder comes. The user picks one of the three.
-public enum EarlyReminder: Int, Sendable, Equatable, CaseIterable {
+public enum EarlyReminder: Int, Sendable, Equatable, CaseIterable, Codable {
   case oneWeek = 1
   case twoWeeks = 2
   case fourWeeks = 4

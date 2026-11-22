@@ -57,13 +57,15 @@ struct ReminderPlanTests {
 
   @Test("Each occasion gives two reminders, at 9:00 in the device's zone: 2 weeks before, and on the day")
   func twoAtNine() {
-    let reminders = Self.plan([Self.occasion("40", on: "2026-03-30")])
+    let reminders = Self.plan([Self.occasion("40", on: "2026-03-20")])
 
     #expect(reminders.map(\.identifier.kind) == [.early, .onTheDay])
-    #expect(reminders.map(\.fires) == [Self.components(2026, 3, 16), Self.components(2026, 3, 30)])
-    // At 9:00 on each side of the change to daylight saving time. The trigger names no zone, so it fires at 9:00 in
-    // the zone that the device has then.
-    #expect(reminders.map(Self.fires) == [Self.time(2026, 3, 16, 9), Self.time(2026, 3, 30, 9)])
+    #expect(reminders.map(\.fires) == [Self.components(2026, 3, 6), Self.components(2026, 3, 20)])
+    // Daylight saving time starts on 8 March, between the two: the early one is at 9:00 EST, and the one on the day at
+    // 9:00 EDT. The trigger names no zone, so each fires at 9:00 in the zone that the device has then.
+    #expect(reminders.map(Self.fires) == [Self.time(2026, 3, 6, 9), Self.time(2026, 3, 20, 9)])
+    let offsets = reminders.compactMap(Self.fires).map { Self.zone.secondsFromGMT(for: $0) / 3600 }
+    #expect(offsets == [-5, -4])
     #expect(reminders.allSatisfy { $0.fires.timeZone == nil && $0.fires.second == nil })
     #expect(reminders.map(\.phrase.early) == [.twoWeeks, nil])
   }
