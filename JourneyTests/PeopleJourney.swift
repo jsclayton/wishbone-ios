@@ -32,8 +32,6 @@ nonisolated final class PeopleJourney: XCTestCase {
     let primary = try await builder.primaryList(of: ash)
     _ = try await builder.item(
       "Kite", on: primary, as: ash, storeLinks: [(url: "https://shop.example/kite", priceMinor: 2000)])
-    _ = try await builder.item(
-      "Book", on: primary, as: ash, storeLinks: [(url: "https://shop.example/book", priceMinor: 500)])
     let camping = try await builder.list("Camping", of: ash)
     _ = try await builder.item(
       "Tent", on: camping, as: ash, storeLinks: [(url: "https://shop.example/tent", priceMinor: 10000)])
@@ -75,10 +73,13 @@ nonisolated final class PeopleJourney: XCTestCase {
     // A numbered list reads its numbers.
     XCTAssertTrue(app.staticTexts["1"].exists, "The numbered list doesn't read its numbers.")
     XCTAssertTrue(app.staticTexts["Size medium"].exists)
-    // The rows below Good to know, which the larger text pushes down and off.
-    let pageRows = ["Lego set,", "Kite", "Book", camping.name]
+    // The rows below Good to know's first line, which the larger text pushes down and off: the link's row, the
+    // numbered list's numbers and items, the item, and the other list. The page has one item, so that in the
+    // default settings no row is under the tab bar, where the audit measures the bar's glass.
+    let pageRows = ["Lego set,", "1", "Size medium", "2", "No glitter", "Kite", camping.name]
     try await Audit.run(
-      on: app, showing: "a person's page", in: self, rowsThatLeaveTheScreen: pageRows, rowsToScrollTo: pageRows)
+      on: app, showing: "a person's page", in: self, rowsThatLeaveTheScreen: pageRows,
+      rowsToScrollTo: ["Lego set,", "Size medium", "Kite", camping.name])
 
     // A row of Other lists pushes that list's page.
     starting(camping.name).tap()

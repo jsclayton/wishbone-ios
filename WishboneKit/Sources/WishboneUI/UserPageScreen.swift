@@ -29,12 +29,13 @@ struct UserPageScreen: View {
         Section {
           MarkdownView(goodToKnow)
         } header: {
-          Text("Good to know", bundle: #bundle)
+          SectionHeading(Text("Good to know", bundle: #bundle))
         }
       }
       if let list = page.primaryList {
         Section {
           if page.seesClaimsAsParent {
+            // The primary color: the system's secondary gray is below 4.5:1 on the row.
             Text("You see what's been claimed here. Fully claimed items don't show.", bundle: #bundle)
           }
           if page.items.isEmpty {
@@ -54,7 +55,7 @@ struct UserPageScreen: View {
             }
           }
         } header: {
-          Text("Other lists", bundle: #bundle)
+          SectionHeading(Text("Other lists", bundle: #bundle))
         }
       }
     }
@@ -65,7 +66,8 @@ struct UserPageScreen: View {
     #endif
   }
 
-  /// The items part with no items. For a viewer who can edit the list, it points to Add item.
+  /// The items part with no items. For a viewer who can edit the list, it points to Add item. The primary color: the
+  /// system's secondary gray is below 4.5:1 on the row.
   @ViewBuilder private func noItems(on list: ListRow) -> some View {
     Group {
       if list.canEdit {
@@ -88,6 +90,7 @@ private struct Header: View {
       VStack(spacing: 2) {
         Text(fullName)
           .font(.title2.weight(.bold))
+        // The primary color: the system's secondary gray is below 4.5:1 on the row.
         if page.user.isDeactivated {
           Text("Deactivated", bundle: #bundle)
             .font(.subheadline)
@@ -176,6 +179,7 @@ struct ItemRowView: View {
         if let price = PriceWords.row(
           priceMinor: item.row.priceMinor, topPriceMinor: item.row.topPriceMinor, currency: item.row.currency)
         {
+          // The primary color: the system's secondary gray is below 4.5:1 on the row.
           Text(price)
         }
         if let claim = item.claim {
@@ -196,6 +200,7 @@ struct ClaimLines: View {
   let claim: UserPage.Claim
 
   var body: some View {
+    // The primary color: the system's secondary gray is below 4.5:1 on the row.
     if let stillWanted = claim.stillWanted {
       Text("\(stillWanted) of \(claim.quantity) still wanted", bundle: #bundle)
     } else {
@@ -248,10 +253,31 @@ private struct OtherListRow: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 2) {
       Text(list.name)
+      // The primary color: the system's secondary gray is below 4.5:1 on the row.
       Text("\(list.itemCount) items", bundle: #bundle)
         .font(.subheadline)
     }
     .fixedSize(horizontal: false, vertical: true)
     .accessibilityElement(children: .combine)
+  }
+}
+
+/// A part's heading on a user's page: "Good to know" and "Other lists". It is a headline in the primary color, as
+/// a part's heading on Home is, because a list draws a section's header in the system's secondary gray, which is below
+/// 4.5:1. It is a heading for the VoiceOver rotor.
+private struct SectionHeading: View {
+  let text: Text
+
+  init(_ text: Text) {
+    self.text = text
+  }
+
+  var body: some View {
+    text
+      .font(.headline)
+      .foregroundStyle(.primary)
+      .textCase(nil)
+      .fixedSize(horizontal: false, vertical: true)
+      .accessibilityAddTraits(.isHeader)
   }
 }
