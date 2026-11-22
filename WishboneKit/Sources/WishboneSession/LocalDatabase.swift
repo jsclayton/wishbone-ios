@@ -221,6 +221,30 @@ struct LocalDatabase: Sendable {
     }
   }
 
+  // MARK: - What the reminders read
+
+  /// What the reminder plan reads from the copy, in one read: every occasion, the name of each user, and whether
+  /// the session's user still has the profile gate in front of them. See `SessionModel.rebuildReminders()`.
+  func reminderSources(ofUser id: String) async throws -> ReminderSources {
+    try await writer.read { database in
+      let users = try UserRow.fetchAll(database)
+      let user = users.first { $0.id == id && !$0.isSummary }
+      return ReminderSources(
+        occasions: try OccasionRow.order(Column("id")).fetchAll(database),
+        names: Dictionary(users.map { ($0.id, $0.name) }, uniquingKeysWith: { _, last in last }),
+        needsProfileGate: user.map { $0.record?.canConfirmProfile == true })
+    }
+  }
+
+  /// What the reminder plan reads from the copy.
+  struct ReminderSources: Sendable {
+    var occasions: [OccasionRow]
+    var names: [String: String]
+
+    /// Whether the profile gate shows. Nil while the copy doesn't hold the session's user.
+    var needsProfileGate: Bool?
+  }
+
   /// The version of each membership in the copy.
   func membershipVersions() async throws -> [MembershipRow.Key: String] {
     try await writer.read { database in
