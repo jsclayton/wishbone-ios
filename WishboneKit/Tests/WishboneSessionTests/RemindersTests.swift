@@ -181,6 +181,62 @@ struct RemindersTests {
     #expect(center.pending.isEmpty)
   }
 
+  /// How a session ends.
+  enum Ending: CaseIterable, Sendable {
+    case signOut
+    case endedByServer
+  }
+
+  @Test(
+    "A rebuild that waits for iOS, a later sync meanwhile, then the end of the session: nothing is scheduled after every reminder is removed",
+    arguments: Ending.allCases)
+  func heldRebuildLaterSyncThenEnd(_ ending: Ending) async throws {
+    let robin = try await person()
+    _ = try await occasion("Graduation", of: robin, in: 20)
+    let center = RecordingReminderCenter()
+    let (device, session) = try await signedIn(as: robin, center: center)
+    #expect(center.pending.count == 2)
+    let replaces = center.replaces
+    let removals = center.removals
+
+    // A sync's rebuild waits for iOS.
+    center.hold(.authorization)
+    let first = Task { await session.syncNow() }
+    await center.waitUntilHeld()
+
+    // A later sync runs meanwhile: it brings a new occasion into the copy, then its rebuild waits behind the held one.
+    let recital = try await occasion("Recital", of: robin, in: 30)
+    let later = Task { await session.syncNow() }
+    await until { session.occasions.contains { $0.id == recital.id } }
+
+    // The session ends while both rebuilds wait.
+    let ended: Task<Void, Never>
+    switch ending {
+    case .signOut:
+      ended = Task { await device.signOut() }
+    case .endedByServer:
+      // Another session revokes this one, as the Devices list in a browser does. The next sync gets the API's own 401.
+      let other = try robin.signedIn()
+      let sessions = try await other.all("/users/me/sessions")
+      let current = try #require(
+        sessions.first {
+          $0["is_current"].bool == false && $0["user_agent"].string?.hasPrefix("Wishbone iOS/") == true
+        })
+      _ = try await other.send("DELETE", "/users/me/sessions/\(try #require(current["id"].string))").expecting(204)
+      ended = Task { _ = await session.syncNow() }
+    }
+    await until { device.session == nil }
+
+    // iOS answers. Neither rebuild schedules anything, and every reminder is removed once, after them.
+    center.release()
+    await ended.value
+    _ = await first.value
+    _ = await later.value
+    #expect(center.pending.isEmpty)
+    #expect(center.replaces == replaces)
+    #expect(center.removals == removals + 1)
+  }
+
   @Test("A fresh install removes every reminder: a session with no marker, and a device with no session")
   func freshInstallRemovesEvery() async throws {
     let robin = try await person()
