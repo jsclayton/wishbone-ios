@@ -99,10 +99,10 @@ server:
 server-openapi:
     node scripts/server/openapi.mjs
 
-# Run the package tests on macOS, against the pinned server. It passes its arguments to `swift test`
+# Run the package tests on macOS, against the pinned server, at most 8 at a time. It passes its arguments to `swift test`
 [positional-arguments]
 test *args: server
-    swift test --package-path WishboneKit "$@"
+    swift test --package-path WishboneKit --experimental-maximum-parallelization-width 8 "$@"
 
 # Run the hosted tests and the journeys on the gate's own simulator, in the gate slot. The results go to the folder. `--no-build`, before or after the folder, runs what `just build` built
 [positional-arguments]

@@ -325,3 +325,15 @@ test("the Gate job's limit in CI is above the sum of the gate's step limits, wit
   const sum = stepMinutes.reduce((total, minutes) => total + minutes, 0);
   assert.ok(jobMinutes >= sum + 10, `the job's ${jobMinutes} minutes are not 10 above the steps' ${sum}`);
 });
+
+// Swift Testing starts every test of a process at once, unless a width caps it. A test's time limit counts only
+// its own run, not the wait for a place in the width. So with no cap, each test's limit counts the whole
+// process's work, and a slow runner fails the tests that end last (issue #129).
+test('the package tests run at most 8 at a time, so that a time limit counts one test, not the whole run', () => {
+  const main = readFileSync(new URL('./main.mjs', import.meta.url), 'utf8');
+  const justfile = readFileSync(new URL('../../justfile', import.meta.url), 'utf8');
+  assert.match(main, /name: 'package',\n\s+command: \['just', 'test',/, 'the package step runs `just test`');
+  const recipe = /^test \*args: server\n((?:    .*\n)+)/m.exec(justfile);
+  assert.ok(recipe, 'the justfile has the test recipe');
+  assert.match(recipe[1], /^    swift test --package-path WishboneKit --experimental-maximum-parallelization-width 8 "\$@"$/m);
+});
