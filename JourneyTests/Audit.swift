@@ -85,7 +85,8 @@ enum Audit {
   ) async throws {
     guard let helper else {
       // A run with no helper is at the simulator's own text size, as the double-length run is.
-      try audit(app, screen, in: ownSetting, screenshot: app.screenshot(), rows: rowsThatLeaveTheScreen, test: test)
+      try await audit(
+        app, screen, in: ownSetting, screenshot: app.screenshot(), rows: rowsThatLeaveTheScreen, test: test)
       return
     }
     guard try await isNew(screen, helper: helper) else { return }
@@ -94,7 +95,7 @@ enum Audit {
     // is still on its way from one setting to the next, and each change is of one setting only.
     try await apply(settings[0], helper: helper)
     var current = try await settledScreen(of: app, in: settings[0], where: { _ in true })
-    try audit(
+    try await audit(
       app, screen, in: settings[0].label, screenshot: current.screenshot, rows: rowsThatLeaveTheScreen, test: test)
     for setting in settings.dropFirst() {
       try await apply(setting, helper: helper)
@@ -102,7 +103,7 @@ enum Audit {
       var shown = try await settledScreen(of: app, in: setting, after: toSetting)
       // The largest text size gets no rows, so it checks Dynamic Type on every row that shows. See above.
       let rows = setting.name == largestText.name ? [] : rowsThatLeaveTheScreen
-      try audit(app, screen, in: setting.label, screenshot: shown.screenshot, rows: rows, test: test)
+      try await audit(app, screen, in: setting.label, screenshot: shown.screenshot, rows: rows, test: test)
       if setting.name == largestText.name {
         for row in rowsToScrollTo {
           guard let top = try await scroll(app, to: row, in: screen) else { continue }
@@ -110,7 +111,7 @@ enum Audit {
           // The words after the setting keep the screenshot out of the gate's count of the screen's four settings.
           // The audit is of Dynamic Type and clipped text only. The screen as it opens had the other checks, and a
           // scrolled screen has rows under the top bar, which the system fades: the contrast check reads those.
-          try audit(
+          try await audit(
             app, screen, in: "\(setting.label), scrolled to \(row)", screenshot: scrolled.screenshot, rows: [],
             types: [.dynamicType, .textClipped], underTheBar: top, test: test)
           shown = scrolled
@@ -179,12 +180,77 @@ enum Audit {
   private static func audit(
     _ app: XCUIApplication, _ screen: String, in setting: String, screenshot: XCUIScreenshot, rows: [String],
     types: XCUIAccessibilityAuditType = .all, underTheBar contentTop: CGFloat? = nil, test: XCTestCase
-  ) throws {
+  ) async throws {
     let attachment = XCTAttachment(screenshot: screenshot)
     attachment.name = "\(screen), in \(setting)"
     attachment.lifetime = .keepAlways
     test.add(attachment)
-    // Every issue on the screen, so one run reports all of them, not only the first.
+    // Every issue on the screen, so one run reports all of them, not only the first. An audit that ran out of time
+    // starts again with none: what it found before the limit is not all of the screen.
+    var issues: [String] = []
+    try await withRetriesAfterTimeOut("\(screen), in \(setting)") {
+      issues = try performAudit(app, setting: setting, types: types, rows: rows, contentTop: contentTop)
+    }
+    if !issues.isEmpty {
+      XCTFail("\(screen), in \(setting): \(issues.joined(separator: "; "))")
+    }
+  }
+
+  /// How many times an audit that ran out of time runs again, after the first time.
+  private static let auditRetryLimit = 2
+
+  /// How long the journey waits before it runs a timed-out audit again.
+  private static let auditRetryPause: Duration = .seconds(2)
+
+  /// Whether the error is XCTest's own "Audit failed to complete in time".
+  private static func isAuditTimeOut(_ error: Error) -> Bool {
+    let error = error as NSError
+    return error.domain == "com.apple.xcode.xctest.accessibilityAudit" && error.code == -56
+  }
+
+  /// Runs `audit`, and runs it again from the start, at most `auditRetryLimit` times, when XCTest says that it
+  /// didn't complete in time.
+  ///
+  /// This is the named flake "an accessibility audit doesn't complete in time on a CI runner" in
+  /// `docs/development.md`. XCTest gives an audit about 15 seconds, which it doesn't let a test change. On a slow
+  /// runner, an audit of a still screen that takes about 5 seconds can pass that limit. Each try is a whole audit, so
+  /// a screen passes only when one audit read all of it. Each retry is reported to the settings helper, so the
+  /// gate's line after the run names it, and is in the log.
+  private static func withRetriesAfterTimeOut(_ audited: String, _ audit: () throws -> Void) async throws {
+    var retries = 0
+    while true {
+      do {
+        try audit()
+        return
+      } catch let error where isAuditTimeOut(error) && retries < auditRetryLimit {
+        retries += 1
+        print("The audit of \(audited) didn't complete in time. It runs again (\(retries) of \(auditRetryLimit)).")
+        await reportRetry(audited)
+        try await Task.sleep(for: auditRetryPause)
+      } catch let error where isAuditTimeOut(error) {
+        throw AuditError(
+          "The audit of \(audited) didn't complete in time, \(retries + 1) times in a row: \(error.localizedDescription)"
+        )
+      }
+    }
+  }
+
+  /// Tells the settings helper that an audit ran again, so the gate's line names the flake. A run with no helper
+  /// has only the line in the log. A report that doesn't arrive is not a failure: the retry is in the log too.
+  private static func reportRetry(_ audited: String) async {
+    guard let helper else { return }
+    var request = URLRequest(url: helper.appending(path: "audit-retries"))
+    request.httpMethod = "POST"
+    request.httpBody = Data(audited.utf8)
+    request.timeoutInterval = 10
+    _ = try? await URLSession.shared.data(for: request)
+  }
+
+  /// One run of the audit. Returns each issue that no exception allows.
+  private static func performAudit(
+    _ app: XCUIApplication, setting: String, types: XCUIAccessibilityAuditType, rows: [String],
+    contentTop: CGFloat?
+  ) throws -> [String] {
     var issues: [String] = []
     try app.performAccessibilityAudit(for: types) { issue in
       // On a scrolled screen, a row that starts above the top of the content is under the top bar, partly or
@@ -266,9 +332,7 @@ enum Audit {
       issues.append("\(issue.compactDescription): \(issue.detailedDescription) (\(element))")
       return true
     }
-    if !issues.isEmpty {
-      XCTFail("\(screen), in \(setting): \(issues.joined(separator: "; "))")
-    }
+    return issues
   }
 
   /// How long the settings helper may take to answer. It gives each `simctl` call 30 seconds, and runs a call that

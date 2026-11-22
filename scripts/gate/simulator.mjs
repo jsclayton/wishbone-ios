@@ -381,14 +381,38 @@ export function settingsApplier(
  * already, so the journey doesn't audit it again. Only the run in the four settings has a helper, and it starts
  * its own, so the screens that it remembers are that run's.
  *
- * Resolves with `{ address, close, screens, resends }`, where `screens()` gives the names, in the order they came,
- * and `resends()` gives each change that a journey sent again: `{ setting, after, read }`, with the settings' labels
- * and what `readSettings` read before the change was sent again.
+ * `POST /audit-retries`, with the audit's screen and setting as the body, records that an audit ran again after
+ * XCTest said that it didn't complete in time: the named flake "an accessibility audit doesn't complete in time on
+ * a CI runner" in docs/development.md. It answers 204.
+ *
+ * Resolves with `{ address, close, screens, resends, auditRetries }`, where `screens()` gives the names, in the
+ * order they came, `resends()` gives each change that a journey sent again: `{ setting, after, read }`, with the
+ * settings' labels and what `readSettings` read before the change was sent again, and `auditRetries()` gives each
+ * audit that ran again, by its screen and setting, in the order they came.
  */
 export function startSettingsHelper(applySetting, { readSettings = async () => 'not read' } = {}) {
   const resends = [];
+  const auditRetries = [];
   const screens = new Set();
   const server = createServer((request, response) => {
+    if (request.url === '/audit-retries') {
+      if (request.method !== 'POST') {
+        response.writeHead(404).end();
+        return;
+      }
+      const body = [];
+      request.on('data', (chunk) => body.push(chunk));
+      request.on('end', () => {
+        const audit = Buffer.concat(body).toString('utf8');
+        if (audit === '') {
+          response.writeHead(400, { 'Content-Type': 'text/plain' }).end("the audit's screen and setting, as the body");
+          return;
+        }
+        auditRetries.push(audit);
+        response.writeHead(204).end();
+      });
+      return;
+    }
     if (request.url === '/screens') {
       if (request.method !== 'POST') {
         response.writeHead(404).end();
@@ -441,6 +465,7 @@ export function startSettingsHelper(applySetting, { readSettings = async () => '
         close: () => new Promise((done) => server.close(() => done())),
         screens: () => [...screens],
         resends: () => resends.map((one) => ({ ...one })),
+        auditRetries: () => [...auditRetries],
       });
     });
   });
@@ -448,6 +473,22 @@ export function startSettingsHelper(applySetting, { readSettings = async () => '
 
 /** The name of the flake that a journey meets by sending a change again. See `startSettingsHelper`. */
 export const resendFlake = "a change of setting doesn't show in the app";
+
+/** The name of the flake that a journey meets by running an audit again. See `startSettingsHelper`. */
+export const auditTimeOutFlake = "an accessibility audit doesn't complete in time on a CI runner";
+
+/**
+ * The lines after a run of the journeys, one for each audit that ran again because XCTest said that it didn't
+ * complete in time (`auditRetries()` of `startSettingsHelper`). None when no audit ran again.
+ */
+export function auditRetryLines(retries) {
+  if (retries.length === 0) return [];
+  const audits = retries.length === 1 ? '1 audit' : `${retries.length} audits`;
+  return [
+    `  The journeys ran ${audits} again, because XCTest said that it didn't complete in time (the named flake "${auditTimeOutFlake}"):`,
+    ...retries.map((audit) => `    ${audit}.`),
+  ];
+}
 
 /**
  * The lines after a run of the journeys, one for each change that a journey sent again (`resends()` of
@@ -643,6 +684,7 @@ export async function runSimulatorTier({ root, directory, build = true, say = co
           const again = hung === 0 ? '' : `, and ${hung} of them hung (the named flake "a \`simctl ui\` call hangs on a CI runner")`;
           say(`  The settings helper made ${applier.calls() - helperCalls} simctl calls, in ${duration(applier.ms() - helperMs)}${again}.`);
           for (const line of resendLines(helper.resends())) say(line);
+          for (const line of auditRetryLines(helper.auditRetries())) say(line);
         }
         return { passed, reading };
       };
