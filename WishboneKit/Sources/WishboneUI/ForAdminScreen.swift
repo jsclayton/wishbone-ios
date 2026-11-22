@@ -14,7 +14,7 @@ import WishboneSession
 ///
 /// **Provisional.** Plain default: a system list in one column of readable width, with the rows of the People page.
 struct ForAdminScreen: View {
-  /// `.allUsers`, `.allGroups`, or `.deactivatedUsers`.
+  /// `.allUsers`, `.allGroups`, or `.deactivatedUsers`. Any other page shows the not-found page.
   let page: Page
   let session: SessionModel
 
@@ -37,7 +37,7 @@ struct ForAdminScreen: View {
       case .deactivatedUsers:
         users(forAdmin?.deactivated ?? [])
           .navigationTitle(Text("Deactivated", bundle: #bundle))
-      default:
+      case .allUsers:
         let found = forAdmin?.users(matching: search) ?? []
         users(found)
           .overlay {
@@ -49,6 +49,8 @@ struct ForAdminScreen: View {
           }
           .searchable(text: $search, prompt: Text("Search users", bundle: #bundle))
           .navigationTitle(Text("All users", bundle: #bundle))
+      default:
+        NotFoundPage()
       }
     }
     .contentMargins(.horizontal, max(0, (width - readableWidth) / 2), for: .scrollContent)
