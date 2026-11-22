@@ -21,7 +21,9 @@ nonisolated extension ReminderWords {
     case .birthday(let person):
       String(localized: "It's \(person)'s birthday today", bundle: #bundle)
     case .custom(let person, let occasion):
-      String(localized: "It's \(person)'s \(occasion) today", bundle: #bundle)
+      String(
+        localized: "It's \(person)'s \(occasion) today", bundle: #bundle,
+        comment: "The first is the person's name. The second is the name of their occasion, such as graduation.")
     case .shared(let occasion):
       String(localized: "It's \(occasion) today", bundle: #bundle)
     case .ownBirthday:
@@ -36,7 +38,9 @@ nonisolated extension ReminderWords {
     case .birthday(let person):
       String(localized: "\(person)'s birthday is in 1 week", bundle: #bundle)
     case .custom(let person, let occasion):
-      String(localized: "\(person)'s \(occasion) is in 1 week", bundle: #bundle)
+      String(
+        localized: "\(person)'s \(occasion) is in 1 week", bundle: #bundle,
+        comment: "The first is the person's name. The second is the name of their occasion, such as graduation.")
     case .shared(let occasion):
       String(localized: "\(occasion) is in 1 week", bundle: #bundle)
     case .ownBirthday:
@@ -51,7 +55,9 @@ nonisolated extension ReminderWords {
     case .birthday(let person):
       String(localized: "\(person)'s birthday is in 2 weeks", bundle: #bundle)
     case .custom(let person, let occasion):
-      String(localized: "\(person)'s \(occasion) is in 2 weeks", bundle: #bundle)
+      String(
+        localized: "\(person)'s \(occasion) is in 2 weeks", bundle: #bundle,
+        comment: "The first is the person's name. The second is the name of their occasion, such as graduation.")
     case .shared(let occasion):
       String(localized: "\(occasion) is in 2 weeks", bundle: #bundle)
     case .ownBirthday:
@@ -66,7 +72,9 @@ nonisolated extension ReminderWords {
     case .birthday(let person):
       String(localized: "\(person)'s birthday is in 4 weeks", bundle: #bundle)
     case .custom(let person, let occasion):
-      String(localized: "\(person)'s \(occasion) is in 4 weeks", bundle: #bundle)
+      String(
+        localized: "\(person)'s \(occasion) is in 4 weeks", bundle: #bundle,
+        comment: "The first is the person's name. The second is the name of their occasion, such as graduation.")
     case .shared(let occasion):
       String(localized: "\(occasion) is in 4 weeks", bundle: #bundle)
     case .ownBirthday:

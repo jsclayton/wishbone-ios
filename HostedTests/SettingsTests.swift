@@ -10,13 +10,13 @@ struct SettingsTests {
   @Test("The sections and their order, for an everyday user, a child and the admin")
   func sections() {
     // Support Wishbone and the other sections join in their places when they are built.
-    let order: [SettingsSection] = [.signedIn, .signInAndDevices, .shareDiagnostics, .about]
+    let order: [SettingsSection] = [.signedIn, .signInAndDevices, .reminders, .shareDiagnostics, .about]
     #expect(SettingsSection.shown(isAdmin: false, hasParents: false) == order, "An everyday user")
     #expect(SettingsSection.shown(isAdmin: false, hasParents: true) == order, "A child")
     // Only the admin gets For the admin, after Share diagnostics.
     #expect(
       SettingsSection.shown(isAdmin: true, hasParents: false)
-        == [.signedIn, .signInAndDevices, .shareDiagnostics, .forTheAdmin, .about], "The admin")
+        == [.signedIn, .signInAndDevices, .reminders, .shareDiagnostics, .forTheAdmin, .about], "The admin")
     // About is at the foot.
     #expect(SettingsSection.allCases.last == .about)
   }

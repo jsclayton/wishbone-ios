@@ -25,10 +25,47 @@ public struct Reminders: Sendable {
 }
 
 extension SessionModel {
+  /// Changes the reminder settings: the session keeps them, and rebuilds the whole set. The screen shows the new
+  /// settings at once. The task it gives ends when the set is rebuilt. See "One switch, and the timing" and "Staying
+  /// correct" in `docs/spec.md`.
+  @discardableResult
+  public func changeReminderSettings(_ settings: ReminderSettings) -> Task<Void, Never> {
+    guard !hasEnded, settings != reminderSettings else { return Task {} }
+    reminderSettings = settings
+    reminderSettingsFile.save(settings)
+    return Task { await rebuildReminders() }
+  }
+
+  /// Reads again what iOS lets the app do, for the Reminders screen: the user can change it in iOS Settings at any
+  /// time.
+  public func readReminderAuthorization() async {
+    let authorization = await reminders.center.authorization()
+    if !hasEnded { reminderAuthorization = authorization }
+  }
+
+  /// Show on Lock Screen: asks iOS for full authorization, with the system alert, then rebuilds the set. Only this
+  /// asks for it. It asks only while the app has provisional authorization, and once at a time: after the user's
+  /// answer, the app has full authorization or none, so it never asks again. See "Turning them on" in
+  /// `docs/spec.md`.
+  public func showRemindersOnLockScreen() async {
+    guard !hasEnded, !isAskingForFullAuthorization else { return }
+    isAskingForFullAuthorization = true
+    defer { isAskingForFullAuthorization = false }
+    let center = reminders.center
+    guard await center.authorization() == .provisional, !hasEnded else {
+      await readReminderAuthorization()
+      return
+    }
+    await center.requestFullAuthorization()
+    await readReminderAuthorization()
+    await rebuildReminders()
+  }
+
   /// Rebuilds the whole set of reminders from the copy: it removes every pending reminder, then schedules the
   /// plan's. See "Staying correct" in `docs/spec.md`.
   ///
-  /// It runs after every sync that succeeded, and after the profile gate. A failed sync leaves the set as it is. One
+  /// It runs after every sync that succeeded, after the profile gate, and after each change of the reminder settings.
+  /// A failed sync leaves the set as it is. One
   /// rebuild runs at a time: a call during one runs after it.
   ///
   /// Before the first rebuild after sign-in and the profile gate, it asks iOS for provisional authorization, once:
@@ -66,6 +103,7 @@ extension SessionModel {
       await center.requestProvisionalAuthorization()
       authorization = await center.authorization()
     }
+    if !hasEnded { reminderAuthorization = authorization }
     let requests: [ReminderRequest]
     if authorization.delivers {
       let plan = ReminderPlan.reminders(

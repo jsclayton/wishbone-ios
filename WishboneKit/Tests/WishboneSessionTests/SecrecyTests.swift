@@ -87,9 +87,10 @@ struct SecrecyTests {
       giftIDs: gifts.map(\.id))
   }
 
-  /// Words that say exactly what the plan picked, so the suite sees every value that the words can carry. The
-  /// catalog's words carry only the person and the occasion: a hosted test holds them to the table.
-  static let words = ReminderWords(title: { "Wishbone" }, body: { "\($0.subject)" })
+  /// Words that spell out the plan's whole phrase, so the suite sees every value that the words can carry: whose
+  /// occasion, and how early. The catalog's words carry only the person, the occasion and the timing: a hosted test
+  /// holds them to the table.
+  static let words = ReminderWords(title: { "Wishbone" }, body: { "\($0)" })
 
   // MARK: - Reminders
 
@@ -116,6 +117,7 @@ struct SecrecyTests {
     let occasions = Set(session.occasions.map(\.id))
     for request in requests {
       let identifier = try #require(ReminderIdentifier(request.identifier))
+      #expect(identifier.description == request.identifier)
       #expect(identifier.instance == (try instance.address))
       #expect(identifier.userID == fixture.robin.id)
       #expect(occasions.contains(identifier.occasionID))
@@ -129,7 +131,10 @@ struct SecrecyTests {
       .shared(occasion: fixture.reunion.name),
       .ownCustom(occasion: fixture.recital.name),
     ]
-    #expect(Set(requests.map(\.body)) == Set(subjects.map { "\($0)" }))
+    let phrases = subjects.flatMap { subject in
+      [EarlyReminder.twoWeeks, nil].map { ReminderPhrase(subject: subject, early: $0) }
+    }
+    #expect(Set(requests.map(\.body)) == Set(phrases.map { "\($0)" }))
     #expect(requests.allSatisfy { $0.title == "Wishbone" })
 
     // The trigger: a day and 9:00, with no repeat and no zone.
@@ -151,6 +156,16 @@ struct SecrecyTests {
       #expect(content.categoryIdentifier.isEmpty)
       #expect(content.threadIdentifier.isEmpty)
       #expect(content.targetContentIdentifier == nil)
+      // Quiet, with nothing that ranks it, sums it up, focuses it, or shows on launch.
+      #expect(content.interruptionLevel == .active)
+      #expect(content.relevanceScore == 0)
+      #expect(content.summaryArgument.isEmpty)
+      #expect(content.summaryArgumentCount == 0)
+      #expect(content.filterCriteria == nil)
+      #if os(iOS)
+        // macOS has no launch image.
+        #expect(content.launchImageName.isEmpty)
+      #endif
       let trigger = try #require(request.trigger as? UNCalendarNotificationTrigger)
       #expect(!trigger.repeats)
     }

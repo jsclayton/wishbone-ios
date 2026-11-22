@@ -3,7 +3,7 @@ import Foundation
 /// A section of Settings. See "Content" in `docs/screens/settings.md`.
 ///
 /// The cases are in the order that Settings shows them. A section joins with the screen of its first row: Your
-/// profile, Reminders, and Support Wishbone are not built yet, and each takes its place in this order when it
+/// profile and Support Wishbone are not built yet, and each takes its place in this order when it
 /// comes.
 public enum SettingsSection: Hashable, Sendable, CaseIterable {
   /// The user's name, the instance address, and Sign out.
@@ -12,6 +12,9 @@ public enum SettingsSection: Hashable, Sendable, CaseIterable {
   /// The section that holds Sign-in and devices. Its footer is the help line on Require Face ID. Until the rows of
   /// Sign-in and devices come, it holds only the help line.
   case signInAndDevices
+
+  /// Reminders, which pushes the Reminders screen.
+  case reminders
 
   /// Share diagnostics.
   case shareDiagnostics

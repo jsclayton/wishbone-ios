@@ -31,6 +31,16 @@ nonisolated struct SystemReminderCenter: ReminderCenter {
     }
   }
 
+  func requestFullAuthorization() async {
+    do {
+      // The system alert. Alerts only, so the reminders stay quiet: no sound, and no badge.
+      _ = try await center.requestAuthorization(options: [.alert])
+    } catch {
+      // As for provisional authorization: no fault of the app's, and diagnostics never hear of it.
+      Log.notice(.session, "Full authorization for reminders can't be asked.", detail: "\(error)")
+    }
+  }
+
   func replacePending(with requests: [ReminderRequest]) async {
     center.removeAllPendingNotificationRequests()
     for request in requests {

@@ -10,9 +10,13 @@ enum LocalCopyRules {
 
   /// The two functions that may write to the database: the one that makes the copy's tables, and the one that
   /// every change to the copy goes through, which drops the kept `ETag` in the same change.
+  ///
+  /// The reminder settings' `save` writes a file of its own, beside the database and not in it, so it drops no
+  /// `ETag`: the settings are not part of the copy.
   static let writers = [
     Writer(path: "\(module)/CopySchema.swift", function: "prepareCopy"),
     Writer(path: "\(module)/LocalDatabase.swift", function: "change"),
+    Writer(path: "\(module)/ReminderSettingsFile.swift", function: "save"),
   ]
 
   struct Writer: Equatable {

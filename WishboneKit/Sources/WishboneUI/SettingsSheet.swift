@@ -27,6 +27,7 @@ struct SettingsSheet: View {
           switch section {
           case .signedIn: signedIn
           case .signInAndDevices: signInAndDevices
+          case .reminders: reminders
           case .shareDiagnostics: shareDiagnostics
           case .forTheAdmin: forTheAdmin
           case .about: about
@@ -66,6 +67,16 @@ struct SettingsSheet: View {
         bundle: #bundle
       )
       .foregroundStyle(Color.primary)
+    }
+  }
+
+  private var reminders: some View {
+    Section {
+      NavigationLink {
+        RemindersSettingsScreen(session: session)
+      } label: {
+        Text("Reminders", bundle: #bundle)
+      }
     }
   }
 

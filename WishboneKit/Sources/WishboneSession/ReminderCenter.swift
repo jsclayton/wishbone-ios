@@ -90,6 +90,10 @@ public protocol ReminderCenter: Sendable {
   /// Asks iOS for provisional authorization. iOS shows no alert.
   func requestProvisionalAuthorization() async
 
+  /// Asks iOS for full authorization, with the system alert, so reminders show on the Lock Screen. It asks for alerts
+  /// only: never a sound, and never a badge. Only a tap on Show on Lock Screen asks it.
+  func requestFullAuthorization() async
+
   /// Removes every pending reminder, then schedules these.
   func replacePending(with requests: [ReminderRequest]) async
 
@@ -102,6 +106,7 @@ public struct NoReminderCenter: ReminderCenter {
   public init() {}
   public func authorization() async -> ReminderAuthorization { .denied }
   public func requestProvisionalAuthorization() async {}
+  public func requestFullAuthorization() async {}
   public func replacePending(with requests: [ReminderRequest]) async {}
   public func removeAll() {}
 }
