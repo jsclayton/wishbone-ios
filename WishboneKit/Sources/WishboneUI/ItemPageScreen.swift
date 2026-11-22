@@ -155,7 +155,6 @@ private struct TitleAndPrice: View {
       {
         Text(price)
           .font(.title3)
-          .foregroundStyle(.secondary)
       }
     }
     .fixedSize(horizontal: false, vertical: true)
@@ -289,12 +288,10 @@ private struct StoreLinkLine: View {
               .foregroundStyle(.primary)
             if !size.isAccessibilitySize { Spacer(minLength: 0) }
             detail
-              .foregroundStyle(.secondary)
           }
           .fixedSize(horizontal: false, vertical: true)
           // The arrow's words follow the row's, so VoiceOver reads "{store}, {price}, opens in browser".
           Image(systemName: "arrow.up.right")
-            .foregroundStyle(.secondary)
             .accessibilityLabel(Text("opens in browser", bundle: #bundle))
         }
         .contentShape(.rect)

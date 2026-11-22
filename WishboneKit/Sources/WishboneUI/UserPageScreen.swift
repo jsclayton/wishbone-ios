@@ -36,7 +36,6 @@ struct UserPageScreen: View {
         Section {
           if page.seesClaimsAsParent {
             Text("You see what's been claimed here. Fully claimed items don't show.", bundle: #bundle)
-              .foregroundStyle(.secondary)
           }
           if page.items.isEmpty {
             noItems(on: list)
@@ -75,7 +74,6 @@ struct UserPageScreen: View {
         Text("\(page.user.name) hasn't added anything yet.", bundle: #bundle)
       }
     }
-    .foregroundStyle(.secondary)
   }
 }
 
@@ -93,11 +91,9 @@ private struct Header: View {
         if page.user.isDeactivated {
           Text("Deactivated", bundle: #bundle)
             .font(.subheadline)
-            .foregroundStyle(.secondary)
         }
         birthday
           .font(.subheadline)
-          .foregroundStyle(.secondary)
       }
       .multilineTextAlignment(.center)
       .fixedSize(horizontal: false, vertical: true)
@@ -181,7 +177,6 @@ struct ItemRowView: View {
           priceMinor: item.row.priceMinor, topPriceMinor: item.row.topPriceMinor, currency: item.row.currency)
         {
           Text(price)
-            .foregroundStyle(.secondary)
         }
         if let claim = item.claim {
           ClaimLines(claim: claim)
@@ -203,10 +198,8 @@ struct ClaimLines: View {
   var body: some View {
     if let stillWanted = claim.stillWanted {
       Text("\(stillWanted) of \(claim.quantity) still wanted", bundle: #bundle)
-        .foregroundStyle(.secondary)
     } else {
       Text("Always wanted", bundle: #bundle)
-        .foregroundStyle(.secondary)
     }
     if claim.youClaimed > 0 {
       Text("You claimed \(claim.youClaimed)", bundle: #bundle)
@@ -257,7 +250,6 @@ private struct OtherListRow: View {
       Text(list.name)
       Text("\(list.itemCount) items", bundle: #bundle)
         .font(.subheadline)
-        .foregroundStyle(.secondary)
     }
     .fixedSize(horizontal: false, vertical: true)
     .accessibilityElement(children: .combine)

@@ -30,7 +30,6 @@ struct ItemRowLink: View {
         ItemRowView(item: item, tileUserID: tileUserID)
         if isClaiming {
           Text("Claiming", bundle: #bundle)
-            .foregroundStyle(.secondary)
         } else if let said {
           Text(said)
         }
