@@ -36,8 +36,13 @@ public enum PersonPalette {
 
   /// The user's color, to fill an avatar.
   static func color(forUserID id: String) -> Color {
+    color(of: hue(forUserID: id))
+  }
+
+  /// One color of the palette.
+  static func color(of hue: Hue) -> Color {
     #if os(iOS)
-      Color(uiColor: hue(forUserID: id).uiColor)
+      Color(uiColor: hue.uiColor)
     #else
       Color.accentColor
     #endif
