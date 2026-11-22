@@ -10,8 +10,30 @@ struct PersonAvatar: View {
   let user: UserRow
 
   /// The avatar grows with the text size, up to a size that leaves the name beside it its room.
-  @ScaledMetric(relativeTo: .title3) private var scaled: CGFloat = 56
-  private var size: CGFloat { min(scaled, 88) }
+  @ScaledMetric private var scaled: CGFloat
+  private let largest: CGFloat
+  private var size: CGFloat { min(scaled, largest) }
+
+  /// How big the avatar is, at the default text size.
+  enum Size {
+    /// Beside a name in a header or a row.
+    case regular
+
+    /// In a line of text, such as the "For {names}" line of a list's page.
+    case small
+  }
+
+  init(user: UserRow, size: Size = .regular) {
+    self.user = user
+    switch size {
+    case .regular:
+      _scaled = ScaledMetric(wrappedValue: 56, relativeTo: .title3)
+      largest = 88
+    case .small:
+      _scaled = ScaledMetric(wrappedValue: 28, relativeTo: .body)
+      largest = 56
+    }
+  }
 
   var body: some View {
     SessionImage(image: user.avatar) { initialsAvatar }
