@@ -43,7 +43,10 @@ struct ClientContractTests {
 
   @Test("Every field that the client sends is in the route's body", arguments: Route.allCases)
   func sentFieldsAreInTheBody(route: Route) throws {
-    let body = try operation(of: route)["requestBody"]["content"]["application/json"]["schema"]
+    let content = try operation(of: route)["requestBody"]["content"]
+    // A search sends a form, and every other route JSON.
+    let json = content["application/json"]["schema"]
+    let body = json != .null ? json : content["multipart/form-data"]["schema"]
     for field in route.sentFields {
       #expect(schema(at: field, in: body) != nil, "\(route.method) \(route.template) takes no \(field) in its body")
     }

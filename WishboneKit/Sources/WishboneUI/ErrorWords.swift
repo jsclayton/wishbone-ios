@@ -14,8 +14,16 @@ public enum ErrorWords {
     switch refusal.code {
     case .loginLinkInvalid:
       return linkInvalid
+    case .rateLimited where refusal.route == .search:
+      return String(localized: "You've read 30 links and photos in the last hour. Try again later.", bundle: #bundle)
     case .rateLimited:
       return String(localized: "Too many tries. Wait a minute, then try again.", bundle: #bundle)
+    case .imageFetchFailed:
+      return String(localized: "One picture couldn't be saved, so the item was added without it.", bundle: #bundle)
+    case .tooManyImages:
+      return String(localized: "An item can have 5 photos.", bundle: #bundle)
+    case .tooManyStoreLinks:
+      return String(localized: "An item can have 10 store links.", bundle: #bundle)
     case .invalidInput:
       return String(localized: "Some fields need another look.", bundle: #bundle)
     case .notFound, .referenceNotFound:
@@ -40,10 +48,11 @@ public enum ErrorWords {
       return String(localized: "You can't do this to a primary list.", bundle: #bundle)
     case .unknownFilter, .unknownSort, .cursorMismatch, .imageAttached, .resourceChanged:
       return fault
-    case .unauthorized, .apiVersionRemoved, .userDeactivated, .lastRecipient, .parentLoop, .unknown:
+    case .unauthorized, .apiVersionRemoved, .userDeactivated, .lastRecipient, .parentLoop, .storeBlocked, .unknown:
       // The first two have screens of their own, and reach here only in an answer that those screens don't take.
-      // `user_deactivated` names a person, and `last_recipient` a list, so the screen that meets them gives their
-      // words (see `lastRecipient(of:)`). `parent_loop` shows the server's `detail`, as the table says.
+      // `user_deactivated` names a person, `last_recipient` a list, and `store_blocked` a store, so the screen that
+      // meets each gives its words (see `lastRecipient(of:)`). `parent_loop` shows the server's `detail`, as the
+      // table says.
       return refusal.detail
     case .alreadyClaimed, .alreadyInvited, .alreadyRecipient, .alreadyInGroup, .alreadyAttached, .alreadyBlocked:
       // These count as success: see above.

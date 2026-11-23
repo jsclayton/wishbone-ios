@@ -200,6 +200,19 @@
     "Add a photo" : {
 
     },
+    "Add item" : {
+
+    },
+    "Added %@ to %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Added %1$@ to %2$@"
+          }
+        }
+      }
+    },
     "Added by %@" : {
 
     },
@@ -210,6 +223,12 @@
 
     },
     "Always wanted" : {
+
+    },
+    "An item can have 10 store links." : {
+
+    },
+    "An item can have 5 photos." : {
 
     },
     "Back" : {
@@ -272,6 +291,12 @@
     "Diagnostics settings" : {
 
     },
+    "Discard" : {
+
+    },
+    "Discard this item?" : {
+
+    },
     "Done" : {
 
     },
@@ -279,6 +304,9 @@
 
     },
     "Enter your name." : {
+
+    },
+    "Fill it in myself" : {
 
     },
     "Finish your profile" : {
@@ -294,6 +322,9 @@
 
     },
     "Gifts" : {
+
+    },
+    "Give the item a title." : {
 
     },
     "Good to know" : {
@@ -337,6 +368,9 @@
     "It's your birthday today" : {
 
     },
+    "Keep editing" : {
+
+    },
     "Last name" : {
 
     },
@@ -347,6 +381,9 @@
 
     },
     "Leave %@?" : {
+
+    },
+    "Links from %@ are blocked on this Wishbone." : {
 
     },
     "Links from these stores and their subdomains can't be added or searched. Items that already have them keep them." : {
@@ -426,6 +463,15 @@
     "Not here" : {
 
     },
+    "Not selected" : {
+
+    },
+    "Not sure" : {
+
+    },
+    "Notes" : {
+
+    },
     "Nothing here yet. Tap Add item to start the list." : {
 
     },
@@ -436,6 +482,9 @@
 
     },
     "On the day" : {
+
+    },
+    "One picture couldn't be saved, so the item was added without it." : {
 
     },
     "Only the admin can reactivate %@. Until then, you can't change anything for %@." : {
@@ -488,6 +537,9 @@
     "Privacy policy" : {
 
     },
+    "Reading %@…" : {
+
+    },
     "Remind me early" : {
 
     },
@@ -516,6 +568,12 @@
 
     },
     "Search users" : {
+
+    },
+    "Selected" : {
+
+    },
+    "Selected, primary" : {
 
     },
     "Settings" : {
@@ -558,6 +616,9 @@
 
     },
     "Source code" : {
+
+    },
+    "Store" : {
 
     },
     "Store to block" : {
@@ -605,6 +666,9 @@
     "This version of Wishbone is too old for %@. Update the app." : {
 
     },
+    "Title" : {
+
+    },
     "To keep your gifts private on a shared device, touch and hold Wishbone on the Home Screen and choose Require Face ID." : {
 
     },
@@ -625,6 +689,9 @@
       }
     },
     "Unblock" : {
+
+    },
+    "Up to" : {
 
     },
     "Update Wishbone" : {
@@ -726,6 +793,9 @@
     "You're the only recipient of %@, so you can't leave it. You can delete it." : {
 
     },
+    "You've read 30 links and photos in the last hour. Try again later." : {
+
+    },
     "Your %@ is in 1 week" : {
 
     },
@@ -748,6 +818,9 @@
 
     },
     "Your lists" : {
+
+    },
+    "Your notes were cut to 2000 characters." : {
 
     },
     "Your parents" : {
