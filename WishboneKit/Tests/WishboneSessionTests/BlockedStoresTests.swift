@@ -8,8 +8,9 @@ import WishboneSession
 /// and each write waits for the server. See "Blocked stores" and "Other writes that wait for the server" in
 /// `docs/spec.md`, and `docs/screens/blocked-stores.md`.
 ///
-/// The blocked stores are for the whole instance, so on the shared server a test sees other tests' too. Each test
-/// picks out its own, by the builder's tag in their names.
+/// Each test has a server of its own, because the admin's first sync reads every user on the instance: on the shared
+/// server it grows with each test of the run, and the admin's sign-in met the suite's time limit on CI. The blocked
+/// stores are for the whole instance, so each test still picks out its own, by the builder's tag in their names.
 @Suite("Blocked stores", .timeLimit(.minutes(2)))
 @MainActor
 final class BlockedStoresTests {
@@ -21,7 +22,7 @@ final class BlockedStoresTests {
   let instance: Instance
 
   init() async throws {
-    instance = try await Instance()
+    instance = try await Instance(server: try await TestServer.start())
   }
 
   /// A device signed in as the person, with the first sync over. A second person signs in on another instance,
