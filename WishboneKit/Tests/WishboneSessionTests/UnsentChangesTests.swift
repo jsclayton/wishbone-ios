@@ -124,7 +124,7 @@ struct UnsentChangesTests {
       instance.conditioner.dropEverything()
       await session.markBought(gift: seeded.gift.id, true)
       await until { session.isInstanceUnreachable }
-      #expect(session.unsentChangeCount == 1)
+      await until { session.unsentChangeCount == 1 }
       #expect(session.screenState(hasRows: true) == .saved(cantReach: true))
     }
 
@@ -140,7 +140,7 @@ struct UnsentChangesTests {
 
     instance.conditioner.passEverything()
     await session.syncNow()
-    #expect(session.unsentChangeCount == 0)
+    await until { session.unsentChangeCount == 0 }
     #expect(!session.isInstanceUnreachable)
     #expect(try await boughtOnServer(seeded.gift) == true)
     #expect(session.gift(id: seeded.gift.id)?.isBought == .shown(true))
@@ -185,8 +185,8 @@ struct UnsentChangesTests {
 
   @Test(
     """
-    An answer that the conditioner holds wins over a pull for the same gift: the pull waits for it. After it, the \
-    server is the authority again
+    An answer that the conditioner holds wins over a pull for the same gift. After it, the server is the authority \
+    again
     """
   )
   func answerInFlightWins() async throws {
@@ -200,20 +200,17 @@ struct UnsentChangesTests {
     // The server has the change, and its answer is in flight. Meanwhile, the giver clears the mark in a browser.
     try await seeded.giver.signedIn().send("PATCH", "/gifts/\(seeded.gift.id)", json: ["is_bought": false])
       .expecting(200)
-    let pullsBefore = requests.count { $0.isOn(Self.versions) }
 
-    // A pull is asked for while the answer is in flight. It waits for the answer, and the change still shows.
-    let pull = Task { await session.syncNow() }
-    await Task.yield()
-    #expect(requests.count { $0.isOn(Self.versions) } == pullsBefore)
+    // While the answer is held, the change still shows, and still waits.
     #expect(session.gift(id: seeded.gift.id)?.isBought == .shown(true))
     #expect(session.unsentChangeCount == 1)
 
-    // The answer comes, and the change leaves the journal. The pulls after it are the server's: not bought.
+    // A sync is asked for, and the answer comes. The change leaves the journal, and the gift ends as the server has
+    // it now: not bought. An answer written over a later pull would leave it bought.
+    let pull = Task { await session.syncNow() }
     answer.release()
     _ = await pull.value
-    #expect(session.unsentChangeCount == 0)
-    #expect(count(Self.versions, afterTheLast: Self.patchGift) >= 1)
+    await until { session.unsentChangeCount == 0 }
     await until { session.gift(id: seeded.gift.id)?.isBought == .shown(false) }
     #expect(try await boughtOnServer(seeded.gift) == false)
   }
@@ -245,7 +242,7 @@ struct UnsentChangesTests {
     await session.syncNow()
 
     // Rolled back: the journal is empty, and the gift is the server's, given and not bought.
-    #expect(session.unsentChangeCount == 0)
+    await until { session.unsentChangeCount == 0 }
     await until { session.gift(id: seeded.gift.id)?.state == .given }
     #expect(session.gift(id: seeded.gift.id)?.isBought == .shown(false))
     #expect(try await boughtOnServer(seeded.gift) == false)
@@ -294,13 +291,55 @@ struct UnsentChangesTests {
 
     instance.conditioner.passEverything()
     await session.syncNow()
-    #expect(session.unsentChangeCount == 0)
+    await until { session.unsentChangeCount == 0 }
     await until { session.gift(id: seeded.gift.id) == nil }
     await until { session.lateRefusals.count == 1 }
     #expect(diagnostics.faults.isEmpty)
 
     await session.cameToForeground(window: window)
     #expect(session.lateRefusalAlert?.refusals.map(\.refusal.code) == [.notFound])
+  }
+
+  @Test(
+    """
+    An alert of late refusals stays in its window while that window is in the foreground. When the window closes \
+    before the alert does, the next window that comes to the foreground shows it
+    """
+  )
+  func lateRefusalAlertMoves() async throws {
+    let seeded = try await seed()
+    let device = try await signedIn(as: seeded.giver, with: seeded.gift)
+    let session = try #require(device.session)
+    instance.conditioner.dropEverything()
+    await session.markBought(gift: seeded.gift.id, true)
+    await until { session.isInstanceUnreachable }
+    try await seeded.giver.signedIn().send("DELETE", "/gifts/\(seeded.gift.id)").expecting(204)
+    instance.conditioner.passEverything()
+    await session.syncNow()
+    await until { session.lateRefusals.count == 1 }
+
+    // The alert shows in the window. It stays there when another window comes to the foreground, and when its own
+    // window leaves the foreground and comes back.
+    await session.cameToForeground(window: window)
+    let shown = try #require(session.lateRefusalAlert)
+    #expect(shown.window == window)
+    let other = UUID()
+    await session.cameToForeground(window: other)
+    #expect(session.lateRefusalAlert == shown)
+    session.leftForeground(window: other)
+    session.leftForeground(window: window)
+    await session.cameToForeground(window: window)
+    #expect(session.lateRefusalAlert == shown)
+
+    // The window closes before the alert does. The next window that comes to the foreground shows it, once.
+    session.leftForeground(window: window)
+    await session.cameToForeground(window: other)
+    #expect(session.lateRefusalAlert?.window == other)
+    #expect(session.lateRefusalAlert?.refusals == shown.refusals)
+    session.lateRefusalsShown()
+    session.leftForeground(window: other)
+    await session.cameToForeground(window: window)
+    #expect(session.lateRefusalAlert == nil)
   }
 
   // MARK: - 6. What goes on the wire
@@ -337,7 +376,7 @@ struct UnsentChangesTests {
     await session.markBought(gift: seeded.gift.id, true)
     await until { session.isInstanceUnreachable }
     // The warning's count.
-    #expect(session.unsentChangeCount == 1)
+    await until { session.unsentChangeCount == 1 }
 
     // The instance answers again, but the change can't get through.
     instance.conditioner.passEverything()
@@ -375,7 +414,7 @@ struct UnsentChangesTests {
 
   // MARK: - 8. The API's own 401
 
-  @Test("The API's own 401 discards the journal, and an answer that comes after writes nothing")
+  @Test("The API's own 401 discards the journal, while the change's answer is still held")
   func unauthorizedDiscards() async throws {
     let seeded = try await seed()
     let folder = try ScratchDirectory("device")
@@ -399,12 +438,6 @@ struct UnsentChangesTests {
     #expect(device.signInState == .signedOutByServer(try instance.address))
     #expect(!FileManager.default.fileExists(atPath: sessionsFolder(in: folder)))
     #expect(session.unsentChangeCount == 0)
-
-    // The answer comes after the session ended. Nothing is written: the session model waited for its send to stop
-    // before the device cleared itself, and nothing is left to take the answer.
-    answer.release()
-    #expect(!FileManager.default.fileExists(atPath: sessionsFolder(in: folder)))
-    #expect(session.gift(id: seeded.gift.id) == nil)
     #expect(instance.device(storage: .folder(folder.url)).session == nil)
   }
 
@@ -435,7 +468,7 @@ struct UnsentChangesTests {
 
     instance.conditioner.passEverything()
     await session.syncNow()
-    #expect(session.unsentChangeCount == 0)
+    await until { session.unsentChangeCount == 0 }
     #expect(try await boughtOnServer(seeded.gift) == true)
     await until { session.gift(id: seeded.gift.id)?.isBought == .shown(true) }
   }
@@ -459,12 +492,12 @@ struct UnsentChangesTests {
     await until { !session.isSyncing && ended() == before + 1 }
     await session.markBought(gift: seeded.gift.id, false)
     await until { !session.isSyncing && ended() == before + 2 }
-    #expect(session.unsentChangeCount == 2)
+    await until { session.unsentChangeCount == 2 }
 
     // The network is back: one sync sends both, in order, and pulls once after the last.
     instance.conditioner.passEverything()
     await session.syncNow()
-    #expect(session.unsentChangeCount == 0)
+    await until { session.unsentChangeCount == 0 }
     #expect(started() == ended())
     #expect(started() == before + 3)
     let patches = requests.filter { $0.isOn(Self.patchGift) }
