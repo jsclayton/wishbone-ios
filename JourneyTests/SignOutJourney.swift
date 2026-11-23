@@ -24,10 +24,12 @@ nonisolated final class SignOutJourney: JourneyTestCase {
   private func signOut() async throws {
     let server = try await TestServer.shared()
     let builder = try await FixtureBuilder(server: server)
-    let robin = try await builder.person("Robin")
+    // Both birthdays are far off on every date, so Home has nothing in the next 60 days whenever the journey runs.
+    let farOff = FixtureBuilder.monthAndDay(daysFromNow: Audit.farOff)
+    let robin = try await builder.person("Robin", birthday: farOff)
     // A user who confirmed their profile, so the app shows them no profile gate.
     try await builder.confirmProfile(of: robin)
-    let morgan = try await builder.person("Morgan", signedIn: false)
+    let morgan = try await builder.person("Morgan", birthday: farOff, signedIn: false)
     _ = try await builder.group("Family", users: [robin, morgan])
     let link = try await builder.loginLink(for: robin).absoluteString
     let address = try XCTUnwrap(link.components(separatedBy: "/login/").first)
