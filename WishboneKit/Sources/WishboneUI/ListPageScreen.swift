@@ -5,8 +5,8 @@ import WishboneSession
 /// A list's page: the name, the "For {names}" line, the description, the line that says why items can be missing,
 /// and the items in the order that Sort sets. See `docs/screens/list.md`.
 ///
-/// Claim state shows only as the server sends it, and the page never says who claimed. Every action that changes
-/// the list or its items comes later.
+/// Claim state shows only as the server sends it, and the page never says who claimed. Leave, and Make {child}
+/// leave, wait for the server. The other actions that change the list or its items come later.
 ///
 /// **Provisional.** Plain default: a system list. The name is the navigation title, the recipients and the
 /// description are the first section, and the items are rows with the image at the leading edge. Sort is in the
@@ -20,6 +20,15 @@ struct ListPageScreen: View {
 
   /// The order of the items. It belongs to this window's page, and is never saved.
   @State private var sort = ListSort.listOrder
+
+  /// The leaver whose confirmation shows.
+  @State private var confirming: Leaver?
+
+  /// The leaver whose leave waits for the server.
+  @State private var leaving: Leaver?
+
+  /// The words of the last leave that didn't end in a leave.
+  @State private var leaveMessage: String?
 
   var body: some View {
     List {
@@ -41,8 +50,42 @@ struct ListPageScreen: View {
           ItemRowLink(item: item, tileUserID: page.list.recipientIDs.first ?? "", session: session, pages: $pages)
         }
       }
+      if page.leave != nil || !page.makeLeave.isEmpty {
+        Section {
+          if let leave = page.leave {
+            leaveRow(leave)
+          }
+          ForEach(page.makeLeave) { leaver in
+            leaveRow(leaver)
+          }
+          if let leaveMessage {
+            Text(leaveMessage)
+          }
+        }
+      }
     }
     .cantReachLine(of: session)
+    .alert(
+      confirming.map { LeaveWords.title(of: $0, list: page.list.name) } ?? Text(String()),
+      isPresented: Binding {
+        confirming != nil
+      } set: {
+        if !$0 { confirming = nil }
+      },
+      presenting: confirming
+    ) { leaver in
+      Button(role: .destructive) {
+        Task { await leave(leaver) }
+      } label: {
+        LeaveWords.action(of: leaver, list: page.list.name)
+      }
+      Button(role: .cancel) {
+      } label: {
+        Text("Cancel", bundle: #bundle)
+      }
+    } message: { leaver in
+      LeaveWords.message(of: leaver)
+    }
     .navigationTitle(Text(page.list.name))
     #if os(iOS)
       .navigationBarTitleDisplayMode(.inline)
@@ -70,6 +113,100 @@ struct ListPageScreen: View {
           }
         }
       }
+    }
+  }
+}
+
+extension ListPageScreen {
+  /// A row for Leave, or for Make {child} leave. Its label names the list, and the child. It asks for a
+  /// confirmation first.
+  private func leaveRow(_ leaver: Leaver) -> some View {
+    Button(role: .destructive) {
+      leaveMessage = nil
+      confirming = leaver
+    } label: {
+      HStack {
+        LeaveWords.row(of: leaver)
+        Spacer()
+        if leaving == leaver { ProgressView() }
+      }
+    }
+    .disabled(leaving != nil)
+    .accessibilityLabel(LeaveWords.action(of: leaver, list: page.list.name))
+  }
+
+  /// Leaves, and waits for the server. After a leave, the page closes in this window, which shows what was under
+  /// it. Otherwise the section says why, and nothing changes.
+  private func leave(_ leaver: Leaver) async {
+    guard leaving == nil else { return }
+    leaving = leaver
+    leaveMessage = nil
+    let list = page.list
+    let outcome = await session.leave(list: list.id, as: leaver)
+    leaving = nil
+    switch outcome {
+    case .left:
+      if let index = pages.lastIndex(of: .list(id: list.id)) {
+        pages.removeSubrange(index...)
+      }
+    case .unreachable:
+      leaveMessage = String(localized: "Can't reach \(session.session.instance.text)", bundle: #bundle)
+    case .refused(let refusal):
+      leaveMessage = LeaveWords.refusal(refusal, of: leaver, list: list.name)
+    case .failed:
+      leaveMessage = ErrorWords.fault
+    }
+  }
+}
+
+/// The words of Leave, and of Make {child} leave: the row, the confirmation, its button, and a refusal. A button
+/// that acts for a child names the child. Nothing here depends on the list's gifts: the only words about claims are
+/// the warning, which shows by the server's own rule.
+enum LeaveWords {
+  /// The row: "Leave", or "Make Emma leave".
+  static func row(of leaver: Leaver) -> Text {
+    leaver.isSessionUser
+      ? Text("Leave", bundle: #bundle) : Text("Make \(leaver.user.name) leave", bundle: #bundle)
+  }
+
+  /// What the action does, named in full: "Leave Our house", or "Make Emma leave Our house". The confirmation's
+  /// button repeats it, and the row's label reads it.
+  static func action(of leaver: Leaver, list: String) -> Text {
+    leaver.isSessionUser
+      ? Text("Leave \(list)", bundle: #bundle) : Text("Make \(leaver.user.name) leave \(list)", bundle: #bundle)
+  }
+
+  /// The confirmation's title.
+  static func title(of leaver: Leaver, list: String) -> Text {
+    leaver.isSessionUser
+      ? Text("Leave \(list)?", bundle: #bundle) : Text("Make \(leaver.user.name) leave \(list)?", bundle: #bundle)
+  }
+
+  /// The confirmation's message, with the warning when the leaver will still see the list.
+  static func message(of leaver: Leaver) -> Text {
+    let name = leaver.user.name
+    switch (leaver.isSessionUser, leaver.seesListAfterLeaving) {
+    case (true, false):
+      return Text("You can be invited again.", bundle: #bundle)
+    case (true, true):
+      return Text(
+        "You can be invited again. You'll see what's been claimed on this list, including gifts for you.",
+        bundle: #bundle)
+    case (false, false):
+      return Text("\(name) can be invited again.", bundle: #bundle)
+    case (false, true):
+      return Text(
+        "\(name) can be invited again. \(name) will see what's been claimed on this list, including gifts for \(name).",
+        bundle: #bundle)
+    }
+  }
+
+  /// The words for a refused leave. `last_recipient` names the list, and `user_deactivated` the child.
+  static func refusal(_ refusal: APIError.Refusal, of leaver: Leaver, list: String) -> String {
+    switch refusal.code {
+    case .lastRecipient: ErrorWords.lastRecipient(of: list)
+    case .userDeactivated: ErrorWords.deactivated(leaver.user.name)
+    default: ErrorWords.words(for: refusal) ?? ErrorWords.fault
     }
   }
 }

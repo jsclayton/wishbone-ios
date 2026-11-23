@@ -36,12 +36,14 @@ public enum ErrorWords {
       return String(localized: "You can't claim on a list that is for you.", bundle: #bundle)
     case .occasionNotAllowed:
       return String(localized: "That occasion can't be used for this gift. Pick another.", bundle: #bundle)
+    case .primaryList:
+      return String(localized: "You can't do this to a primary list.", bundle: #bundle)
     case .unknownFilter, .unknownSort, .cursorMismatch, .imageAttached, .resourceChanged:
       return fault
-    case .unauthorized, .apiVersionRemoved, .userDeactivated, .parentLoop, .unknown:
+    case .unauthorized, .apiVersionRemoved, .userDeactivated, .lastRecipient, .parentLoop, .unknown:
       // The first two have screens of their own, and reach here only in an answer that those screens don't take.
-      // `user_deactivated` names a person, so the screen that meets it gives its words. `parent_loop` shows the
-      // server's `detail`, as the table says.
+      // `user_deactivated` names a person, and `last_recipient` a list, so the screen that meets them gives their
+      // words (see `lastRecipient(of:)`). `parent_loop` shows the server's `detail`, as the table says.
       return refusal.detail
     case .alreadyClaimed, .alreadyInvited, .alreadyRecipient, .alreadyInGroup, .alreadyAttached, .alreadyBlocked:
       // These count as success: see above.
@@ -52,6 +54,12 @@ public enum ErrorWords {
   /// The words for a claim that came after the last one: `item_fully_claimed`. The words never say who got it.
   public static var someoneElseGotIt: String {
     String(localized: "Someone else just got this.", bundle: #bundle)
+  }
+
+  /// The words for `last_recipient`: the user is the list's only recipient, so they can't leave it.
+  public static func lastRecipient(of list: String) -> String {
+    String(
+      localized: "You're the only recipient of \(list), so you can't leave it. You can delete it.", bundle: #bundle)
   }
 
   /// The words for `user_deactivated`, which names the deactivated user that the write was for.

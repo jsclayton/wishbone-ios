@@ -294,6 +294,11 @@ public struct APIClient: Sendable {
     _ = try await load(.unblockStore(id))
   }
 
+  /// `DELETE /lists/{id}/recipients/{user_id}`: the user leaves the list, or their parent makes them leave.
+  public func leave(list listID: String, userID: String) async throws(APIError) {
+    _ = try await load(.leaveList(listID, userID: userID))
+  }
+
   /// `DELETE /users/me/sessions/current`: signs out. The server revokes the session, and the token works no more.
   public func revokeCurrentSession() async throws(APIError) {
     _ = try await load(.revokeCurrentSession)

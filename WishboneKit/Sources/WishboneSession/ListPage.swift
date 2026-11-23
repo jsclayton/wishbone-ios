@@ -29,6 +29,12 @@ public struct ListPage: Equatable, Sendable {
   /// What the page says when the list has no items. Nil when it has some.
   public let noItems: NoItems?
 
+  /// Leave: the session's user, when the list's `can_leave` is true. Nil otherwise.
+  public let leave: Leaver?
+
+  /// Make {child} leave: each of the user's children whose recipient row has `can_delete`.
+  public let makeLeave: [Leaver]
+
   /// A recipient on the "For {names}" line.
   public struct Recipient: Equatable, Sendable, Identifiable {
     public let user: UserRow
@@ -175,13 +181,16 @@ extension SessionModel {
     let children = Set(self.user?.record?.childIDs ?? [])
     let isParentOfRecipient = list.recipientIDs.contains { children.contains($0) }
     let noItems: ListPage.NoItems? = items.isEmpty ? (list.canEdit ? .forEditor : .forGiver) : nil
+    let leavers = leavers(of: list)
     return ListPage(
       list: list,
       recipients: list.recipientIDs.compactMap { user(id: $0) }.map(ListPage.Recipient.init),
       isRecipient: isRecipient,
       seesWhyItemsAreMissing: !isRecipient && (list.canEdit || isParentOfRecipient),
       items: items,
-      noItems: noItems
+      noItems: noItems,
+      leave: leavers.own,
+      makeLeave: leavers.children
     )
   }
 }

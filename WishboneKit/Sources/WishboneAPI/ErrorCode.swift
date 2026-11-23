@@ -25,6 +25,8 @@ public enum ErrorCode: Sendable, Hashable {
   case imageInvalid
   case imageAttached
   case resourceChanged
+  case lastRecipient
+  case primaryList
   case alreadyClaimed
   case alreadyInvited
   case alreadyRecipient
@@ -58,6 +60,8 @@ public enum ErrorCode: Sendable, Hashable {
     "image_invalid": .imageInvalid,
     "image_attached": .imageAttached,
     "resource_changed": .resourceChanged,
+    "last_recipient": .lastRecipient,
+    "primary_list": .primaryList,
     "already_claimed": .alreadyClaimed,
     "already_invited": .alreadyInvited,
     "already_recipient": .alreadyRecipient,

@@ -4,6 +4,19 @@
     "%@ (Deactivated)" : {
 
     },
+    "%@ can be invited again." : {
+
+    },
+    "%@ can be invited again. %@ will see what's been claimed on this list, including gifts for %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ can be invited again. %2$@ will see what's been claimed on this list, including gifts for %3$@."
+          }
+        }
+      }
+    },
     "%@ hasn't added anything yet." : {
 
     },
@@ -327,6 +340,15 @@
     "Last name" : {
 
     },
+    "Leave" : {
+
+    },
+    "Leave %@" : {
+
+    },
+    "Leave %@?" : {
+
+    },
     "Links from these stores and their subdomains can't be added or searched. Items that already have them keep them." : {
 
     },
@@ -335,6 +357,29 @@
     },
     "Lists" : {
 
+    },
+    "Make %@ leave" : {
+
+    },
+    "Make %@ leave %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Make %1$@ leave %2$@"
+          }
+        }
+      }
+    },
+    "Make %@ leave %@?" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Make %1$@ leave %2$@?"
+          }
+        }
+      }
     },
     "Month" : {
 
@@ -622,10 +667,19 @@
     "Year (optional)" : {
 
     },
+    "You can be invited again." : {
+
+    },
+    "You can be invited again. You'll see what's been claimed on this list, including gifts for you." : {
+
+    },
     "You can't claim on a list that is for you." : {
 
     },
     "You can't do this any more." : {
+
+    },
+    "You can't do this to a primary list." : {
 
     },
     "You claimed %lld" : {
@@ -667,6 +721,9 @@
 
     },
     "You're signed in to the app on another device. Open Wishbone there, and use Sign in on another device." : {
+
+    },
+    "You're the only recipient of %@, so you can't leave it. You can delete it." : {
 
     },
     "Your %@ is in 1 week" : {
