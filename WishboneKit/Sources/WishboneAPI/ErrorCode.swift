@@ -31,6 +31,9 @@ public enum ErrorCode: Sendable, Hashable {
   case alreadyInGroup
   case alreadyAttached
   case alreadyBlocked
+  case itemFullyClaimed
+  case recipientCannotClaim
+  case occasionNotAllowed
   case unknown(String)
 
   private static let known: [String: ErrorCode] = [
@@ -61,6 +64,9 @@ public enum ErrorCode: Sendable, Hashable {
     "already_in_group": .alreadyInGroup,
     "already_attached": .alreadyAttached,
     "already_blocked": .alreadyBlocked,
+    "item_fully_claimed": .itemFullyClaimed,
+    "recipient_cannot_claim": .recipientCannotClaim,
+    "occasion_not_allowed": .occasionNotAllowed,
   ]
 
   /// The server's text for the code, such as `login_link_invalid`.

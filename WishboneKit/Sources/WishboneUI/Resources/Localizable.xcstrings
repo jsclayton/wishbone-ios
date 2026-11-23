@@ -217,6 +217,9 @@
     "Can't reach %@" : {
 
     },
+    "Can't reach %@. Nothing was claimed." : {
+
+    },
     "Can't reach %@. Your link is kept. Try again when you're connected." : {
 
     },
@@ -236,6 +239,9 @@
 
     },
     "Choose a photo" : {
+
+    },
+    "Claiming" : {
 
     },
     "Continue" : {
@@ -284,6 +290,9 @@
 
     },
     "I don't have a link" : {
+
+    },
+    "I'll get this" : {
 
     },
     "If Wishbone crashes, it sends a report to its developer, never anything from your family's lists." : {
@@ -491,6 +500,9 @@
     "Some fields need another look." : {
 
     },
+    "Someone else just got this." : {
+
+    },
     "Someone in your family runs Wishbone. Ask them, or your parent, for a login link." : {
 
     },
@@ -516,6 +528,9 @@
 
     },
     "That link was already used, or it has expired. Ask for a new one." : {
+
+    },
+    "That occasion can't be used for this gift. Pick another." : {
 
     },
     "That photo is too large. Choose a smaller one." : {
@@ -607,11 +622,34 @@
     "Year (optional)" : {
 
     },
+    "You can't claim on a list that is for you." : {
+
+    },
     "You can't do this any more." : {
 
     },
     "You claimed %lld" : {
 
+    },
+    "You claimed %lld for %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You claimed %1$lld for %2$@"
+          }
+        }
+      }
+    },
+    "You claimed %lld · hidden until %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You claimed %1$lld · hidden until %2$@"
+          }
+        }
+      }
     },
     "You need a new login link to sign in again." : {
 

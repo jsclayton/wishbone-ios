@@ -203,15 +203,7 @@ public final class SessionModel {
         Log.fault(.session, "The copy can't be read.", detail: "\(error)")
       },
       onChange: { [weak self] snapshot in
-        self?.user = snapshot.user
-        self?.primaryList = snapshot.primaryList
-        self?.primaryListItems = snapshot.primaryListItems
         self?.publish(snapshot)
-        self?.users = snapshot.users
-        self?.usersByID = Dictionary(snapshot.users.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
-        self?.groups = snapshot.groups
-        self?.occasions = snapshot.occasions
-        self?.memberships = snapshot.memberships
       }
     )
     // The stream starts now, so a change that comes before the task reads it is not lost.
@@ -223,8 +215,28 @@ public final class SessionModel {
     }
   }
 
-  /// Publishes the lists of a snapshot, with their items, store links and recipients, and the invitations.
+  /// Publishes a snapshot of the copy.
   private func publish(_ snapshot: LocalDatabase.Snapshot) {
+    user = snapshot.user
+    primaryList = snapshot.primaryList
+    primaryListItems = snapshot.primaryListItems
+    publishLists(of: snapshot)
+    users = snapshot.users
+    usersByID = Dictionary(snapshot.users.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+    groups = snapshot.groups
+    occasions = snapshot.occasions
+    memberships = snapshot.memberships
+  }
+
+  /// Reads the copy, and publishes it now, after a write that every window must show at once, such as a claim. The
+  /// copy's observation publishes the same snapshot again later.
+  func publishNow() async {
+    guard let snapshot = try? await database.snapshot(ofUser: session.userID), !hasEnded else { return }
+    publish(snapshot)
+  }
+
+  /// Publishes the lists of a snapshot, with their items, store links and recipients, and the invitations.
+  private func publishLists(of snapshot: LocalDatabase.Snapshot) {
     lists = snapshot.lists
     listsByID = Dictionary(snapshot.lists.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
     itemsByList = snapshot.items

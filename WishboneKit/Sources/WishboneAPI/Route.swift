@@ -26,6 +26,7 @@ public enum Route: String, Sendable, CaseIterable {
   case invitation
   case gifts
   case gift
+  case claim
   case blockedStores
   case blockStore
   case unblockStore
@@ -39,7 +40,7 @@ public enum Route: String, Sendable, CaseIterable {
       .occasion, .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation,
       .gifts, .gift, .blockedStores:
       "GET"
-    case .redeemLoginLink, .confirmProfile, .uploadImage, .blockStore: "POST"
+    case .redeemLoginLink, .confirmProfile, .uploadImage, .blockStore, .claim: "POST"
     case .updateMe: "PATCH"
     case .revokeCurrentSession, .unblockStore: "DELETE"
     }
@@ -75,6 +76,7 @@ public enum Route: String, Sendable, CaseIterable {
     case .invitation: "/invitations/{id}"
     case .gifts: "/gifts"
     case .gift: "/gifts/{id}"
+    case .claim: "/items/{id}/gifts"
     case .blockedStores, .blockStore: "/blocked-stores"
     case .unblockStore: "/blocked-stores/{id}"
     case .revokeCurrentSession: "/users/me/sessions/current"
@@ -90,7 +92,7 @@ public enum Route: String, Sendable, CaseIterable {
     case .health, .redeemLoginLink: true
     case .versions, .updateMe, .users, .user, .groups, .group, .groupUsers, .groupGroups, .occasions, .occasion,
       .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation, .gifts, .gift,
-      .blockedStores, .blockStore, .unblockStore, .revokeCurrentSession, .confirmProfile, .uploadImage, .me:
+      .claim, .blockedStores, .blockStore, .unblockStore, .revokeCurrentSession, .confirmProfile, .uploadImage, .me:
       false
     }
   }
@@ -103,11 +105,13 @@ public enum Route: String, Sendable, CaseIterable {
     switch self {
     // The two filters give the memberships: the users in a group with nesting, and the users of an occasion.
     case .users: Self.paging + ["group_id", "occasion_id"]
+    // The item's filter gives the gifts on one item, after a claim that the server says it has already.
+    case .gifts: Self.paging + ["item_id"]
     case .groups, .groupUsers, .groupGroups, .occasions, .occasionGroups, .lists, .listRecipients, .listItems,
-      .invitations, .gifts, .blockedStores:
+      .invitations, .blockedStores:
       Self.paging
     case .health, .redeemLoginLink, .versions, .updateMe, .user, .group, .occasion, .list, .item, .invitation, .gift,
-      .blockStore, .unblockStore, .revokeCurrentSession, .confirmProfile, .uploadImage, .me:
+      .claim, .blockStore, .unblockStore, .revokeCurrentSession, .confirmProfile, .uploadImage, .me:
       []
     }
   }
@@ -125,6 +129,9 @@ public enum Route: String, Sendable, CaseIterable {
     // A key makes a block safe to send once more after a lost connection. An unblock is a `DELETE`, which is safe
     // already.
     case .blockStore: ["Idempotency-Key"]
+    // A key makes a claim safe to send once more after a lost connection: the server makes the gift once. It
+    // never makes a claim an unsent change.
+    case .claim: ["Idempotency-Key"]
     case .health, .redeemLoginLink, .users, .user, .groups, .group, .groupUsers, .groupGroups, .occasions, .occasion,
       .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation, .gifts, .gift,
       .blockedStores, .unblockStore, .revokeCurrentSession, .confirmProfile, .uploadImage, .me:
@@ -138,6 +145,7 @@ public enum Route: String, Sendable, CaseIterable {
     case .redeemLoginLink: fields(of: RedeemBody.CodingKeys.self)
     case .updateMe: fields(of: UserChanges.CodingKeys.self, nested: ["birthday": PartialDate.fields])
     case .blockStore: fields(of: BlockStoreBody.CodingKeys.self)
+    case .claim: fields(of: ClaimBody.CodingKeys.self)
     case .health, .versions, .users, .user, .groups, .group, .groupUsers, .groupGroups, .occasions, .occasion,
       .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation, .gifts, .gift,
       .blockedStores, .unblockStore, .revokeCurrentSession, .confirmProfile, .uploadImage, .me:
@@ -169,7 +177,7 @@ public enum Route: String, Sendable, CaseIterable {
     case .invitations: Page<VersionedRow<Invitation>>.fields
     case .invitation: Invitation.fields
     case .gifts: Page<VersionedRow<Gift>>.fields
-    case .gift: Gift.fields
+    case .gift, .claim: Gift.fields
     case .blockedStores: Page<VersionedRow<BlockedStore>>.fields
     case .blockStore: BlockedStore.fields
     case .revokeCurrentSession, .unblockStore: NoContent.fields
@@ -369,6 +377,25 @@ extension Endpoint where Response == Invitation {
 extension Endpoint where Response == Gift {
   static func gift(_ id: String) -> Endpoint {
     Endpoint(route: .gift, parameters: ["id": id])
+  }
+}
+
+/// The body of `POST /items/{id}/gifts`: one, with the server's own pick of the occasion. See "Claims are online
+/// only" in `docs/spec.md`.
+struct ClaimBody: Encodable, Sendable {
+  let quantity: Int
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case quantity
+  }
+}
+
+extension Endpoint where Response == Gift {
+  /// Claims one of the item, for the soonest occasion that the giver may pick, with a key of its own, so that a
+  /// resend after a lost connection makes one gift.
+  static func claim(_ itemID: String) -> Endpoint {
+    Endpoint(
+      route: .claim, parameters: ["id": itemID], body: ClaimBody(quantity: 1), idempotencyKey: UUID().uuidString)
   }
 }
 

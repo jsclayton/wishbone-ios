@@ -141,10 +141,10 @@ extension SessionModel {
     }
   }
 
-  /// The refusal of an admin's write, for its screen to show. Nil for the rest, which the screen shows otherwise,
-  /// after the session has done what each asks: the API's own 401 ends the session, and its 410 shows the block for
-  /// an app that is too old.
-  private func outcome(of error: APIError) async -> APIError.Refusal? {
+  /// The refusal of a write that waits for the server, for its screen to show. Nil for the rest, which the screen
+  /// shows otherwise, after the session has done what each asks: the API's own 401 ends the session, and its 410
+  /// shows the block for an app that is too old.
+  func outcome(of error: APIError) async -> APIError.Refusal? {
     switch error {
     case .refused(let refusal):
       return refusal

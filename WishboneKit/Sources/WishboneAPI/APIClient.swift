@@ -265,6 +265,19 @@ public struct APIClient: Sendable {
     try await versioned(.gift(id))
   }
 
+  /// `GET /gifts?item_id=`: the gifts on one item that the session's user can see, each with its version. For a
+  /// giver, these are their own.
+  public func gifts(ofItem itemID: String) async throws(APIError) -> FetchedCollection<Versioned<Gift>> {
+    try await rows { cursor in .page(of: .gifts, filters: ["item_id": itemID], cursor: cursor) }
+  }
+
+  /// `POST /items/{id}/gifts`: claims one of the item, for the soonest occasion that the giver may pick. Gives back
+  /// the gift, with the version that the answer carried. A giver who has a gift on the item for that occasion
+  /// already gets a 409 `already_claimed`, and a giver who comes after the last one a 409 `item_fully_claimed`.
+  public func claim(_ itemID: String) async throws(APIError) -> Versioned<Gift> {
+    try await versioned(.claim(itemID))
+  }
+
   /// `GET /blocked-stores`: every blocked store, each with its version. Only the admin can read it.
   public func blockedStores() async throws(APIError) -> FetchedCollection<Versioned<BlockedStore>> {
     try await rows { cursor in .page(of: .blockedStores, cursor: cursor) }
