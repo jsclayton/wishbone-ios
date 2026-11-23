@@ -100,6 +100,10 @@ server:
 server-openapi:
     node scripts/server/openapi.mjs
 
+# Build the package and its tests for macOS. The gate builds them in a step of their own, then runs `just test --skip-build`
+build-package:
+    swift build --package-path WishboneKit --build-tests
+
 # Run the package tests on macOS, against the pinned server, at most 8 at a time. It passes its arguments to `swift test`
 [positional-arguments]
 test *args: server

@@ -6,7 +6,7 @@ import { test } from 'node:test';
 
 import { crashReport } from './crash-report-fixture.mjs';
 import { eventStream, xctestLog } from './event-stream-fixture.mjs';
-import { duration, readFloor, runGate } from './gate.mjs';
+import { duration, readFloor, runGate, usedOfLimit } from './gate.mjs';
 import { checkEventStream } from './reading.mjs';
 
 /** A gate in a folder of its own, with what it wrote. */
@@ -291,6 +291,23 @@ test('an interrupt stops the gate at the step that runs', async (t) => {
   assert.equal(result.line, 'GATE FAIL step 1 (build): interrupted');
 });
 
+test('a step that passes says its time against its limit, so a step near its limit shows before it fails', async (t) => {
+  const { root, options, lines } = gateIn(t);
+  const result = await runGate({ ...options, steps: [passes('lint', { limitMs: 10 * 60_000 }), testStep(root, twoPassing)] });
+  assert.equal(result.ok, true);
+  assert.ok(
+    lines().some((line) => /^── lint passed in \d+s, \d+% of its limit of 10m00s$/.test(line)),
+    `no line gives lint's time against its limit in:\n${lines().join('\n')}`,
+  );
+  assert.ok(lines().some((line) => /^── package passed in \d+s, \d+% of its limit of 60m00s$/.test(line)));
+});
+
+test("a step's share of its limit is a whole percent, rounded down, so 99.9% is never 100%", () => {
+  assert.equal(usedOfLimit(366_000, 600_000), '6m06s, 61% of its limit of 10m00s');
+  assert.equal(usedOfLimit(599_400, 600_000), '9m59s, 99% of its limit of 10m00s');
+  assert.equal(usedOfLimit(0, 300_000), '0s, 0% of its limit of 5m00s');
+});
+
 test('each run adds a line of step times to the log', async (t) => {
   const { root, options } = gateIn(t);
   await runGate({ ...options, steps: [passes('lint'), testStep(root, twoPassing)] });
@@ -298,6 +315,7 @@ test('each run adds a line of step times to the log', async (t) => {
   const records = readFileSync(options.timesFile, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
   assert.deepEqual(records.map((record) => record.result), ['pass', 'fail']);
   assert.deepEqual(Object.keys(records[0].steps), ['lint', 'package']);
+  assert.deepEqual(records[0].limits, { lint: noLimitMs, package: noLimitMs }, "the log has each step's limit beside its time");
   assert.deepEqual(records[0].counts, { package: 2, hosted: 0, ui: 0 });
   assert.ok(Number.isInteger(records[0].totalMs) && !Number.isNaN(Date.parse(records[0].at)));
 });
@@ -367,7 +385,7 @@ test("the Gate job's limit in CI is above the sum of the gate's step limits, wit
   const main = readFileSync(new URL('./main.mjs', import.meta.url), 'utf8');
   const ci = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
   const stepMinutes = [...main.matchAll(/^\s+limitMs: (\d+) \* minute,$/gm)].map((match) => Number(match[1]));
-  assert.equal(stepMinutes.length, 5, 'each of the five steps has a limit in whole minutes');
+  assert.equal(stepMinutes.length, 6, 'each of the six steps has a limit in whole minutes');
   const gateJob = ci.slice(ci.indexOf('\n  gate:\n'), ci.indexOf('\n  ci-ok:\n'));
   const jobMinutes = Number(/^\s+timeout-minutes: (\d+)$/m.exec(gateJob)[1]);
   const sum = stepMinutes.reduce((total, minutes) => total + minutes, 0);
@@ -384,4 +402,18 @@ test('the package tests run at most 8 at a time, so that a time limit counts one
   const recipe = /^test \*args: server\n((?:    .*\n)+)/m.exec(justfile);
   assert.ok(recipe, 'the justfile has the test recipe');
   assert.match(recipe[1], /^    swift test --package-path WishboneKit --experimental-maximum-parallelization-width 8 "\$@"$/m);
+});
+
+// The package step's time is the tests' own, so that its limit measures the tests, and the build has a limit of
+// its own (issue #199). `--skip-build` runs what the step before built, and fails when it built nothing.
+test('the package tests are built in the step before the package step, which runs them without a build', () => {
+  const main = readFileSync(new URL('./main.mjs', import.meta.url), 'utf8');
+  const justfile = readFileSync(new URL('../../justfile', import.meta.url), 'utf8');
+  const names = [...main.matchAll(/^\s+name: '([a-z-]+)',$/gm)].map((match) => match[1]);
+  assert.deepEqual(names, ['lint', 'server', 'package-build', 'package', 'build', 'simulator']);
+  assert.match(main, /name: 'package-build',\n\s+command: \['just', 'build-package'\],/);
+  assert.match(main, /name: 'package',\n\s+command: \['just', 'test', '--skip-build',/);
+  const recipe = /^build-package:\n((?:    .*\n)+)/m.exec(justfile);
+  assert.ok(recipe, 'the justfile has the build-package recipe');
+  assert.match(recipe[1], /^    swift build --package-path WishboneKit --build-tests$/m);
 });

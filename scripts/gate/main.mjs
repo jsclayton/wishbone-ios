@@ -62,9 +62,22 @@ const steps = [
     },
   },
   {
+    name: 'package-build',
+    command: ['just', 'build-package'],
+    // SwiftPM resolves the packages (on CI, it unpacks sentry-cocoa's frameworks from its cache, about 1m10s),
+    // then builds the package and its tests. On CI on 2026-11-23, the step's part of the old package step took
+    // 1m49s to 3m58s in 13 runs, and the build itself 60 to 151 seconds. The limit is about twice the slowest.
+    limitMs: 8 * minute,
+  },
+  {
     name: 'package',
-    command: ['just', 'test', '--event-stream-output-path', packageEvents, '--event-stream-version', '0'],
-    limitMs: 10 * minute,
+    command: ['just', 'test', '--skip-build', '--event-stream-output-path', packageEvents, '--event-stream-version', '0'],
+    // Step 3 built the tests, so this step only runs them, and its time is the tests' own.
+    // On CI on 2026-11-23, with 394 to 403 tests, the tests took 2m42s to 5m40s in 12 green runs, and more than
+    // 6m18s in run 45187683978 attempt 1, which the old limit of 10 minutes for the build and the tests together
+    // stopped. A runner has 3 cores for 8 tests at a time, so the time goes with the runner's speed. The limit is
+    // about twice the slowest.
+    limitMs: 12 * minute,
     counts: ['package'],
     check: ({ exit, logPath }) => checkEventStream(packageEvents, { exit, countName: 'package', allowedSkips, xctestLog: logPath }),
     crashes: packageCrashes,
@@ -88,7 +101,7 @@ const steps = [
   },
   {
     name: 'simulator',
-    // Step 4 (`just build`) has built the app and the test bundles, so this step doesn't build them again.
+    // Step 5 (`just build`) has built the app and the test bundles, so this step doesn't build them again.
     command: ['just', 'simulator', path.relative(root, simulatorDirectory), '--no-build'],
     // A first run starts a new simulator. Then come the hosted tests, and the journeys twice: with the audit in
     // the four settings, and in the double-length pseudo-language. On a new CI runner, the step's fixed part (the
