@@ -152,7 +152,7 @@ struct OccasionWords: View {
 enum OccasionDateWords {
   /// The month and day of a `YYYY-MM-DD` date. Text that is not such a date shows as it is.
   static func monthAndDay(_ text: String) -> String {
-    let parts = text.split(separator: "-").compactMap { Int($0) }
+    let parts = text.split { !$0.isNumber }.compactMap { Int($0) }
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = .gmt
     guard parts.count == 3,
