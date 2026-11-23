@@ -101,9 +101,13 @@ nonisolated final class PeopleJourney: XCTestCase {
     XCTAssertTrue(price.waitForExistence(timeout: 10), "Sort has no Price.")
     price.tap()
     XCTAssertTrue(price.waitForNonExistence(timeout: 10), "The Sort menu didn't close.")
+    // The rows move to their new places with the system's motion, so the journey waits for the order.
     let top = { (title: String) in starting(title).frame.minY }
-    XCTAssertLessThan(top("Lamp"), top("Tent"), "Sort by Price didn't put the lowest price first.")
-    XCTAssertLessThan(top("Tent"), top("Stove"), "Sort by Price didn't put the item with no price last.")
+    let sorted = XCTNSPredicateExpectation(
+      predicate: NSPredicate { _, _ in top("Lamp") < top("Tent") && top("Tent") < top("Stove") }, object: nil)
+    XCTAssertEqual(
+      XCTWaiter.wait(for: [sorted], timeout: 10), .completed,
+      "Sort by Price didn't order the items Lamp, Tent, Stove: \(top("Lamp")), \(top("Tent")), \(top("Stove")).")
 
     // A recipient's name on the For line is a link to their page.
     let recipient = app.links[ash.name]
