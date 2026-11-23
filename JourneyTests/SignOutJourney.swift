@@ -60,9 +60,12 @@ nonisolated final class SignOutJourney: JourneyTestCase {
     let support = [
       "Support Wishbone", "Buy John a coffee", "Wishbone is free and open source. A coffee unlocks nothing in the app.",
     ]
+    // The storefront comes from StoreKit after the sheet shows, and can be slow. So the journey waits for the row,
+    // and the audit never meets rows it doesn't expect. Where the storefront isn't the US, the wait runs out, and the
+    // rows are not in the list.
     let showsSupport = app.descendants(matching: .any).matching(
       NSPredicate(format: "label BEGINSWITH %@", Audit.words("Buy John a coffee"))
-    ).firstMatch.exists
+    ).firstMatch.waitForExistence(timeout: 10)
     let rowsBelow =
       ["Share diagnostics"] + (showsSupport ? support : []) + ["About", "Source code", "Acknowledgements", "Version"]
     // Reminders leaves the screen too, but the journey doesn't scroll to it: the scroll stops with the long help line
