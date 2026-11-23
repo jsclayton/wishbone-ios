@@ -1,0 +1,9 @@
+{
+  "id" : "0323ca92-6ff5-4085-99a4-e0af3b9f4de4",
+  "targets" : [
+    {
+      "id" : "7ad42639-b168-472f-b4f2-716fe9de01bf",
+      "name" : "Wishbone"
+    }
+  ]
+}

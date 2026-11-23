@@ -8,6 +8,8 @@
 	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>Wishbone uses the camera to scan the QR code of a login link, and to take your profile photo.</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
