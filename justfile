@@ -141,6 +141,15 @@ fmt:
     xcrun swift-format format --in-place --recursive --parallel {{swift_dirs}}
 
 # ============================================================================
+# Releases
+# ============================================================================
+
+# Start a TestFlight build in Xcode Cloud, then set its What to Test notes and add it to the group. `--app-store` starts the App Store workflow. See `scripts/xcode-cloud-build.sh --help`
+[positional-arguments]
+cloud-build *args:
+    scripts/xcode-cloud-build.sh "$@"
+
+# ============================================================================
 # Utilities
 # ============================================================================
 
