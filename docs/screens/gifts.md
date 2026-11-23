@@ -76,12 +76,15 @@ Decided, as the web app has them: "Giving", "Given", "Received", "Hidden until D
 | Where | Words |
 |---|---|
 | A Giving heading | "For Dad · Christmas", "For Mom and Dad · Hidden until Mar 4" |
-| Bought | "Bought" |
+| A Giving heading, when the giver can't see the list | "Christmas", "Hidden until Mar 4" |
+| Bought | "Bought", "Not bought" |
 | How many | "{n} of these" |
+| The from label | "From {label}" |
+| A gift that needs attention | "Needs attention" |
 | Flag: changed | "The item changed" |
 | Flag: removed | "Removed from the list" |
 | Flag: moved | "Moved to {list}", or "Moved to another list" |
-| Flag: the occasion moved | "Now for {occasion}" |
+| Flag: the occasion moved | "Now for {occasion}", or "Moved to another occasion" when the giver can't see it |
 | Flag: no longer shared | "No longer shared with you" |
 | Giving is empty | "You aren't getting anything yet. Open someone on Home and tap I'll get this." |
 | Given is empty | "Nothing given yet. A gift moves here the day after its occasion." |
@@ -91,9 +94,9 @@ Decided, as the web app has them: "Giving", "Given", "Received", "Hidden until D
 
 ## Accessibility
 
-- A Giving row is one element: the title, how many, the reveal date, bought or not bought, then each flag. Its actions are Open, Mark bought or Mark not bought, and I won't get this.
+- A Giving row is one element: the title, how many, the reveal date, the from label, bought or not bought, "Needs attention", then each flag. Its actions are Open, Mark bought or Mark not bought, and I won't get this.
 - A Received row's actions are Open, I didn't get this, and Add again, as allowed.
-- The control's three parts are labeled by their names. The badge reads "{n} gifts need attention".
+- The control's three parts are labeled by their names. The tab reads "Gifts, {n} need attention" (see [the tabs](tabs-and-sidebar.md#accessibility)).
 - "Needs attention" is said in words on the row, and never by color alone.
 - At the largest text sizes, the image moves above the text, and the bought toggle gets its own line.
 
