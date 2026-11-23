@@ -160,6 +160,7 @@ nonisolated final class PeopleJourney: JourneyTestCase {
   }
 
   /// The first element, depth first as a query's `firstMatch` finds it, whose label starts with the words.
+  @MainActor
   private static func firstElement(
     in snapshot: any XCUIElementSnapshot, startingWith words: String
   ) -> (any XCUIElementSnapshot)? {
