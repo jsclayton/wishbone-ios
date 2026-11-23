@@ -1,4 +1,5 @@
 import Foundation
+import WishboneAPI
 import WishboneSession
 
 /// The words of the Gifts tab: a Giving heading, a row's lines, each flag, and the badge as VoiceOver reads it. See
@@ -91,6 +92,82 @@ public enum GiftWords {
     String(
       localized: "Now for \(what)", bundle: #bundle,
       comment: "A gift's flag: the occasion that the gift moved to, or its recipients now, by name")
+  }
+
+  // MARK: - A gift's page
+
+  /// "For Dad", "For Mom and Dad": who a gift is for, on its page.
+  public static func forLine(_ names: [String]) -> String {
+    let names = names.formatted(.list(type: .and))
+    return String(localized: "For \(names)", bundle: #bundle, comment: "Who a gift is for, on its page, by name")
+  }
+
+  /// The words of a flag on a gift's page. The removed, no-longer-shared and occasion flags say more there than
+  /// on a row. The rest are the row's words.
+  public static func pageFlag(_ flag: GivingGift.Flag) -> String {
+    switch flag {
+    case .removed:
+      String(localized: "This was removed from the list. You can still give it.", bundle: #bundle)
+    case .noLongerShared:
+      String(localized: "This list is no longer shared with you. You can still give this, or not.", bundle: #bundle)
+    case .occasionMoved(let occasion?):
+      String(
+        localized: "The occasion changed. It's now for \(occasion).", bundle: #bundle,
+        comment: "A gift's flag on its page: the gift's occasion stopped applying, and it moved to this one")
+    case .occasionMoved(nil):
+      String(localized: "The occasion changed.", bundle: #bundle)
+    case .changed, .moved, .restored, .recipientsChanged:
+      self.flag(flag)
+    }
+  }
+
+  /// A change of a changed item, old to new: "Title: Kite → Red kite", "Price: $20 → none".
+  public static func change(_ change: GiftPage.Change) -> String {
+    switch change {
+    case .title(let old, let new):
+      let old = old ?? "", new = new ?? ""
+      return String(
+        localized: "Title: \(old) → \(new)", bundle: #bundle, comment: "A change of an item's title, old to new")
+    case .notes:
+      return String(localized: "The notes changed", bundle: #bundle)
+    case .quantity(let old, let new):
+      let old = old.map { $0.formatted() } ?? none, new = new.map { $0.formatted() } ?? none
+      return String(
+        localized: "Wants: \(old) → \(new)", bundle: #bundle,
+        comment: "A change of how many of an item its recipients want, old to new")
+    case .alwaysWanted(true):
+      return String(localized: "Now always wanted", bundle: #bundle)
+    case .alwaysWanted(false):
+      return String(localized: "No longer always wanted", bundle: #bundle)
+    case .price(let old, let new):
+      let old = price(old), new = price(new)
+      return String(
+        localized: "Price: \(old) → \(new)", bundle: #bundle,
+        comment: "A change of an item's price, old to new. A price can be the word for none")
+    case .photo:
+      return String(localized: "The photo changed", bundle: #bundle)
+    case .storeLinkPrice(let store, let old, let new):
+      let old = price(old), new = price(new)
+      return String(
+        localized: "\(store): \(old) → \(new)", bundle: #bundle,
+        comment:
+          "A change of a store link's price, old to new, after the store's name. A price can be the word for none")
+    case .storeLinkRemoved(let store):
+      return String(
+        localized: "\(store) was removed", bundle: #bundle, comment: "A change of an item: the store link was removed")
+    }
+  }
+
+  /// A price in a change, or "none".
+  private static func price(_ price: GiftChange.Price?) -> String {
+    guard let price else { return none }
+    return PriceWords.page(priceMinor: price.priceMinor, topPriceMinor: price.topPriceMinor, currency: price.currency)
+      ?? none
+  }
+
+  /// "none": no value, in a change.
+  private static var none: String {
+    String(localized: "none", bundle: #bundle, comment: "No value, in a change of an item: no price")
   }
 
   /// What VoiceOver reads for the Gifts tab with its badge: "Gifts, 2 need attention".

@@ -88,10 +88,11 @@ Decided, as the web app has them: "I won't get this", "I didn't get this", "Add 
 | Fields | "Bought", "How many", "Occasion", "From", "Note" |
 | From, prompt | "Who it's from, if not only you" |
 | Note, footer | "Only you see this note." |
-| A change | "Title: {old} → {new}", "Price: {old} → {new}", "Price: {old} → none", "The photo changed", "{store} was removed" |
+| A change | "Title: {old} → {new}", "Price: {old} → {new}", "Price: {old} → none", "The photo changed", "{store}: {old} → {new}", "{store} was removed", "Wants: {old} → {new}", "Now always wanted", "No longer always wanted", "The notes changed" |
+| Bought, read | "Yes", "No" |
 | Flag: removed | "This was removed from the list. You can still give it." |
 | Flag: no longer shared | "This list is no longer shared with you. You can still give this, or not." |
-| Flag: the occasion moved | "The occasion changed. It's now for {occasion}." |
+| Flag: the occasion moved | "The occasion changed. It's now for {occasion}.", or "The occasion changed." when the giver can't see it |
 | Answers | "OK", "Keep it" |
 | A second gift | "Get another for a different occasion" |
 | I won't get this, confirmation | "You won't get {title}? Other people can then claim it.", with the button "I won't get this" |
