@@ -47,7 +47,10 @@ nonisolated final class AddItemJourney: XCTestCase {
     let form = app.navigationBars[Audit.words("Add item")]
     XCTAssertTrue(form.waitForExistence(timeout: 30), "The add form didn't show after the search.")
     XCTAssertEqual(app.textFields[Audit.words("Title")].firstMatch.value as? String, title)
-    let add = form.buttons[Audit.words("Add")]
+    // The back button reads "Add" too, as the Add screen's title, so Add is the last button with the word.
+    let add = try XCTUnwrap(
+      form.buttons.matching(NSPredicate(format: "label == %@", Audit.words("Add"))).allElementsBoundByIndex.last,
+      "The add form has no Add.")
     XCTAssertTrue(add.isEnabled, "Add is disabled on a form with a title.")
     try await dropKeyboard(of: app)
     XCTAssertTrue(form.waitForExistence(timeout: 10), "The add form didn't come back.")
