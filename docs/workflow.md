@@ -35,7 +35,7 @@ A ticket with an open question is not `ready-for-agent`.
 
 - Branch: `<type>/<N>-<slug>`, where `<type>` is the Conventional Commit type of the change (for example `feat`, `fix`, or `docs`), and `N` is the issue number. For example: `fix/123-hide-claim-in-widget`.
 - **Never push to `main`.** Every change goes through a pull request.
-- Commits and pull request titles follow Conventional Commits, with a lowercase subject.
+- Commits and pull request titles follow Conventional Commits, with a lowercase subject. A pull request title is at most 92 characters: the squash merge adds " (#NNNN)", and the commit header on `main` can't pass 100 (`header-max-length`).
 - Commits carry no session link: no `Claude-Session:` line and no `claude.ai/code/session` URL. A `Co-Authored-By: Claude` line is fine. The `commit-msg` hook rejects the session link, so remove it from the message before you commit. Pushed history is not rewritten, so tell the maintainer if a session link gets pushed.
 - Work test-first, at the seams the ticket names (see [Tests and the gate](development.md#tests-and-the-gate)).
 - If the spec is ambiguous or seems wrong, ask. Spec changes go through the maintainer.
@@ -118,7 +118,7 @@ The workflows:
   - **Changes** finds what changed. It also fails when a private file is tracked: `.agent/`, `.claude/`, `.beads/`, or `*.local.md`. It runs the docs check (`node scripts/check-docs.mjs`, which is `just lint-docs` on a Mac) on every change, so a change to docs only can't merge a broken link.
   - **Gate** runs `just gate` on a macOS runner, unsigned, with no secrets.
   - **CI OK** is the required check. It fails if Gate failed or was cancelled. A skipped job counts as passed.
-- **PR Title** checks that the pull request's title is a Conventional Commit.
+- **PR Title** checks that the pull request's title is a Conventional Commit of at most 92 characters.
 - **Commitlint** lints each commit pushed to `main`.
 
 ### CI cost
