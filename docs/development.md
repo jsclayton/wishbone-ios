@@ -79,6 +79,7 @@ An xcconfig file treats `//` as the start of a comment. To write a URL in one, s
 | `just simulator` | The hosted tests and the journeys, on the gate's own simulator, in the gate slot (see [The simulator tier](#the-simulator-tier)). It runs `just server` first |
 | `just lint` | `swift-format lint --strict`, actionlint and shellcheck, the docs check, and the tests of the gate's own scripts |
 | `just fmt` | Formats the Swift files with swift-format |
+| `just cloud-build` | Starts a TestFlight or App Store build in Xcode Cloud (see [Releases](#releases)) |
 
 To run one package test:
 
@@ -98,6 +99,7 @@ WishboneKit/        The local Swift package: the modules (see architecture.md) a
 Config/             Shared.xcconfig, and your own Local.xcconfig
 AppStore/           The App Store listing, as files
 scripts/            The scripts that the recipes run
+ci_scripts/         The scripts that Xcode Cloud runs (see Releases)
 docs/               The spec, the ADRs, and the guides
 ```
 
@@ -356,9 +358,29 @@ A flake that the gate retries is named here, with its signature. Each other fail
 
 ## Releases
 
-TestFlight and App Store builds are made outside CI, on the maintainer's machine.
+TestFlight and App Store builds are made in Xcode Cloud. They start only by hand, never on a push. The maintainer starts them with one command, on a Mac where `asc` is signed in to App Store Connect:
 
-- A release build reads the real DSN from the maintainer's `Config/Local.xcconfig`.
-- Sentry's environment tag tells TestFlight builds from App Store builds.
-- The release step uploads the build's dSYMs to Sentry with a pinned `sentry-cli`. The upload never fails the build. Its auth token is kept where the release is built, never in the repo.
-- `AppStore/` holds the App Store listing as files. The folder is the source, and App Store Connect is the copy.
+```bash
+just cloud-build "What to look at in this build"                   # Tester, from main
+just cloud-build --branch fix/123-something "What to look at"      # Tester, from another branch
+just cloud-build --app-store "What to look at"                     # App Store
+```
+
+`scripts/xcode-cloud-build.sh` does the steps in this order:
+
+1. It starts the workflow on the branch: **Tester** by default, or **App Store** with `--app-store`. Tester builds go to internal testers only. The App Store workflow needs the explicit flag.
+2. It waits for the build run, and for App Store Connect to process the build.
+3. It sets the build's What to Test notes. The notes are the command's argument, never a file in the repo.
+4. It adds the build to the TestFlight group, which tells the testers. The notes are set first, so the testers get them with the build.
+
+The script reads the App Store Connect key from `asc` on that Mac (its default profile, or `ASC_PROFILE`), never from the repo. `--build-only` stops after step 2. `--help` lists every option.
+
+In Xcode Cloud:
+
+- `ci_scripts/ci_post_clone.sh` writes `Config/Local.xcconfig` on the build machine: the real DSN, from the Xcode Cloud secret `SENTRY_DSN`; the Sentry environment, `testflight` for Tester and `appstore` for App Store; and Xcode Cloud's build number as `CURRENT_PROJECT_VERSION`. A release workflow with no DSN stops. Any other workflow writes nothing, so its build sends no diagnostics.
+- `ci_scripts/ci_post_xcodebuild.sh` uploads the archive's dSYMs to Sentry with a pinned `sentry-cli`, checked against the SHA-256 of its release. The upload never fails the build: each problem is a warning. `sentry-cli` reads its token from the Xcode Cloud secret `SENTRY_AUTH_TOKEN`.
+- The DSN and the token are Xcode Cloud secrets, never in the repo. Every member of the App Store Connect team can read the build logs, so neither script prints them.
+- A local build still sends nothing: `Shared.xcconfig` has no DSN, and git ignores `Config/Local.xcconfig`.
+- The app's `Info.plist` says that it uses no non-exempt encryption (it uses only HTTPS and hashing), so App Store Connect asks no export question for each build.
+
+`AppStore/` holds the App Store listing as files. The folder is the source, and App Store Connect is the copy.
