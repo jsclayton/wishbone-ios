@@ -213,7 +213,7 @@ struct ClaimLines: View {
 /// VoiceOver skips it. See "A color for each person" and "Images" in `docs/spec.md`.
 ///
 /// **Provisional.** Plain default: the image filling a rounded square, or a soft tinted tile with a colored symbol.
-private struct ItemTile: View {
+struct ItemTile: View {
   let image: ImageSummary?
   let userID: String
 

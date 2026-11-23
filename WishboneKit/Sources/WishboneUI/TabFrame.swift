@@ -57,14 +57,18 @@ public struct TabFrame: View {
       }
 
       Tab(value: WindowTab.gifts) {
-        stack(on: .gifts) { GiftsStandInScreen(session: session).toolbar { avatar } }
+        stack(on: .gifts) { GiftsScreen(session: session, part: $place.giftsPart).toolbar { avatar } }
       } label: {
         Label {
           Text("Gifts", bundle: #bundle)
         } icon: {
           Image(systemName: "gift")
         }
+        .accessibilityLabel(session.giftsBadge.map { Text(GiftWords.tab(badge: $0)) } ?? Text("Gifts", bundle: #bundle))
       }
+      // The number of open gifts that need attention, as the server says. None at zero. It is inside the app: the
+      // app icon has no badge.
+      .badge(session.giftsBadge ?? 0)
 
       // The plus: the round button that the system sets apart at the end of the tab bar.
       Tab(value: WindowTab.add, role: .search) {

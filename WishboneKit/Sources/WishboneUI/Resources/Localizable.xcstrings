@@ -39,6 +39,9 @@
         }
       }
     },
+    "%@ says they didn't get this" : {
+      "comment" : "A gift's flag: the recipient, by name, restored the gift"
+    },
     "%@ to %@" : {
       "comment" : "A price range on an item's page",
       "localizations" : {
@@ -207,6 +210,9 @@
         }
       }
     },
+    "%lld of these" : {
+
+    },
     "1 week" : {
 
     },
@@ -259,6 +265,9 @@
 
     },
     "Blocked stores" : {
+
+    },
+    "Bought" : {
 
     },
     "Buy John a coffee" : {
@@ -330,8 +339,22 @@
     "For %@" : {
 
     },
+    "For %@ · %@" : {
+      "comment" : "A Giving heading: who the gifts are for, then the occasion or the reveal date",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "For %1$@ · %2$@"
+          }
+        }
+      }
+    },
     "For the admin" : {
 
+    },
+    "From %@" : {
+      "comment" : "Who a gift in Giving is from, as its giver set it"
     },
     "Getting a login link" : {
 
@@ -339,7 +362,36 @@
     "Gifts" : {
 
     },
+    "Gifts, %lld need attention" : {
+      "comment" : "The Gifts tab, as VoiceOver reads it, with how many open gifts need attention",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Gifts, %lld needs attention"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Gifts, %lld need attention"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Giving" : {
+
+    },
     "Good to know" : {
+
+    },
+    "Hidden until %@" : {
 
     },
     "Home" : {
@@ -424,10 +476,22 @@
         }
       }
     },
+    "Marked as not received" : {
+
+    },
     "Month" : {
 
     },
     "More" : {
+
+    },
+    "Moved to %@" : {
+      "comment" : "A gift's flag: the item moved to the list"
+    },
+    "Moved to another list" : {
+
+    },
+    "Moved to another occasion" : {
 
     },
     "Moving the admin role, backups and server settings are done by the person who runs Wishbone, on the server." : {
@@ -436,19 +500,22 @@
     "Name" : {
 
     },
+    "Needs attention" : {
+
+    },
     "Newest" : {
 
     },
     "No Wishbone found at %@" : {
 
     },
-    "No gifts yet." : {
-
-    },
     "No items yet" : {
 
     },
     "No lists yet." : {
+
+    },
+    "No longer shared with you" : {
 
     },
     "No stores are blocked." : {
@@ -464,6 +531,9 @@
 
     },
     "Nobody is here yet. The admin adds people to your groups." : {
+
+    },
+    "Not bought" : {
 
     },
     "Not here" : {
@@ -483,6 +553,9 @@
     },
     "Notifications are off for Wishbone. Turn them on in Settings to get reminders." : {
 
+    },
+    "Now for %@" : {
+      "comment" : "A gift's flag: the occasion that the gift moved to, or its recipients now, by name"
     },
     "On the day" : {
 
@@ -504,6 +577,9 @@
 
     },
     "Other lists" : {
+
+    },
+    "Part" : {
 
     },
     "Paste a link or type what you want" : {
@@ -553,6 +629,9 @@
 
     },
     "Remove photo" : {
+
+    },
+    "Removed from the list" : {
 
     },
     "Running Wishbone" : {
@@ -636,6 +715,12 @@
     "The camera is turned off on this device, so Wishbone can't scan. Paste a link." : {
 
     },
+    "The item changed" : {
+
+    },
+    "The recipients changed" : {
+
+    },
     "This Wishbone needs an update" : {
 
     },
@@ -714,6 +799,9 @@
 
     },
     "Year (optional)" : {
+
+    },
+    "You aren't getting anything yet. Open someone on Home and tap I'll get this." : {
 
     },
     "You can be invited again." : {

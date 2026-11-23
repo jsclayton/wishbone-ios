@@ -14,6 +14,14 @@ public enum WindowTab: String, Codable, Sendable, CaseIterable {
   case add
 }
 
+/// A part of the Gifts tab. One part shows at a time, and to change the part is not a push. See
+/// `docs/screens/gifts.md`.
+///
+/// Giving is the only part until Given and Received come.
+public enum GiftsPart: String, Codable, Sendable, CaseIterable {
+  case giving
+}
+
 /// A page that a window pushes on a tab. It names its thing by ID only.
 public enum Page: Codable, Hashable, Sendable {
   case list(id: String)
@@ -50,6 +58,9 @@ public struct WindowPlace: Equatable, Sendable {
 
   /// The pages pushed on each tab that has any.
   private var pushed: [WindowTab: [Page]] = [:]
+
+  /// The part that the Gifts tab shows. Each window has its own, and Giving shows first.
+  public var giftsPart = GiftsPart.giving
 
   /// The place of a new window: Home, with nothing pushed.
   public init() {}
@@ -88,6 +99,10 @@ extension WindowPlace {
     var session: String
     var tab: WindowTab
     var pages: [String: [Page]]
+
+    /// Nil in what a window saved before the Gifts tab had parts. A part that this build doesn't know can't be
+    /// read, so the window starts at Home.
+    var giftsPart: GiftsPart?
   }
 
   /// What the window saves, for the session.
@@ -95,7 +110,8 @@ extension WindowPlace {
     var pages: [String: [Page]] = [:]
     for (tab, pushed) in pushed { pages[tab.rawValue] = pushed }
     // A place is a few short strings, which always encode.
-    return (try? JSONEncoder().encode(Saved(session: session.opaqueName, tab: tab, pages: pages))) ?? Data()
+    return (try? JSONEncoder().encode(Saved(session: session.opaqueName, tab: tab, pages: pages, giftsPart: giftsPart)))
+      ?? Data()
   }
 
   /// The place of a restored window.
@@ -109,6 +125,7 @@ extension WindowPlace {
       saved.session == session.opaqueName
     else { return }
     tab = saved.tab
+    giftsPart = saved.giftsPart ?? .giving
     for tab in WindowTab.allCases {
       self[pagesOn: tab] = (saved.pages[tab.rawValue] ?? []).filter(isInCopy)
     }
