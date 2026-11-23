@@ -264,10 +264,11 @@ nonisolated final class SignInJourney: JourneyTestCase {
     XCTAssertTrue(tryAgain.waitForExistence(timeout: 10), "Gifts didn't show the unreachable view.")
     XCTAssertTrue(
       relaunched.staticTexts.matching(lineWords).firstMatch.exists, "The unreachable view doesn't name the instance.")
-    XCTAssertFalse(
-      relaunched.staticTexts[
-        Audit.words("You aren't getting anything yet. Open someone on Home and tap I'll get this.")
-      ].exists, "Gifts claims to be empty.")
+    // The empty words are too long for a query by identifier, so the journey matches them by label.
+    let emptyWords = NSPredicate(
+      format: "label == %@", Audit.words("You aren't getting anything yet. Open someone on Home and tap I'll get this.")
+    )
+    XCTAssertFalse(relaunched.staticTexts.matching(emptyWords).firstMatch.exists, "Gifts claims to be empty.")
     try await Audit.run(on: relaunched, showing: "the unreachable view", in: self)
 
     // Try again syncs. The instance is still gone, so the view stays, and the app goes on.
