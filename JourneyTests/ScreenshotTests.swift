@@ -25,6 +25,11 @@ nonisolated final class ScreenshotTests: JourneyTestCase {
       XCTAssertFalse(Screenshot.catches(XCTIssue(type: .assertionFailure, compactDescription: "XCTAssertTrue failed")))
     }
     XCTAssertFalse(caughtOther, "Another issue is not a time-out of a screenshot.")
+    // After a reset, as at the start of each test, no screenshot is being taken.
+    _ = Screenshot.catchingTimeOut {
+      Screenshot.reset()
+      XCTAssertFalse(Screenshot.catches(Self.timeOut))
+    }
     XCTAssertTrue(Screenshot.isTimeOut(Self.timeOut))
   }
 }

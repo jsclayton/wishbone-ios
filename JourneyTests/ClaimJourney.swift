@@ -8,7 +8,7 @@ import XCTest
 ///
 /// It audits Home, the person's page and the item's page, and attaches a screenshot of each as evidence for a
 /// person.
-nonisolated final class ClaimJourney: XCTestCase {
+nonisolated final class ClaimJourney: JourneyTestCase {
   @MainActor
   func testClaim() async {
     continueAfterFailure = false

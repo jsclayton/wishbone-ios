@@ -5,6 +5,13 @@ import XCTest
 /// "Timed out while requesting screenshot" out of the test's issues, so `Screenshot.take` can ask again. Every other
 /// issue, and that one at any other time, is recorded as it is.
 nonisolated class JourneyTestCase: XCTestCase {
+  /// Each test starts with no screenshot being taken and no time-out noted, also after a test that an earlier
+  /// failure stopped while `Screenshot.take` waited.
+  override func setUp() {
+    super.setUp()
+    Screenshot.reset()
+  }
+
   override func record(_ issue: XCTIssue) {
     if Screenshot.catches(issue) { return }
     super.record(issue)
@@ -16,10 +23,11 @@ nonisolated class JourneyTestCase: XCTestCase {
 ///
 /// On 2026-11-22, in CI run 45072154826, XCTest's request for a screenshot of the Add screen waited about 130
 /// seconds, and then failed with `Failed to get screenshot: Timed out while requesting screenshot.` The app was idle
-/// all through it: its main thread waited in its run loop. The screen recording got no frame for 38 seconds, and
-/// stopped some 70 seconds before the test's end. The runner's Mac had restarted its GPU (`DumpGPURestart` ran about
-/// 30 seconds into the wait), and the simulator draws its screen with that GPU. The next journey passed. So the
-/// stall is the runner's, not the app's or the journey's.
+/// all through it: a spindump of the whole runner, which XCTest took about 40 seconds into the wait, shows the app's
+/// main thread in its run loop. The same spindump shows macOS's `DumpGPURestart`, started about 33 seconds before it:
+/// the runner's GPU had restarted, and the simulator draws its screen with that GPU. The screen recording got no
+/// frame for 38 seconds, and stopped about 70 seconds before the test's end. The next journey passed. So the stall
+/// is the runner's, not the app's or the journey's.
 ///
 /// XCTest records the time-out as an issue, which `XCUIScreen` doesn't let a test catch. So the journey's test case
 /// (`JourneyTestCase`) holds it back while `take` waits, and `take` asks again, at most `retryLimit` times, after
@@ -55,6 +63,11 @@ nonisolated enum Screenshot {
       state.timedOut = true
       return true
     }
+  }
+
+  /// Clears the state: no screenshot is being taken, and no time-out is noted. See `JourneyTestCase.setUp()`.
+  static func reset() {
+    state.withLock { $0 = State() }
   }
 
   /// Runs `request` as `take` runs a request for a screenshot, and says whether XCTest timed out in it. A test
