@@ -114,6 +114,10 @@ private struct ImagePager: View {
     }
     .frame(maxWidth: .infinity)
     .frame(height: height)
+    // A sync can take images away while the page shows: the shown photo stays one that the item still has.
+    .onChange(of: images.count) {
+      shown = min(shown, max(images.count - 1, 0))
+    }
   }
 
   private var pager: some View {

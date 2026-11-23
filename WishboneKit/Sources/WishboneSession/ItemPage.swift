@@ -97,7 +97,18 @@ public struct ItemPage: Equatable, Sendable {
   /// What Copy link copies: the first store link, in the session's user's order, and nothing else. Nil when the
   /// item has no store link, and then Copy link is not offered.
   public var copyLink: URL? {
-    storeLinks.first.flatMap { URL(string: $0.url) }
+    Self.copyLink(of: storeLinks)
+  }
+
+  /// What Copy link copies from an item's store links, on its page and in its row's context menu: the first, in
+  /// the session's user's order. Nil when there is none.
+  static func copyLink(of storeLinks: [StoreLinkRow]) -> URL? {
+    ordered(storeLinks).first.flatMap { URL(string: $0.url) }
+  }
+
+  /// The store links in the session's user's order, as the server gives their positions.
+  static func ordered(_ storeLinks: [StoreLinkRow]) -> [StoreLinkRow] {
+    storeLinks.sorted { $0.position < $1.position }
   }
 
   /// The user that "Added by {name}" names, by the server spec's rule. Nil when it doesn't show: the user was
@@ -112,7 +123,7 @@ extension SessionModel {
   /// What Copy link copies for an item's row: the item's first store link, in the session's user's order, as on
   /// its page. Nil when it has none.
   public func copyLink(ofItem id: String) -> URL? {
-    storeLinks(ofItem: id).min { $0.position < $1.position }.flatMap { URL(string: $0.url) }
+    ItemPage.copyLink(of: storeLinks(ofItem: id))
   }
 
   /// The item's page, from the copy. Nil when the page is the "not found" page: the item is not in the copy, which
@@ -140,7 +151,7 @@ extension SessionModel {
       images: images,
       stillWanted: stillWanted,
       wanted: wanted,
-      storeLinks: storeLinks(ofItem: id).sorted { $0.position < $1.position },
+      storeLinks: ItemPage.ordered(storeLinks(ofItem: id)),
       addedBy: addedBy,
       offersClaim: ItemPage.offersClaim(item, openGifts: giving),
       claims: giving.filter { $0.itemID == id }.map(ItemPage.ClaimLine.init)

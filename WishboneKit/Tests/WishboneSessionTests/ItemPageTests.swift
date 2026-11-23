@@ -10,12 +10,14 @@ import WishboneSession
 @Suite("An item's page", .timeLimit(.minutes(1)))
 @MainActor
 struct ItemPageTests {
-  /// A new device, signed in as the person. Its first sync has ended.
+  /// A new device, signed in as the person, once it has published every row that the server has for them.
   private func signedIn(as person: Fixture.Person, on instance: Instance) async throws -> SessionModel {
     let instance = try await Instance(server: instance.server)
     let device = instance.device()
     await device.signIn(pasting: try await instance.loginLink(for: person))
-    return try #require(device.session)
+    let session = try #require(device.session)
+    try await untilInStep(session, as: person)
+    return session
   }
 
   @Test("The item has its images with the primary first, its price or range, its list and its recipients")
@@ -158,6 +160,30 @@ struct ItemPageTests {
     #expect(try #require(recipient.itemPage(id: lamp.id)).copyLink == URL(string: "https://dear.example/lamp"))
   }
 
+  @Test("A row's Copy link gives the same link as the item's page, for each viewer, and none with no store link")
+  func rowCopyLinkMatchesThePage() async throws {
+    let instance = try await Instance()
+    let builder = instance.builder
+    let family = try await builder.standardFamily()
+    let list = try await builder.list("Wishes", of: family.child)
+    let lamp = try await builder.item(
+      "Lamp", on: list, as: family.child,
+      storeLinks: [
+        (url: "https://dear.example/lamp", priceMinor: 4999), (url: "https://cheap.example/lamp", priceMinor: 1999),
+      ])
+    let mug = try await builder.item("Mug", on: list, as: family.child)
+
+    for person in [family.relative, family.child] {
+      let session = try await signedIn(as: person, on: instance)
+      for id in [lamp.id, mug.id] {
+        let page = try #require(session.itemPage(id: id))
+        #expect(session.copyLink(ofItem: id) == page.copyLink)
+      }
+      #expect(session.copyLink(ofItem: lamp.id) != nil)
+      #expect(session.copyLink(ofItem: mug.id) == nil)
+    }
+  }
+
   @Test("A deleted item, and one that a giver can no longer see, give the same \"not found\" page")
   func notFound() async throws {
     let instance = try await Instance()
@@ -172,6 +198,7 @@ struct ItemPageTests {
     let device = instance.device()
     await device.signIn(pasting: try await instance.loginLink(for: family.relative))
     let session = try #require(device.session)
+    try await untilInStep(session, as: family.relative)
     #expect(session.itemPage(id: deleted.id) != nil)
     #expect(session.itemPage(id: claimed.id) != nil)
 
@@ -194,6 +221,7 @@ struct ItemPageTests {
     let device = instance.device()
     await device.signIn(pasting: try await instance.loginLink(for: family.relative))
     let session = try #require(device.session)
+    try await untilInStep(session, as: family.relative)
     #expect(try #require(session.itemPage(id: item.id)).list.name == first.name)
 
     try await family.child.signedIn().send("PATCH", "/items/\(item.id)", json: ["list_id": .string(second.id)])
