@@ -12,8 +12,8 @@ public struct TabFrame: View {
   private let session: SessionModel
   @Binding private var place: WindowPlace
 
-  /// The text in the Add screen's field. Each window has its own.
-  @State private var search = ""
+  /// The Add screen's field, its line, and its "Added" row. Each window has its own.
+  @State private var add = AddScreenState()
 
   /// Whether this window shows Settings. Each window can show its own.
   @State private var isShowingSettings = false
@@ -72,7 +72,7 @@ public struct TabFrame: View {
 
       // The plus: the round button that the system sets apart at the end of the tab bar.
       Tab(value: WindowTab.add, role: .search) {
-        stack(on: .add) { AddScreen(search: $search) }
+        stack(on: .add) { AddScreen(session: session, state: $add, pages: $place[pagesOn: .add]) }
       } label: {
         Label {
           Text("Add", bundle: #bundle)
