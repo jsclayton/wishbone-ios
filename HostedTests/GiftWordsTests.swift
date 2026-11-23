@@ -8,7 +8,12 @@ import WishboneUI
 @Suite("The words of the Gifts tab", .timeLimit(.minutes(1)))
 @MainActor
 struct GiftWordsTests {
-  @Test("Each flag has its words, with the names that the giver can see, and its words without them")
+  @Test(
+    """
+    Each flag has its words, with the names that the giver can see, and its words without them, and a heading names \
+    the recipients and the occasion
+    """
+  )
   func flags() throws {
     let table: [(GivingGift.Flag, String)] = [
       (.changed, "The item changed"),
@@ -43,5 +48,13 @@ struct GiftWordsTests {
     #expect(GiftWords.hiddenUntil(boxingDay) == "Hidden until Dec 26")
     #expect(GiftWords.occasion(.hiddenUntil(boxingDay)) == "Hidden until Dec 26")
     #expect(GiftWords.occasion(.named("Christmas")) == "Christmas")
+
+    // A Giving heading: the recipients and the occasion, or only the occasion when the giver can't see the list.
+    #expect(GiftWords.heading(recipients: ["Mom"], occasion: .named("Christmas")) == "For Mom · Christmas")
+    #expect(
+      GiftWords.heading(recipients: ["Mom", "Dad"], occasion: .hiddenUntil(boxingDay))
+        == "For Mom and Dad · Hidden until Dec 26")
+    #expect(GiftWords.heading(recipients: nil, occasion: .named("Christmas")) == "Christmas")
+    #expect(GiftWords.heading(recipients: [], occasion: .hiddenUntil(boxingDay)) == "Hidden until Dec 26")
   }
 }

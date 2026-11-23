@@ -45,12 +45,15 @@ struct GivingTests {
     let book: Fixture.Gift
     let scarf: Fixture.Gift
 
+    /// For summer on the parent's list. It needs no attention, so its group comes after the spring groups.
+    let gloves: Fixture.Gift
+
     /// The child changed the lamp after the relative claimed it, so it needs attention.
     let lamp: Fixture.Gift
   }
 
   /// The relative gives the child a kite and a book for spring and a lamp for summer, and gives the parent a scarf
-  /// for spring. The child then changes the lamp.
+  /// for spring and gloves for summer. The child then changes the lamp.
   private func seedGiving(on instance: Instance) async throws -> Seeded {
     let builder = instance.builder
     let family = try await builder.standardFamily()
@@ -66,9 +69,12 @@ struct GivingTests {
     let lamp = try await builder.claim(lampItem, as: family.relative, for: summer)
     let scarf = try await builder.claim(
       try await builder.item("Scarf", on: parentsList, as: family.parent), as: family.relative, for: spring)
+    let gloves = try await builder.claim(
+      try await builder.item("Gloves", on: parentsList, as: family.parent), as: family.relative, for: summer)
     try await family.child.signedIn().send("PATCH", "/items/\(lampItem.id)", json: ["title": "Red lamp"])
       .expecting(200)
-    return Seeded(family: family, spring: spring, summer: summer, kite: kite, book: book, scarf: scarf, lamp: lamp)
+    return Seeded(
+      family: family, spring: spring, summer: summer, kite: kite, book: book, scarf: scarf, gloves: gloves, lamp: lamp)
   }
 
   /// The group that holds the gift.
@@ -161,10 +167,19 @@ struct GivingTests {
     #expect(first.needsAttention)
     #expect(first.gifts.first?.needsAttention == true)
     #expect(first.gifts.first?.flags == [.changed])
-    let rest = groups.dropFirst()
+    let rest = Array(groups.dropFirst())
     #expect(rest.allSatisfy { !$0.needsAttention })
-    let reveals = rest.compactMap { $0.gifts.first?.gift.revealAt }
-    #expect(reveals == reveals.sorted())
+
+    // Then the rest in order of reveal: the two spring groups, then the parent's summer group. The spring groups
+    // reveal on one day, so the server's order breaks the tie: the soonest reveal, then the gift's ID.
+    let childsSpring = try group(of: seeded.kite, in: groups)
+    let parentsSpring = try group(of: seeded.scarf, in: groups)
+    let parentsSummer = try group(of: seeded.gloves, in: groups)
+    let spring = [childsSpring, parentsSpring].sorted { $0.gifts[0].id < $1.gifts[0].id }
+    #expect(rest.map(\.id) == spring.map(\.id) + [parentsSummer.id])
+    let springReveal = try #require(childsSpring.gifts.first?.gift.revealAt)
+    #expect(parentsSpring.gifts.allSatisfy { $0.gift.revealAt == springReveal })
+    #expect(parentsSummer.gifts.allSatisfy { $0.gift.revealAt > springReveal })
     for group in groups {
       let inGroup = group.gifts.map(\.gift.revealAt)
       #expect(inGroup == inGroup.sorted())
