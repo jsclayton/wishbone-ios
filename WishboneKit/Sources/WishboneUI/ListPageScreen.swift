@@ -150,7 +150,7 @@ extension ListPageScreen {
         pages.removeSubrange(index...)
       }
     case .unreachable:
-      leaveMessage = String(localized: "Can't reach \(session.session.instance.text)", bundle: #bundle)
+      leaveMessage = CantReach.words(for: session.session.instance)
     case .refused(let refusal):
       leaveMessage = LeaveWords.refusal(refusal, of: leaver, list: list.name)
     case .failed:

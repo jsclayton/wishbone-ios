@@ -155,8 +155,11 @@ final class LeaveListTests {
 
     #expect(await parent.leave(list: list.id, as: makeLeave) == .left)
     #expect(try await recipientsOnServer(of: list, as: family.parent) == [family.parent.id])
-    await until { parent.listPage(id: list.id)?.makeLeave.isEmpty == true }
-    #expect(parent.listPage(id: list.id)?.recipients.map(\.user.id) == [family.parent.id])
+    // The list row, which names the recipients, is saved after the recipient rows, which Make {child} leave reads.
+    try await untilInStep(parent, as: family.parent)
+    let after = try #require(parent.listPage(id: list.id))
+    #expect(after.recipients.map(\.user.id) == [family.parent.id])
+    #expect(after.makeLeave.isEmpty)
   }
 
   @Test("With the network dropped, Leave says the instance can't be reached, changes nothing, and queues nothing")
@@ -174,6 +177,7 @@ final class LeaveListTests {
     instance.conditioner.passEverything()
     await child.syncNow()
     #expect(try await recipientsOnServer(of: list, as: family.parent) == [family.parent.id, family.child.id])
+    try await untilInStep(child, as: family.child)
     #expect(child.listPage(id: list.id)?.isRecipient == true)
   }
 
