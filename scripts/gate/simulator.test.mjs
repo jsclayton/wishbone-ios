@@ -520,9 +520,31 @@ test('a run that passed, or that has no summary, is not the launch flake', () =>
   assert.equal(launchFlakeIn(readTestResults(undefined)), null);
 });
 
+const claim = 'JourneyTests.ClaimJourney/testClaim()';
+const noAssertion = 'ClaimJourney.swift:49: Failed to get background assertion for target app with pid 32833: No failure details provided';
+
+test('a launch that got no background assertion is the launch flake, as it showed on a busy Mac', () => {
+  assert.deepEqual(launchFlakeIn(journeysReading({ [claim]: 'fail', [signIn]: 'pass' }, { [claim]: [noAssertion] })), [claim]);
+});
+
+test('launches that got no process ID and a launch that got no background assertion, in one run, are the launch flake', () => {
+  // The sighting of 2026-11-23: two journeys' launches got no process ID, and the claim journey's got no assertion.
+  const tests = { [signIn]: 'fail', [signOut]: 'fail', [claim]: 'fail' };
+  const signOutMessage = "SignOutJourney.swift:36: Application 'com.codemonkeylabs.wishbone' does not have a process ID";
+  const reading = journeysReading(tests, { [signIn]: [noProcessID], [signOut]: [signOutMessage], [claim]: [noAssertion] });
+  assert.deepEqual(launchFlakeIn(reading), [claim, signIn, signOut]);
+});
+
+test('a launch that got no background assertion, in a journey that failed somewhere else too, is not the launch flake', () => {
+  assert.equal(launchFlakeIn(journeysReading({ [claim]: 'fail' }, { [claim]: [noAssertion, 'ClaimJourney.swift:80: Claimed did not show'] })), null);
+});
+
 test("the launch flake's message is XCTest's, for any app", () => {
   assert.match("Application 'com.example.other' does not have a process ID", launchFlake.message);
   assert.doesNotMatch("Application 'com.codemonkeylabs.wishbone' has a process ID", launchFlake.message);
+  assert.match('Failed to get background assertion for target app with pid 1: No failure details provided', launchFlake.message);
+  // The test runner's own assertion, which XCTest asks for when it sends the runner to the background, is another failure.
+  assert.doesNotMatch('Failed to get reply to request for background assertion within 30.0s', launchFlake.message);
 });
 
 /** A run of the journeys that ends as each of `outcomes` says in turn: `flake`, `fail`, or `pass`. */
@@ -551,7 +573,7 @@ test('journeys that fail with the launch flake run again once, keep the first ru
   assert.deepEqual(runs, ['flake', 'pass']);
   assert.equal(kept, 1);
   assert.deepEqual(lines, [
-    `  ${signIn}: the launch got no process ID (the named flake "${launchFlake.name}"), so this run of the journeys runs again, once. The first run is in first.xcresult and first.log.`,
+    `  ${signIn}: XCTest gave up on the launch (the named flake "${launchFlake.name}"), so this run of the journeys runs again, once. The first run is in first.xcresult and first.log.`,
   ]);
 });
 
