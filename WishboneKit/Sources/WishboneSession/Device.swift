@@ -362,8 +362,9 @@ public final class Device {
 
   // MARK: - Signing out
 
-  /// Signs out: asks the instance once to revoke the session, then forgets it on the device, whatever the answer.
-  /// See "Sign out" in `docs/spec.md`.
+  /// Signs out: tries first to send the unsent changes, then asks the instance once to revoke the session, then
+  /// forgets it on the device, whatever the answers. The unsent changes that are left go with the database. See
+  /// "Sign out" in `docs/spec.md`.
   ///
   /// The device then has no session, so every window shows the signed-out screen. When the instance could not be
   /// reached, that screen says the device still shows in the Devices list. The device keeps no token to try again
@@ -374,6 +375,7 @@ public final class Device {
     guard let model = session, !isSigningOut else { return }
     isSigningOut = true
     defer { isSigningOut = false }
+    await model.sendBeforeSignOut()
     let wasReached = await model.revokeOnServer()
     session = nil
     await forget(model)

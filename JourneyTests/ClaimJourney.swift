@@ -1,13 +1,14 @@
 import TestSupport
 import XCTest
 
-/// The journey of a giver who claims and marks bought, against a real test server: the claim half. From Home, a
-/// person's page, then an item's page, where I'll get this claims one, and the line of the gift takes the button's
-/// place. See "Claims are online only" in `docs/spec.md`, `docs/screens/item.md`, and "The simulator tier" in
-/// `docs/development.md`.
+/// The journey of a giver who claims and marks bought, against a real test server. From Home, a person's page, then
+/// an item's page, where I'll get this claims one, and the line of the gift takes the button's place. Then Gifts,
+/// where the gift's toggle marks it bought, at once, and the server has it soon after. See "Claims are online only"
+/// and "Unsent changes" in `docs/spec.md`, `docs/screens/item.md`, `docs/screens/gifts.md`, and "The simulator
+/// tier" in `docs/development.md`.
 ///
-/// It audits Home, the person's page and the item's page, and attaches a screenshot of each as evidence for a
-/// person.
+/// It audits Home, the person's page, the item's page, and Giving with the gift, and attaches a screenshot of each
+/// as evidence for a person.
 nonisolated final class ClaimJourney: JourneyTestCase {
   @MainActor
   func testClaim() async {
@@ -88,6 +89,33 @@ nonisolated final class ClaimJourney: JourneyTestCase {
     // The server has the gift.
     let gifts = try await robin.signedIn().get("/gifts?item_id=\(kite.id)&giver_id=me&state=open")
     XCTAssertEqual(gifts["data"].array?.count, 1, "The server has no gift of the claim.")
+    let gift = try XCTUnwrap(gifts["data"].array?.first?["id"].string, "The server's gift has no ID.")
+
+    // Gifts: the gift is in Giving, not bought, with its toggle.
+    app.tabBars.firstMatch.buttons[Audit.words("Gifts")].tap()
+    let bought = app.switches[Audit.words("Bought")].firstMatch
+    XCTAssertTrue(bought.waitForExistence(timeout: 30), "Giving has no bought toggle.")
+    XCTAssertEqual(bought.value as? String, "0", "The gift shows bought before the toggle.")
+    try await Audit.run(on: app, showing: "Giving", in: self)
+
+    // Mark bought is an unsent change: the toggle shows it at once, and the app sends it behind.
+    bought.tap()
+    let isOn = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == '1'"), object: bought)
+    XCTAssertEqual(XCTWaiter().wait(for: [isOn], timeout: 10), .completed, "The toggle didn't show the gift bought.")
+    let isBought = try await isBoughtOnServer(gift, as: robin)
+    XCTAssertTrue(isBought, "The server doesn't have the gift bought.")
     app.terminate()
+  }
+
+  /// Whether the server has the giver's gift bought. The app sends the change behind the toggle, so this asks until
+  /// the server has it, and gives up after a long time.
+  @MainActor
+  private func isBoughtOnServer(_ gift: String, as giver: Fixture.Person) async throws -> Bool {
+    let session = try giver.signedIn()
+    for _ in 0..<60 {
+      if try await session.get("/gifts/\(gift)")["is_bought"].bool == true { return true }
+      try await Task.sleep(for: .milliseconds(500))
+    }
+    return false
   }
 }

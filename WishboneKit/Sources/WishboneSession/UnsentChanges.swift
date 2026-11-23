@@ -1,0 +1,176 @@
+import Foundation
+import WishboneAPI
+
+// The unsent changes: the writes that show at once and reach the instance when it answers. See ADR 0006, "Unsent
+// changes" and "Unsent changes, sign-out, and late refusals" in `docs/spec.md`, and `Journal.swift`.
+//
+// - A change is saved in the journal, and every window shows it at once. Then a sync starts, which sends it.
+// - A sync sends the unsent changes first, one at a time, in order, then pulls. So the pull after the last change
+//   comes in the same sync, after its answer, and an answer in flight is never undone by a pull of the same sync.
+// - An instance that can't be reached never refuses: the change waits, and never expires.
+// - A refusal rolls the change back in every window, and waits to show once, the next time a window comes to the
+//   foreground.
+// - Sign-out tries to send first. Sign-out and the API's own 401 discard the journal with the database.
+
+extension SessionModel {
+  // MARK: - Mark bought
+
+  /// Mark bought: sets or clears the giver's private mark on one of their open gifts, as an unsent change. It shows
+  /// at once, in every window, and then a sync sends it, now or when the instance answers. See "Mark bought" in
+  /// `docs/screens/gifts.md` and `docs/screens/gift.md`.
+  ///
+  /// It does nothing for a gift that the copy doesn't hold, that the giver can't edit, or that already has the
+  /// mark. It returns when the change is in the journal and published, and doesn't wait for the sync.
+  public func markBought(gift id: String, _ isBought: Bool) async {
+    guard !hasEnded, let gift = gift(id: id), gift.state == .open, gift.canEdit, gift.isBought.value != isBought
+    else { return }
+    do {
+      try await database.record(.markBought(giftID: id, isBought: isBought), title: gift.title)
+    } catch {
+      Log.fault(.session, "The journal can't take an unsent change.", detail: "\(error)")
+      return
+    }
+    await publishNow()
+    Task { await syncNow() }
+  }
+
+  // MARK: - Sending
+
+  /// Sends the unsent changes, one at a time, in the journal's order, until none is left or one can't be sent. A
+  /// sync does this first. One send runs at a time: a call while one runs waits for it, and then sends what is
+  /// left.
+  ///
+  /// It ends as a pull does: `succeeded` when it left no change that it could send, `unreachable` when the instance
+  /// can't be reached, `refused` when the instance answered and the change must wait (a version block, too many
+  /// requests), `faulted` on a cancel or a journal that can't be read or written, and `endedByServer` on the API's
+  /// own 401.
+  func sendUnsentChanges() async -> PullEnd {
+    while let earlier = sending {
+      _ = await earlier.value
+      if sending == earlier { sending = nil }
+    }
+    guard !hasEnded else { return .faulted }
+    let task = Task { await sendEach() }
+    sending = task
+    let end = await withTaskCancellationHandler {
+      await task.value
+    } onCancel: {
+      task.cancel()
+    }
+    if sending == task { sending = nil }
+    return end
+  }
+
+  /// Tries to send the unsent changes before a sign-out. See "Sign out" in `docs/spec.md`. Whatever happens, the
+  /// sign-out goes on, and the journal goes with the database.
+  func sendBeforeSignOut() async {
+    guard !hasEnded, let count = try? await database.unsentChangeCount(), count > 0 else { return }
+    _ = await sendUnsentChanges()
+  }
+
+  /// The send: each unsent change in turn, the oldest first.
+  ///
+  /// Diagnostics: a refusal is captured by its method, its path template and the server's code, except a 404, for
+  /// something deleted elsewhere, and a 400 or a 422, which the client has captured already. An unreachable
+  /// instance, a cancel, and the API's own 401 never are.
+  private func sendEach() async -> PullEnd {
+    while true {
+      guard !hasEnded, !Task.isCancelled else { return .faulted }
+      let change: UnsentChange
+      do {
+        guard let next = try await database.firstUnsentChange() else { return .succeeded }
+        change = next
+      } catch {
+        Log.fault(.session, "The journal can't be read.", detail: "\(error)")
+        return .faulted
+      }
+      do {
+        let answer: Versioned<Gift>?
+        do {
+          answer = try await send(change)
+        } catch .undecodable {
+          // The instance took the change, and its answer can't be read. The client has captured it. The change is
+          // sent, and the pull brings the row.
+          answer = nil
+        }
+        // The session ended while the answer was on its way. The database is gone, and stays gone.
+        guard !hasEnded, !Task.isCancelled else { return .faulted }
+        try await database.accept(change, answer: answer)
+      } catch APIError.unreachable {
+        return .unreachable
+      } catch APIError.cancelled {
+        return .faulted
+      } catch APIError.unauthorized {
+        return .endedByServer
+      } catch APIError.appTooOld {
+        blockAppTooOld()
+        return .refused
+      } catch APIError.refused(let refusal) where Self.waits(refusal) {
+        // The instance didn't decide the change. It waits for the next sync.
+        return .refused
+      } catch APIError.refused(let refusal) {
+        guard !hasEnded, !Task.isCancelled else { return .faulted }
+        do {
+          try await database.refuse(change, refusal: refusal)
+        } catch {
+          Log.fault(.session, "The journal can't take a late refusal.", detail: "\(error)")
+          return .faulted
+        }
+        if Self.isCaptured(refusal) { diagnostics.capture(.refused(refusal.route, code: refusal.code)) }
+      } catch is CancellationError {
+        return .faulted
+      } catch {
+        Log.fault(.session, "The copy can't take the answer of an unsent change.", detail: "\(error)")
+        return .faulted
+      }
+    }
+  }
+
+  /// Sends one unsent change, and gives the server's answer.
+  private func send(_ change: UnsentChange) async throws(APIError) -> Versioned<Gift> {
+    switch change.action {
+    case .markBought(let id, _):
+      try await client.updateGift(id, change.action.giftChanges, key: change.key)
+    }
+  }
+
+  /// Whether the instance answered without deciding the change: too many requests, a request that took too long,
+  /// or the same change still running from an earlier send. The change waits.
+  private static func waits(_ refusal: APIError.Refusal) -> Bool {
+    refusal.status == 408 || refusal.status == 429 || refusal.code.text == "idempotency_key_in_use"
+  }
+
+  /// Whether a late refusal is captured here: never a 404, for something deleted elsewhere, and never a 400 or a
+  /// 422 of a write, which the client captures for every write.
+  private static func isCaptured(_ refusal: APIError.Refusal) -> Bool {
+    refusal.status != 404 && !(refusal.route.isWrite && [400, 422].contains(refusal.status))
+  }
+
+  // MARK: - Late refusals
+
+  /// Shows the late refusals that wait, in the window that came to the foreground, in one alert. They leave the
+  /// journal as the alert shows, so they show once, and never again.
+  func showLateRefusals(in window: UUID) async {
+    guard !hasEnded, lateRefusalAlert == nil else { return }
+    let refusals: [LateRefusal]
+    do {
+      refusals = try await database.lateRefusals()
+    } catch {
+      Log.fault(.session, "The journal can't be read.", detail: "\(error)")
+      return
+    }
+    // Another window may have shown them meanwhile.
+    guard !refusals.isEmpty, !hasEnded, lateRefusalAlert == nil else { return }
+    lateRefusalAlert = LateRefusalAlert(window: window, refusals: refusals)
+    do {
+      try await database.removeLateRefusals(refusals.map(\.id))
+    } catch {
+      Log.fault(.session, "The journal can't forget the late refusals.", detail: "\(error)")
+    }
+  }
+
+  /// The window's alert of late refusals has closed.
+  public func lateRefusalsShown() {
+    lateRefusalAlert = nil
+  }
+}

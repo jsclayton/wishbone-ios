@@ -5,7 +5,8 @@ import WishboneSession
 /// is for, each flag in words with every change of a changed item, then Bought, How many, Occasion with the reveal
 /// date, From, and Note. See `docs/screens/gift.md`.
 ///
-/// The fields are read here. Each becomes a control, and each flag gets its answer, in a later step.
+/// Bought is a toggle, from `can_edit`: an unsent change. The other fields are read here. Each becomes a control, and
+/// each flag gets its answer, in a later step.
 ///
 /// **Only its giver sees an open gift,** and the page never says who else claimed the item. Nothing on it goes to a
 /// system surface or into the shared container.
@@ -50,10 +51,15 @@ struct GiftPageScreen: View {
         }
       }
       Section {
-        FieldRow(label: String(localized: "Bought", bundle: #bundle)) {
-          Text(
-            gift.isBought.value == true
-              ? String(localized: "Yes", bundle: #bundle) : String(localized: "No", bundle: #bundle))
+        if gift.canEdit {
+          // An unsent change: it shows at once, and reaches the instance when it can.
+          BoughtToggle(gift: gift, session: session)
+        } else {
+          FieldRow(label: String(localized: "Bought", bundle: #bundle)) {
+            Text(
+              gift.isBought.value == true
+                ? String(localized: "Yes", bundle: #bundle) : String(localized: "No", bundle: #bundle))
+          }
         }
         if gift.canEdit {
           FieldRow(label: String(localized: "How many", bundle: #bundle)) {

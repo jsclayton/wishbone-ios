@@ -7,8 +7,8 @@ import WishboneAPI
 /// database lives" in `docs/spec.md`.
 ///
 /// Screens read only this database, through the session model. The API only feeds it. The copy's tables can be
-/// dropped and rebuilt at any time: they have a schema number of their own, apart from anything that the database
-/// must keep.
+/// dropped and rebuilt at any time: they have a schema number of their own, apart from the journal of unsent changes,
+/// which the database must keep through every migration (see `Journal.swift`).
 struct LocalDatabase: Sendable {
   let writer: any DatabaseWriter
 
@@ -33,6 +33,7 @@ struct LocalDatabase: Sendable {
     if let dropped = try Self.prepareCopy(in: writer) {
       diagnostics.capture(.copyDropped(from: dropped, to: Self.copySchema))
     }
+    try Self.prepareJournal(in: writer)
   }
 
   // MARK: - Where the file goes
@@ -47,9 +48,11 @@ struct LocalDatabase: Sendable {
 
   /// The database of the session, as the storage says.
   ///
-  /// A database file that is not a database any more is removed and made again: it holds only the copy, which the
-  /// next sync fills. When the file can't be opened for another reason, or no file can be made, the database is in
-  /// memory, so the session still works until the app ends. The file stays as it is.
+  /// A database file that is not a database any more is removed and made again, and the next sync fills the copy.
+  /// The unsent changes in it can't be read any more, so they are lost with it. Only the database's own files go:
+  /// the session's other files in its folder, such as the reminder settings, stay. When the file can't be opened for
+  /// another reason, or no file can be made, the database is in memory, so the session still works until the app
+  /// ends. The file stays as it is, with the unsent changes in it, for the next launch.
   ///
   /// Diagnostics: "the local database will not open" is captured, by its domain and code only, for each open that
   /// fails: a damaged file, a file or a folder that can't be opened or made, and a database in memory.
@@ -63,7 +66,7 @@ struct LocalDatabase: Sendable {
       } catch let error as DatabaseError where [.SQLITE_CORRUPT, .SQLITE_NOTADB].contains(error.resultCode) {
         Log.fault(.session, "The local database is damaged. It is made again.", detail: "\(error)")
         diagnostics.capture(.databaseWillNotOpen(cause(of: error)))
-        try? FileManager.default.removeItem(at: folder)
+        removeFiles(in: folder)
         do {
           return try open(in: folder, diagnostics: diagnostics)
         } catch {
@@ -107,6 +110,18 @@ struct LocalDatabase: Sendable {
     }
   }
 
+  /// The name of the database file in a session's folder. SQLite keeps files of its own beside it, with this name
+  /// and a suffix.
+  private static let fileName = "database.sqlite"
+
+  /// Removes the database's own files from the session's folder: the file, its write-ahead log, and its shared
+  /// memory. Nothing else in the folder.
+  private static func removeFiles(in folder: URL) {
+    for suffix in ["", "-wal", "-shm"] {
+      try? FileManager.default.removeItem(at: folder.appending(path: fileName + suffix))
+    }
+  }
+
   /// Closes the database. Any later use of it throws.
   func close() {
     do {
@@ -128,7 +143,7 @@ struct LocalDatabase: Sendable {
     var values = URLResourceValues()
     values.isExcludedFromBackup = true
     try folder.setResourceValues(values)
-    return try open(at: folder.appending(path: "database.sqlite"), diagnostics: diagnostics)
+    return try open(at: folder.appending(path: fileName), diagnostics: diagnostics)
   }
 
   // MARK: - What the pull reads
@@ -323,8 +338,9 @@ struct LocalDatabase: Sendable {
   /// `isOutsideTheVersions` is for a change only to what `GET /versions` doesn't cover: the blocked stores. The
   /// kept `ETag` says nothing about them, so it stays.
   ///
-  /// A fitness test holds this: nothing else in the module writes to the database.
-  private func change<Result: Sendable>(
+  /// The journal's writes go through here too (see `Journal.swift`). A fitness test holds this: nothing else in the
+  /// module writes to the database.
+  func change<Result: Sendable>(
     isOutsideTheVersions: Bool = false,
     _ updates: @escaping @Sendable (Database) throws -> Result
   ) async throws -> Result {
@@ -698,8 +714,14 @@ struct LocalDatabase: Sendable {
     /// Every pending invitation of the copy, the oldest first.
     var invitations: [InvitationRow] = []
 
-    /// Every gift of the copy, the soonest reveal first.
+    /// Every gift of the copy, the soonest reveal first, with the unsent changes to it applied over its row.
     var gifts: [GiftRow] = []
+
+    /// How many unsent changes the journal holds.
+    var unsentChangeCount = 0
+
+    /// The late refusals that wait for a window to show them, the oldest first.
+    var lateRefusals: [LateRefusal] = []
 
     /// Every blocked store of the copy, by store.
     var blockedStores: [BlockedStoreRow] = []
@@ -756,7 +778,11 @@ struct LocalDatabase: Sendable {
       snapshot.recipients[list.id] = named + unordered.filter { !list.recipientIDs.contains($0.userID) }
     }
     snapshot.invitations = try InvitationRow.order(Column("createdAt"), Column("id")).fetchAll(database)
-    snapshot.gifts = try GiftRow.order(Column("revealAt"), Column("id")).fetchAll(database)
+    // The unsent changes show over the pulled rows, until the server accepts or refuses each one.
+    let unsent = try unsentChanges(in: database)
+    snapshot.gifts = applying(unsent, to: try GiftRow.order(Column("revealAt"), Column("id")).fetchAll(database))
+    snapshot.unsentChangeCount = try UnsentChangeRow.fetchCount(database)
+    snapshot.lateRefusals = try lateRefusals(in: database)
     snapshot.blockedStores = try BlockedStoreRow.order(Column("store"), Column("id")).fetchAll(database)
     snapshot.users = try UserRow.order(Column("name"), Column("id")).fetchAll(database)
     snapshot.groups = try GroupRow.order(Column("name"), Column("id")).fetchAll(database)

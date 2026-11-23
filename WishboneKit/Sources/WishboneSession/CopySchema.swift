@@ -24,6 +24,10 @@ extension LocalDatabase {
   static let keptETagTable = "keptETag"
 
   /// The copy's tables: the rows that screens read, and the `ETag` that the pull keeps.
+  ///
+  /// A table that the copy stops using stays in this list, under its old name, so that a database which still has
+  /// it drops it with the copy. The journal's tables are never here: a migration of the copy keeps them (see
+  /// `Journal.swift`).
   private static let copyTables = [
     UserRow.databaseTableName, GroupRow.databaseTableName, OccasionRow.databaseTableName,
     MembershipRow.databaseTableName, ListRow.databaseTableName, RecipientRow.databaseTableName,

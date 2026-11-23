@@ -78,6 +78,7 @@ Decided, as the web app has them: "Giving", "Given", "Received", "Hidden until D
 | A Giving heading | "For Dad · Christmas", "For Mom and Dad · Hidden until Mar 4" |
 | A Giving heading, when the giver can't see the list | "Christmas", "Hidden until Mar 4" |
 | Bought | "Bought", "Not bought" |
+| A late refusal of Bought, in the alert "Some changes couldn't be saved" | "Marking {title} bought: {reason}", "Marking {title} not bought: {reason}" |
 | How many | "{n} of these" |
 | The from label | "From {label}" |
 | A gift that needs attention | "Needs attention" |

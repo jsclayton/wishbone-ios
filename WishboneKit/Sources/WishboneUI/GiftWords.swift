@@ -52,6 +52,13 @@ public enum GiftWords {
       : String(localized: "Not bought", bundle: #bundle)
   }
 
+  /// The action of a Giving row that sets the mark: "Mark bought", or "Mark not bought".
+  public static func markBought(_ isBought: Bool) -> String {
+    isBought
+      ? String(localized: "Mark bought", bundle: #bundle)
+      : String(localized: "Mark not bought", bundle: #bundle)
+  }
+
   /// "Needs attention": said in words on the row, never by color alone.
   public static var needsAttention: String {
     String(localized: "Needs attention", bundle: #bundle)

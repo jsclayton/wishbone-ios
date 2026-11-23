@@ -17,7 +17,11 @@ enum StringScan {
   ]
 
   /// The short allow list: a file's path, what it may use, and why.
-  static let allowList: [Allowance] = []
+  static let allowList: [Allowance] = [
+    Allowance(
+      path: Repo.module("WishboneUI") + "/LateRefusalWords.swift", what: "strings joined with joined()",
+      why: "The one alert of late refusals lists a line for each, and each line is a whole string of the catalog")
+  ]
 
   struct Allowance {
     let path: String

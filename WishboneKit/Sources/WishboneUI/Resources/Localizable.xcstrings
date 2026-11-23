@@ -176,6 +176,28 @@
         }
       }
     },
+    "%lld changes will be sent when it's back." : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld change will be sent when it's back."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld changes will be sent when it's back."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld from you" : {
 
     },
@@ -536,8 +558,36 @@
         }
       }
     },
+    "Mark bought" : {
+
+    },
+    "Mark not bought" : {
+
+    },
     "Marked as not received" : {
 
+    },
+    "Marking %@ bought: %@" : {
+      "comment" : "A late refusal: the item's title, then why the change wasn't saved",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Marking %1$@ bought: %2$@"
+          }
+        }
+      }
+    },
+    "Marking %@ not bought: %@" : {
+      "comment" : "A late refusal: the item's title, then why the change wasn't saved",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Marking %1$@ not bought: %2$@"
+          }
+        }
+      }
     },
     "Month" : {
 
@@ -637,6 +687,9 @@
     },
     "Now for %@" : {
       "comment" : "A gift's flag: the occasion that the gift moved to, or its recipients now, by name"
+    },
+    "OK" : {
+
     },
     "Occasion" : {
 
@@ -778,6 +831,9 @@
 
     },
     "Signing in…" : {
+
+    },
+    "Some changes couldn't be saved" : {
 
     },
     "Some fields need another look." : {
@@ -1009,6 +1065,29 @@
     },
     "You need a new login link to sign in again." : {
 
+    },
+    "You need a new login link to sign in again. %lld changes haven't been sent and will be lost." : {
+      "comment" : "The warning before Sign out, while unsent changes wait",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "You need a new login link to sign in again. %lld change hasn't been sent and will be lost."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "You need a new login link to sign in again. %lld changes haven't been sent and will be lost."
+                }
+              }
+            }
+          }
+        }
+      }
     },
     "You see %@ because you're the admin. Their lists show only to people who share a group with them." : {
 

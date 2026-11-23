@@ -302,6 +302,15 @@ public struct APIClient: Sendable {
     try await versioned(.claim(itemID))
   }
 
+  /// `PATCH /gifts/{id}`: a merge patch of the giver's open gift, with no `If-Match`. `key` is the unsent change's
+  /// own `Idempotency-Key`. Gives back the gift, with the version that the answer carried. When a change of the
+  /// occasion merges two gifts, the answer is the gift that stays.
+  public func updateGift(_ id: String, _ changes: GiftChanges, key: String) async throws(APIError)
+    -> Versioned<Gift>
+  {
+    try await versioned(.updateGift(id, changes, key: key))
+  }
+
   /// `GET /blocked-stores`: every blocked store, each with its version. Only the admin can read it.
   public func blockedStores() async throws(APIError) -> FetchedCollection<Versioned<BlockedStore>> {
     try await rows { cursor in .page(of: .blockedStores, cursor: cursor) }

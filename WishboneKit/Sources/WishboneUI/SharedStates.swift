@@ -15,21 +15,27 @@ extension View {
   ) -> some View {
     sharedStates(
       session.screenState(hasRows: hasRows), address: session.session.instance,
-      tryAgain: { await session.syncNow() }, empty: empty)
+      unsentChanges: session.unsentChangeCount, tryAgain: { await session.syncNow() }, empty: empty)
   }
 
-  /// Shows the state over the screen. Try again runs `tryAgain`, which is Sync now.
+  /// Shows the state over the screen. Try again runs `tryAgain`, which is Sync now. While unsent changes wait, the
+  /// line "Can't reach {address}" says how many.
   public func sharedStates(
-    _ state: ScreenState, address: InstanceAddress, tryAgain: @escaping @MainActor () async -> Void,
-    @ViewBuilder empty: () -> some View
+    _ state: ScreenState, address: InstanceAddress, unsentChanges: Int = 0,
+    tryAgain: @escaping @MainActor () async -> Void, @ViewBuilder empty: () -> some View
   ) -> some View {
-    modifier(SharedStates(state: state, address: address, tryAgain: tryAgain, empty: empty()))
+    modifier(
+      SharedStates(
+        state: state, address: address, unsentChanges: unsentChanges, tryAgain: tryAgain, empty: empty()))
   }
 
   /// Pins the line "Can't reach {address}" under the navigation bar while the last sync found the instance
   /// unreachable, for a screen that has no state of its own to show.
   public func cantReachLine(of session: SessionModel) -> some View {
-    sharedStates(.saved(cantReach: session.isInstanceUnreachable), address: session.session.instance, tryAgain: {}) {
+    sharedStates(
+      .saved(cantReach: session.isInstanceUnreachable), address: session.session.instance,
+      unsentChanges: session.unsentChangeCount, tryAgain: {}
+    ) {
       EmptyView()
     }
   }
@@ -41,11 +47,18 @@ public enum CantReach {
   public static func words(for address: InstanceAddress) -> String {
     String(localized: "Can't reach \(address.text)", bundle: #bundle)
   }
+
+  /// "{n} changes will be sent when it's back.": what the line adds while unsent changes wait. See "Unsent changes,
+  /// sign-out, and late refusals" in `docs/spec.md`.
+  public static func unsentChanges(_ count: Int) -> String {
+    String(localized: "\(count) changes will be sent when it's back.", bundle: #bundle)
+  }
 }
 
 private struct SharedStates<Empty: View>: ViewModifier {
   let state: ScreenState
   let address: InstanceAddress
+  let unsentChanges: Int
   let tryAgain: @MainActor () async -> Void
   let empty: Empty
 
@@ -53,7 +66,7 @@ private struct SharedStates<Empty: View>: ViewModifier {
     content
       .safeAreaInset(edge: .top, spacing: 0) {
         if state == .saved(cantReach: true) {
-          CantReachLine(address: address)
+          CantReachLine(address: address, unsentChanges: unsentChanges)
         }
       }
       .overlay {
@@ -67,21 +80,29 @@ private struct SharedStates<Empty: View>: ViewModifier {
   }
 }
 
-/// The line "Can't reach {address}": a row pinned under the navigation bar. It blocks nothing. It is one element,
-/// and at the largest text sizes it wraps, so the address is never cut short.
+/// The line "Can't reach {address}": a row pinned under the navigation bar. It blocks nothing. While unsent changes
+/// wait, it says how many under the address. It is one element, and at the largest text sizes it wraps, so the
+/// address is never cut short.
 private struct CantReachLine: View {
   let address: InstanceAddress
+  let unsentChanges: Int
 
   var body: some View {
-    Text(CantReach.words(for: address))
-      .font(.footnote)
-      .fixedSize(horizontal: false, vertical: true)
-      .frame(maxWidth: .infinity)
-      .padding(.horizontal)
-      .padding(.vertical, 8)
-      // A solid background, so the text has its full contrast over whatever scrolls under it.
-      .background(.background.secondary, ignoresSafeAreaEdges: [])
-      .accessibilityElement(children: .combine)
+    VStack(spacing: 2) {
+      Text(CantReach.words(for: address))
+      if unsentChanges > 0 {
+        Text(CantReach.unsentChanges(unsentChanges))
+      }
+    }
+    .multilineTextAlignment(.center)
+    .font(.footnote)
+    .fixedSize(horizontal: false, vertical: true)
+    .frame(maxWidth: .infinity)
+    .padding(.horizontal)
+    .padding(.vertical, 8)
+    // A solid background, so the text has its full contrast over whatever scrolls under it.
+    .background(.background.secondary, ignoresSafeAreaEdges: [])
+    .accessibilityElement(children: .combine)
   }
 }
 
