@@ -28,10 +28,13 @@ nonisolated final class PeopleJourney: XCTestCase {
     // Ash's good to know has a link with a bold word inside it, and a numbered list.
     let ash = try await builder.person("Ash")
     try await builder.goodToKnow(
-      "Likes [**Lego** set](https://shop.example/lego) best.\n\n1. Size medium\n2. No glitter", of: ash)
+      "Likes [**Lego** set](https://shop.example/lego) best.\n\n1. Size medium", of: ash)
     let primary = try await builder.primaryList(of: ash)
+    // Always wanted, whose words fit on one line in the double-length pseudo-language too, so the page is short
+    // enough that no row is under the tab bar.
     _ = try await builder.item(
-      "Kite", on: primary, as: ash, storeLinks: [(url: "https://shop.example/kite", priceMinor: 2000)])
+      "Kite", on: primary, as: ash, isUnlimited: true,
+      storeLinks: [(url: "https://shop.example/kite", priceMinor: 2000)])
     let camping = try await builder.list("Camping", of: ash)
     _ = try await builder.item(
       "Tent", on: camping, as: ash, storeLinks: [(url: "https://shop.example/tent", priceMinor: 10000)])
@@ -78,11 +81,11 @@ nonisolated final class PeopleJourney: XCTestCase {
     XCTAssertTrue(app.staticTexts["1"].exists, "The numbered list doesn't read its numbers.")
     XCTAssertTrue(app.staticTexts["Size medium"].exists)
     // The rows below Good to know's first line, which the larger text pushes down and off: the link's row, the
-    // numbered list's numbers and items, the item and its price, Other lists' heading, and the other list with its
+    // numbered list's number and item, the item and its price, Other lists' heading, and the other list with its
     // count. The page has one item, so that in the
     // default settings no row is under the tab bar, where the audit measures the bar's glass.
     let pageRows = [
-      "Lego set,", "1", "Size medium", "2", "No glitter", "Kite", "$20", "Other lists", camping.name, "3 items",
+      "Lego set", "1", "Size medium", "Kite", "$20", "Other lists", camping.name, "3 items",
     ]
     try await Audit.run(
       on: app, showing: "a person's page", in: self, rowsThatLeaveTheScreen: pageRows,
