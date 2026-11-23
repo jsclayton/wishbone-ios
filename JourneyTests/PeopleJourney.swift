@@ -6,7 +6,7 @@ import XCTest
 /// recipient's name. See `docs/screens/people.md`, `docs/screens/user.md` and `docs/screens/list.md`.
 ///
 /// It runs the accessibility audit on each screen that it reaches, as the sign-in journey does.
-nonisolated final class PeopleJourney: XCTestCase {
+nonisolated final class PeopleJourney: JourneyTestCase {
   @MainActor
   func testPeople() async {
     continueAfterFailure = false
