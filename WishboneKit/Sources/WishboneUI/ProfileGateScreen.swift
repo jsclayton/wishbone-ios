@@ -394,7 +394,7 @@ struct ProfileGateScreen: View {
 
 /// A text field's row: its label above the field. The label is hidden from VoiceOver, because the field carries
 /// the same words as its own label.
-private struct FormRow<Field: View>: View {
+struct FormRow<Field: View>: View {
   let label: Text
   @ViewBuilder let field: Field
 
