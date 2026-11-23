@@ -38,9 +38,11 @@ nonisolated final class AddItemJourney: JourneyTestCase {
     XCTAssertTrue(tabs.buttons[Audit.words("Add")].waitForExistence(timeout: 60), "The tabs didn't show.")
 
     // The plus, and the typed words. The keyboard's Search key searches them.
+    // On 2026-11-23, in a local gate run in the double-length pseudo-language, the field wasn't there 10 seconds
+    // after the tap. The wait ends when the field shows, so a long limit costs a passing run nothing.
     tabs.buttons[Audit.words("Add")].tap()
     let field = app.searchFields[Audit.words("Paste a link or type what you want")]
-    XCTAssertTrue(field.waitForExistence(timeout: 10), "The Add screen's field didn't show.")
+    XCTAssertTrue(field.waitForExistence(timeout: 30), "The Add screen's field didn't show.")
     field.typeText("\(title)\n")
 
     // The add form is pushed, with the words as the title, and Add in its bar.
@@ -58,8 +60,8 @@ nonisolated final class AddItemJourney: JourneyTestCase {
       form.buttons.matching(NSPredicate(format: "label == %@", Audit.words("Add"))).allElementsBoundByIndex.last,
       "The add form has no Add.")
     XCTAssertTrue(add.isEnabled, "Add is disabled on a form with a title.")
-    try await dropKeyboard(of: app)
-    XCTAssertTrue(form.waitForExistence(timeout: 10), "The add form didn't come back.")
+    dropKeyboard(of: app)
+    XCTAssertTrue(form.waitForExistence(timeout: 30), "The add form didn't come back.")
     try await Audit.run(on: app, showing: "the add form", in: self)
 
     // Add: the form closes, the field is empty, and the "Added" row names the item and the list. In the
@@ -71,8 +73,8 @@ nonisolated final class AddItemJourney: JourneyTestCase {
     XCTAssertTrue(added.waitForExistence(timeout: 30), "The Added row didn't show after Add.")
     XCTAssertFalse(form.exists, "The add form stayed open after Add.")
     XCTAssertNotEqual(field.value as? String, title, "The field still has the words after Add.")
-    try await dropKeyboard(of: app)
-    XCTAssertTrue(added.waitForExistence(timeout: 10), "The Added row didn't come back.")
+    dropKeyboard(of: app)
+    XCTAssertTrue(added.waitForExistence(timeout: 30), "The Added row didn't come back.")
     try await Audit.run(on: app, showing: "the Add screen after an add", in: self)
 
     // The row opens the item's page.
@@ -93,12 +95,7 @@ nonisolated final class AddItemJourney: JourneyTestCase {
   /// keyboard when it leaves the foreground, so the journey sends it to the Home Screen and back first, as the
   /// sign-in journey does.
   @MainActor
-  private func dropKeyboard(of app: XCUIApplication) async throws {
-    XCUIDevice.shared.press(.home)
-    let left = XCTNSPredicateExpectation(
-      predicate: NSPredicate { _, _ in app.state != .runningForeground }, object: nil)
-    XCTAssertEqual(XCTWaiter.wait(for: [left], timeout: 10), .completed, "The app didn't leave the foreground.")
-    app.activate()
-    XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10), "The app didn't come back.")
+  private func dropKeyboard(of app: XCUIApplication) {
+    sendHomeAndBack(app)
   }
 }
