@@ -7,7 +7,7 @@ import XCTest
 ///
 /// It audits the add form, and the Add screen with its "Added" row, and attaches a screenshot of each as evidence
 /// for a person.
-nonisolated final class AddItemJourney: XCTestCase {
+nonisolated final class AddItemJourney: JourneyTestCase {
   @MainActor
   func testAddItem() async {
     continueAfterFailure = false
