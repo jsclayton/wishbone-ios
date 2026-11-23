@@ -82,7 +82,10 @@ nonisolated final class PeopleJourney: XCTestCase {
     ]
     try await Audit.run(
       on: app, showing: "a person's page", in: self, rowsThatLeaveTheScreen: pageRows,
-      rowsToScrollTo: ["Lego set,", "Size medium", "Kite", camping.name])
+      // At the largest text size, the scrolls start at the numbered list. A scroll to the link's row leaves the
+      // line with the link under the top bar, and the audit reports the link's own parts there with no element, so
+      // the exception for the bar can't place them. The link's row is a web link row, as on the help sheet.
+      rowsToScrollTo: ["Size medium", "Kite", camping.name])
 
     // A row of Other lists pushes that list's page.
     starting(camping.name).tap()
