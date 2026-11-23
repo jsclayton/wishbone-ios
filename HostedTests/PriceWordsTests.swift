@@ -2,8 +2,8 @@ import Foundation
 import Testing
 import WishboneUI
 
-/// The words for an item's price on a row: a price, a range, or none, in the server's currency, in the device's
-/// locale. See "Languages" in `docs/spec.md`.
+/// The words for an item's price on a row, on its page, and on a store link: a price, a range, or none, in the
+/// server's currency, in the device's locale. See "Languages" in `docs/spec.md`.
 @Suite("The price words", .timeLimit(.minutes(1)))
 @MainActor
 struct PriceWordsTests {
@@ -38,5 +38,21 @@ struct PriceWordsTests {
     #expect(words(1200, nil, "JPY") == "¥1,200")
     #expect(words(1234, nil, "KWD")?.contains("1.234") == true)
     #expect(words(1999, nil, "GBP", locale: Locale(identifier: "de_DE")) == "19,99\u{a0}£")
+  }
+
+  @Test("An item's page gives a range in words, \"$20 to $35\", and a price alone as on a row")
+  func page() {
+    #expect(PriceWords.page(priceMinor: 2000, topPriceMinor: 3500, currency: "USD", locale: english) == "$20 to $35")
+    #expect(PriceWords.page(priceMinor: 1999, topPriceMinor: nil, currency: "USD", locale: english) == "$19.99")
+    #expect(PriceWords.page(priceMinor: nil, topPriceMinor: 3500, currency: "USD", locale: english) == nil)
+    #expect(PriceWords.page(priceMinor: 2000, topPriceMinor: nil, currency: nil, locale: english) == nil)
+  }
+
+  @Test("A store link's price is one amount in the server's currency, and none with no price")
+  func storeLink() {
+    #expect(PriceWords.storeLink(priceMinor: 2499, currency: "USD", locale: english) == "$24.99")
+    #expect(PriceWords.storeLink(priceMinor: 1200, currency: "JPY", locale: english) == "¥1,200")
+    #expect(PriceWords.storeLink(priceMinor: nil, currency: "USD", locale: english) == nil)
+    #expect(PriceWords.storeLink(priceMinor: 2499, currency: nil, locale: english) == nil)
   }
 }

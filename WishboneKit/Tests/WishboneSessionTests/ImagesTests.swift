@@ -244,6 +244,7 @@ struct ImagesTests {
     let device = instance.device(storage: .folder(folder.url), images: .folder(folder.url))
     await device.signIn(pasting: try await instance.loginLink(for: robin))
     let session = try #require(device.session)
+    await until { session.user != nil }
     var draft = ProfileDraft(try #require(session.user))
     draft.photo = .new(FixtureBuilder.onePixelPNG)
 
@@ -305,6 +306,7 @@ struct ImagesTests {
     let device = instance.device()
     await device.signIn(pasting: try await instance.loginLink(for: robin))
     let session = try #require(device.session)
+    await until { session.user != nil }
     var draft = ProfileDraft(try #require(session.user))
     draft.photo = .new(FixtureBuilder.onePixelPNG)
     #expect(await session.confirmProfile(draft) == .confirmed)
