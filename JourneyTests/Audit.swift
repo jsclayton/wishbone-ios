@@ -324,6 +324,17 @@ enum Audit {
       {
         return true
       }
+      // Add in the add form's bar is the same: the system's own bar button, on the system's glass. The exception is
+      // for that button only, while the add form shows.
+      if [.contrast, .dynamicType].contains(issue.auditType), let button = issue.element,
+        button.elementType == .button, button.label == words("Add"),
+        case let form = app.navigationBars[words("Add item")], form.exists,
+        // The element must be the bar's button itself, not the back button, which reads "Add" too.
+        form.buttons.matching(NSPredicate(format: "label == %@", words("Add"))).allElementsBoundByIndex.contains(
+          where: { $0.frame == button.frame })
+      {
+        return true
+      }
       // Content that scrolls under the tab bar: a screen's rows go on below the bar, and the audit measures the text
       // there against the system's glass, which a person reads only after scrolling it out. The exception is for
       // contrast only, and only for a row that goes on below the bar's top edge. At the largest text size, that is
