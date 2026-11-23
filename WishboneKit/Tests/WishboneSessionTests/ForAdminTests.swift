@@ -7,9 +7,10 @@ import WishboneSession
 /// For the admin, on the People page: All users, All groups, and Deactivated. See "Scope" and "People" under "The
 /// admin" in `docs/spec.md`, and `docs/screens/people.md`.
 ///
-/// The tests that share a server share its admin, who sees every test's users and groups. So a test of the admin
-/// on the shared server waits for the exact rows that it reads, and a test that reads the admin's whole copy starts
-/// a private server and waits until the copy is in step.
+/// The tests that share a server share its admin, who sees every test's users and groups, so the admin's first sync
+/// on the shared server grows with the run and can pass a test's time limit on a loaded runner. So every test that
+/// signs the admin in starts a private server, and waits until the admin's copy is in step. A test of a person who
+/// isn't the admin uses the shared server.
 @Suite("For the admin, on the People page", .timeLimit(.minutes(1)))
 @MainActor
 struct ForAdminTests {
@@ -20,16 +21,10 @@ struct ForAdminTests {
     return try #require(device.session)
   }
 
-  /// The admin, signed in on the shared server, once the copy holds every user of the family in full, and the
-  /// deactivated child as deactivated.
-  private func admin(seeing family: StandardFamily, on instance: Instance) async throws -> SessionModel {
+  /// The admin of the family, signed in on the family's private server, once the copy is in step.
+  private func admin(of family: StandardFamily, on instance: Instance) async throws -> SessionModel {
     let admin = try await signedIn(as: family.admin, on: instance)
-    let everyone = Self.everyone(of: family).map(\.id)
-    await until {
-      guard let allUsers = admin.peoplePage.forAdmin?.allUsers else { return false }
-      let full = Dictionary(allUsers.filter { !$0.isSummary }.map { ($0.id, $0) }) { first, _ in first }
-      return everyone.allSatisfy { full[$0] != nil } && full[family.deactivatedChild.id]?.isDeactivated == true
-    }
+    try await untilInStep(admin, as: family.admin)
     return admin
   }
 
@@ -37,20 +32,43 @@ struct ForAdminTests {
     [family.admin, family.parent, family.child, family.deactivatedChild, family.relative, family.outsider]
   }
 
-  @Test("Only the admin gets For the admin")
-  func onlyTheAdmin() async throws {
+  /// The people of a standard family who aren't the admin.
+  enum NonAdmin: CaseIterable, Sendable, CustomTestStringConvertible {
+    case parent, child, relative, outsider
+
+    func person(of family: StandardFamily) -> Fixture.Person {
+      switch self {
+      case .parent: family.parent
+      case .child: family.child
+      case .relative: family.relative
+      case .outsider: family.outsider
+      }
+    }
+
+    var testDescription: String { "\(self)" }
+  }
+
+  // One sign-in for each test, so that each stays well within its time limit on a loaded runner.
+  @Test("A person who isn't the admin doesn't get For the admin", arguments: NonAdmin.allCases)
+  func notTheAdmin(_ role: NonAdmin) async throws {
     let instance = try await Instance()
     let family = try await instance.builder.standardFamily()
+    let person = role.person(of: family)
 
-    for person in [family.parent, family.child, family.relative, family.outsider] {
-      let session = try await signedIn(as: person, on: Instance(server: instance.server))
-      try await untilInStep(session, as: person)
-      // Before the copy holds the user's own record, no session is the admin's. So the check counts only after.
-      #expect(session.user?.record != nil, "\(person.name)")
-      #expect(session.peoplePage.forAdmin == nil, "\(person.name)")
-    }
-    let admin = try await signedIn(as: family.admin, on: instance)
-    await until { admin.user?.record != nil }
+    let session = try await signedIn(as: person, on: instance)
+    try await untilInStep(session, as: person)
+    // Before the copy holds the user's own record, no session is the admin's. So the check counts only after.
+    #expect(session.user?.record != nil)
+    #expect(session.peoplePage.forAdmin == nil)
+  }
+
+  @Test("The admin gets For the admin")
+  func theAdmin() async throws {
+    let instance = try await Instance(server: try await TestServer.start())
+    let family = try await instance.builder.standardFamily()
+
+    let admin = try await admin(of: family, on: instance)
+    #expect(admin.user?.record != nil)
     #expect(admin.peoplePage.forAdmin != nil)
     #expect(!admin.peoplePage.isEmpty)
   }
@@ -62,10 +80,10 @@ struct ForAdminTests {
     """
   )
   func allUsers() async throws {
-    let instance = try await Instance()
+    let instance = try await Instance(server: try await TestServer.start())
     let family = try await instance.builder.standardFamily()
 
-    let admin = try await admin(seeing: family, on: instance)
+    let admin = try await admin(of: family, on: instance)
     let forAdmin = try #require(admin.peoplePage.forAdmin)
     let ids = Set(forAdmin.allUsers.map(\.id))
     let everyone = Self.everyone(of: family)
@@ -86,10 +104,10 @@ struct ForAdminTests {
 
   @Test("The search filters All users by name, in any case, and finds nobody for a name that nobody has")
   func search() async throws {
-    let instance = try await Instance()
+    let instance = try await Instance(server: try await TestServer.start())
     let family = try await instance.builder.standardFamily()
 
-    let admin = try await admin(seeing: family, on: instance)
+    let admin = try await admin(of: family, on: instance)
     let forAdmin = try #require(admin.peoplePage.forAdmin)
     #expect(forAdmin.users(matching: "") == forAdmin.allUsers)
     #expect(forAdmin.users(matching: "   ") == forAdmin.allUsers)
