@@ -1,0 +1,3 @@
+# Merge String Catalogs key by key, so two branches that add strings don't conflict. `pnpm install` registers
+# the driver; see "The String Catalog" in docs/development.md.
+*.xcstrings merge=xcstrings

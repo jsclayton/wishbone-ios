@@ -11,7 +11,7 @@
 ```bash
 mise trust
 mise install
-pnpm install     # installs the git hooks (lefthook and commitlint)
+pnpm install     # installs the git hooks (lefthook and commitlint), and the String Catalog's merge driver
 ```
 
 Then open `Wishbone.xcodeproj` in Xcode, pick a simulator, and run. A simulator build needs no signing team.
@@ -114,8 +114,18 @@ docs/               The spec, the ADRs, and the guides
 
 `just build` writes two things that are in git. The gate fails when its build changed either one, so commit them with the change that caused it.
 
-- **The String Catalog.** The build adds each new string from the code to `Localizable.xcstrings` in `WishboneUI`.
+- **The String Catalog.** The build adds each new string from the code to `Localizable.xcstrings` in `WishboneUI` (see [The String Catalog](#the-string-catalog)).
 - **The Acknowledgements.** The build writes the name and the full license text of each package that the app ships to `Acknowledgements.json` in `WishboneUI`'s resources. It reads each text from the package that the build fetched, at the commit in `Package.resolved`. So a pull request that moves a pin shows the pin's license in its diff, and the texts never go out of date.
+
+### The String Catalog
+
+The catalog is one JSON file, and `xcstringstool` keeps its keys in order. So two branches that each add a string at the same place in that order conflict as text, though their keys don't. Git merges the catalog with a merge driver instead, key by key:
+
+- `.gitattributes` names the driver for each `.xcstrings` file. `scripts/xcstrings-merge.mjs` is the driver, and `scripts/xcstrings.mjs` merges and writes the file.
+- `pnpm install` registers the driver in the clone's git config, and so does each `just build`. All worktrees of a clone share it. To see it: `git config merge.xcstrings.driver`.
+- The driver takes every key from both sides. Where one side added, removed or changed a key, that change stays. Where the two sides changed different parts of one key, both stay. It writes the file in the order and the format that `xcstringstool` writes, so a merge never reorders a key, and the next build doesn't change the file.
+- Where both sides changed one value in different ways, such as the comment of one key, git reports a conflict. The file then has our side, and the driver names each value. Fix those by hand.
+- A rebase, `git merge-tree`, and every other merge in your clone run the driver. **GitHub doesn't**: it shows a conflict in the catalog that your clone doesn't have. To clear it, rebase on `origin/main` (`git fetch origin && git rebase origin/main`). The catalog merges by itself, and you don't need to build to put your strings back.
 
 ## Tests and the gate
 
