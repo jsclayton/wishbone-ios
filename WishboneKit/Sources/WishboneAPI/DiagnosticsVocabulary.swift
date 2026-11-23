@@ -231,7 +231,7 @@ public enum Breadcrumb: Sendable, Equatable {
     "/lists/{id}", "/lists/{id}/recipients", "/lists/{id}/recipients/{user_id}", "/lists/{id}/items", "/items/{id}",
     "/items/{id}/gifts", "/invitations", "/invitations/{id}",
     "/gifts", "/gifts/{id}", "/blocked-stores", "/blocked-stores/{id}", "/users/me/sessions/current",
-    "/users/me/confirm-profile", "/images",
+    "/users/me/confirm-profile", "/images", "/search",
   ]
 }
 

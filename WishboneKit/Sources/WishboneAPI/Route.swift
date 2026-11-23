@@ -34,6 +34,8 @@ public enum Route: String, Sendable, CaseIterable {
   case revokeCurrentSession
   case confirmProfile
   case uploadImage
+  case search
+  case createItem
 
   public var method: String {
     switch self {
@@ -41,7 +43,7 @@ public enum Route: String, Sendable, CaseIterable {
       .occasion, .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation,
       .gifts, .gift, .blockedStores:
       "GET"
-    case .redeemLoginLink, .confirmProfile, .uploadImage, .blockStore, .claim: "POST"
+    case .redeemLoginLink, .confirmProfile, .uploadImage, .blockStore, .claim, .search, .createItem: "POST"
     case .updateMe: "PATCH"
     case .revokeCurrentSession, .unblockStore, .leaveList: "DELETE"
     }
@@ -72,7 +74,7 @@ public enum Route: String, Sendable, CaseIterable {
     case .list: "/lists/{id}"
     case .listRecipients: "/lists/{id}/recipients"
     case .leaveList: "/lists/{id}/recipients/{user_id}"
-    case .listItems: "/lists/{id}/items"
+    case .listItems, .createItem: "/lists/{id}/items"
     case .item: "/items/{id}"
     case .invitations: "/invitations"
     case .invitation: "/invitations/{id}"
@@ -84,6 +86,7 @@ public enum Route: String, Sendable, CaseIterable {
     case .revokeCurrentSession: "/users/me/sessions/current"
     case .confirmProfile: "/users/me/confirm-profile"
     case .uploadImage: "/images"
+    case .search: "/search"
     }
   }
 
@@ -95,7 +98,7 @@ public enum Route: String, Sendable, CaseIterable {
     case .versions, .updateMe, .users, .user, .groups, .group, .groupUsers, .groupGroups, .occasions, .occasion,
       .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation, .gifts, .gift,
       .claim, .blockedStores, .blockStore, .unblockStore, .leaveList, .revokeCurrentSession, .confirmProfile,
-      .uploadImage, .me:
+      .uploadImage, .me, .search, .createItem:
       false
     }
   }
@@ -114,7 +117,8 @@ public enum Route: String, Sendable, CaseIterable {
       .invitations, .blockedStores:
       Self.paging
     case .health, .redeemLoginLink, .versions, .updateMe, .user, .group, .occasion, .list, .item, .invitation, .gift,
-      .claim, .blockStore, .unblockStore, .leaveList, .revokeCurrentSession, .confirmProfile, .uploadImage, .me:
+      .claim, .blockStore, .unblockStore, .leaveList, .revokeCurrentSession, .confirmProfile, .uploadImage, .me,
+      .search, .createItem:
       []
     }
   }
@@ -135,6 +139,9 @@ public enum Route: String, Sendable, CaseIterable {
     // A key makes a claim safe to send once more after a lost connection: the server makes the gift once. It
     // never makes a claim an unsent change.
     case .claim: ["Idempotency-Key"]
+    // A search's key makes a resend after a lost connection read nothing again. The add's key is the add form's own,
+    // so a second Add after a lost answer adds the item once.
+    case .search, .createItem: ["Idempotency-Key"]
     case .health, .redeemLoginLink, .users, .user, .groups, .group, .groupUsers, .groupGroups, .occasions, .occasion,
       .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation, .gifts, .gift,
       .blockedStores, .unblockStore, .leaveList, .revokeCurrentSession, .confirmProfile, .uploadImage, .me:
@@ -149,9 +156,15 @@ public enum Route: String, Sendable, CaseIterable {
     case .updateMe: fields(of: UserChanges.CodingKeys.self, nested: ["birthday": PartialDate.fields])
     case .blockStore: fields(of: BlockStoreBody.CodingKeys.self)
     case .claim: fields(of: ClaimBody.CodingKeys.self)
+    // A search sends a form, not JSON: its one field is the text.
+    case .search: ["text"]
+    case .createItem:
+      fields(of: NewItem.CodingKeys.self, lists: ["store_links": fields(of: NewStoreLink.CodingKeys.self)])
+    // An upload sends the bytes of a file, or JSON with the address of one for the server to download.
+    case .uploadImage: fields(of: DownloadBody.CodingKeys.self)
     case .health, .versions, .users, .user, .groups, .group, .groupUsers, .groupGroups, .occasions, .occasion,
       .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation, .gifts, .gift,
-      .blockedStores, .unblockStore, .leaveList, .revokeCurrentSession, .confirmProfile, .uploadImage, .me:
+      .blockedStores, .unblockStore, .leaveList, .revokeCurrentSession, .confirmProfile, .me:
       []
     }
   }
@@ -176,7 +189,8 @@ public enum Route: String, Sendable, CaseIterable {
     case .list: ListResource.fields
     case .listRecipients: Page<VersionedRow<Recipient>>.fields
     case .listItems: Page<VersionedRow<Item>>.fields
-    case .item: Item.fields
+    case .item, .createItem: Item.fields
+    case .search: SearchBody.fields
     case .invitations: Page<VersionedRow<Invitation>>.fields
     case .invitation: Invitation.fields
     case .gifts: Page<VersionedRow<Gift>>.fields
@@ -197,6 +211,9 @@ struct Endpoint<Response: Model>: Sendable {
 
   /// The bytes of a file, as the body, for a route that takes a file and not JSON.
   var file: Data?
+
+  /// The fields of a `multipart/form-data` body, for a route that takes a form and not JSON.
+  var form: [FormField]?
 
   /// The `ETag` of an earlier answer of the route. The server then answers 304, with no body, when its answer
   /// would be that one again. Only `GET /versions` takes it.
