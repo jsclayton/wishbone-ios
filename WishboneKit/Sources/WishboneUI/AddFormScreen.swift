@@ -51,13 +51,9 @@ struct AddFormScreen: View {
         }
       }
       Section {
-        FormRow(label: Text("Title", bundle: #bundle)) {
-          TextField(text: $draft.title, prompt: Self.noPrompt) {
-            Text("Title", bundle: #bundle)
-          }
-          .font(.body)
-          .accessibilityLabel(Text("Title", bundle: #bundle))
-          .onSubmit(add)
+        // The title wraps, so a long one is never cut short. It is one line of text, so Return adds the item.
+        TextField(text: title, prompt: Text("Title", bundle: #bundle), axis: .vertical) {
+          Text("Title", bundle: #bundle)
         }
       } footer: {
         if !draft.hasTitle {
@@ -89,14 +85,10 @@ struct AddFormScreen: View {
         }
       }
       Section {
-        FormRow(label: Text("Notes", bundle: #bundle)) {
-          TextField(text: notes, prompt: Self.noPrompt, axis: .vertical) {
-            Text("Notes", bundle: #bundle)
-          }
-          .font(.body)
-          .lineLimit(3...)
-          .accessibilityLabel(Text("Notes", bundle: #bundle))
+        TextField(text: notes, prompt: Text("Notes", bundle: #bundle), axis: .vertical) {
+          Text("Notes", bundle: #bundle)
         }
+        .lineLimit(3...)
       } footer: {
         if draft.notesWereCut {
           Text("Your notes were cut to 2000 characters.", bundle: #bundle)
@@ -156,9 +148,6 @@ struct AddFormScreen: View {
         ? Text("Adds the item to your list.", bundle: #bundle) : Text("Give the item a title.", bundle: #bundle))
   }
 
-  /// A field's label is above it, so the field has no prompt of its own.
-  private static let noPrompt = Text(String())
-
   /// Price and Up to, side by side, and stacked at the largest text sizes.
   @ViewBuilder private var priceFields: some View {
     let layout =
@@ -170,16 +159,12 @@ struct AddFormScreen: View {
   }
 
   private func priceField(_ field: WritableKeyPath<ItemDraft, Int?>, label: Text) -> some View {
-    FormRow(label: label) {
-      TextField(value: price(field), format: .currency(code: draft.currency), prompt: Self.noPrompt) {
-        label
-      }
-      .font(.body)
-      .accessibilityLabel(label)
-      #if os(iOS)
-        .keyboardType(.decimalPad)
-      #endif
+    TextField(value: price(field), format: .currency(code: draft.currency)) {
+      label
     }
+    #if os(iOS)
+      .keyboardType(.decimalPad)
+    #endif
   }
 
   /// A price of the draft in the currency's main unit, for a field: "24.99" for 2499 cents.
@@ -203,6 +188,20 @@ struct AddFormScreen: View {
     formatter.numberStyle = .currency
     formatter.currencyCode = draft.currency
     return (0..<formatter.maximumFractionDigits).reduce(1) { value, _ in value * 10 }
+  }
+
+  /// The title, on one line: Return adds the item.
+  private var title: Binding<String> {
+    Binding {
+      draft.title
+    } set: { title in
+      guard title.contains(where: \.isNewline) else {
+        draft.title = title
+        return
+      }
+      draft.title = title.filter { !$0.isNewline }
+      add()
+    }
   }
 
   /// The notes, at most 2000 characters.

@@ -46,7 +46,13 @@ nonisolated final class AddItemJourney: XCTestCase {
     // The add form is pushed, with the words as the title, and Add in its bar.
     let form = app.navigationBars[Audit.words("Add item")]
     XCTAssertTrue(form.waitForExistence(timeout: 30), "The add form didn't show after the search.")
-    XCTAssertEqual(app.textFields[Audit.words("Title")].firstMatch.value as? String, title)
+    // The title wraps, so its field is a text view or a text field, by the system's choice.
+    let titleField = app.descendants(matching: .any).matching(
+      NSPredicate(
+        format: "label == %@ AND (elementType == %d OR elementType == %d)", Audit.words("Title"),
+        XCUIElement.ElementType.textField.rawValue, XCUIElement.ElementType.textView.rawValue)
+    ).firstMatch
+    XCTAssertEqual(titleField.value as? String, title)
     // The back button reads "Add" too, as the Add screen's title, so Add is the last button with the word.
     let add = try XCTUnwrap(
       form.buttons.matching(NSPredicate(format: "label == %@", Audit.words("Add"))).allElementsBoundByIndex.last,
