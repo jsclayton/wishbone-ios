@@ -74,9 +74,10 @@ struct AddScreen: View {
       }
     }
     .sensoryFeedback(.success, trigger: adds)
-    // The screen opens with its field ready. Where the system shows the field as a button, in a tab bar at the
-    // top of a wide window, the field opens with a tap on that button.
-    .onAppear { isFieldFocused = form == nil }
+    // The screen opens with its field ready, when it is empty. Back from the form, with the text still in the
+    // field, and the screen after an add, with its "Added" row, open with no keyboard. Where the system shows the
+    // field as a button, in a tab bar at the top of a wide window, the field opens with a tap on that button.
+    .onAppear { isFieldFocused = form == nil && state.text.isEmpty && state.added == nil }
     // The "Added" row stays until the user leaves the screen: another tab, or a page pushed over it.
     .onDisappear {
       if form == nil { state.left() }

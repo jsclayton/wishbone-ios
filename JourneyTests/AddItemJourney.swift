@@ -46,7 +46,7 @@ nonisolated final class AddItemJourney: XCTestCase {
     // The add form is pushed, with the words as the title, and Add in its bar.
     let form = app.navigationBars[Audit.words("Add item")]
     XCTAssertTrue(form.waitForExistence(timeout: 30), "The add form didn't show after the search.")
-    XCTAssertEqual(app.textFields[Audit.words("Title")].value as? String, title)
+    XCTAssertEqual(app.textFields[Audit.words("Title")].firstMatch.value as? String, title)
     let add = form.buttons[Audit.words("Add")]
     XCTAssertTrue(add.isEnabled, "Add is disabled on a form with a title.")
     try await dropKeyboard(of: app)
