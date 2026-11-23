@@ -40,7 +40,9 @@ struct AddScreen: View {
             pages.append(.item(id: added.id))
           } label: {
             Label {
+              // A long title wraps, and is never cut short.
               Text("Added \(added.title) to \(added.listName)", bundle: #bundle)
+                .fixedSize(horizontal: false, vertical: true)
             } icon: {
               Image(systemName: "checkmark.circle.fill")
             }
@@ -102,6 +104,7 @@ struct AddScreen: View {
           ProgressView()
           if let words = words(for: state.phase) {
             Text(words)
+              .fixedSize(horizontal: false, vertical: true)
           }
         }
         .accessibilityElement(children: .combine)
