@@ -51,10 +51,14 @@ struct AddFormScreen: View {
         }
       }
       Section {
-        TextField(text: $draft.title, prompt: Text("Title", bundle: #bundle)) {
-          Text("Title", bundle: #bundle)
+        FormRow(label: Text("Title", bundle: #bundle)) {
+          TextField(text: $draft.title, prompt: Self.noPrompt) {
+            Text("Title", bundle: #bundle)
+          }
+          .font(.body)
+          .accessibilityLabel(Text("Title", bundle: #bundle))
+          .onSubmit(add)
         }
-        .onSubmit(add)
       } footer: {
         if !draft.hasTitle {
           Text("Give the item a title.", bundle: #bundle)
@@ -85,10 +89,14 @@ struct AddFormScreen: View {
         }
       }
       Section {
-        TextField(text: notes, prompt: Text("Notes", bundle: #bundle), axis: .vertical) {
-          Text("Notes", bundle: #bundle)
+        FormRow(label: Text("Notes", bundle: #bundle)) {
+          TextField(text: notes, prompt: Self.noPrompt, axis: .vertical) {
+            Text("Notes", bundle: #bundle)
+          }
+          .font(.body)
+          .lineLimit(3...)
+          .accessibilityLabel(Text("Notes", bundle: #bundle))
         }
-        .lineLimit(3...)
       } footer: {
         if draft.notesWereCut {
           Text("Your notes were cut to 2000 characters.", bundle: #bundle)
@@ -126,43 +134,48 @@ struct AddFormScreen: View {
         }
       }
       ToolbarItem(placement: .confirmationAction) {
-        if isAdding {
-          ProgressView()
-        } else {
-          addButton
-        }
+        addButton
       }
     }
   }
 
-  /// Add: disabled, and saying why, until the form has a title.
-  @ViewBuilder private var addButton: some View {
-    let button = Button(action: add) {
-      Text("Add", bundle: #bundle)
+  /// Add: disabled, and saying why, until the form has a title. It shows progress while the images upload and
+  /// the item is added.
+  private var addButton: some View {
+    Button(action: add) {
+      if isAdding {
+        ProgressView()
+      } else {
+        Text("Add", bundle: #bundle)
+      }
     }
-    if draft.hasTitle {
-      button
-    } else {
-      button
-        .disabled(true)
-        .accessibilityHint(Text("Give the item a title.", bundle: #bundle))
-    }
+    .keyboardShortcut(.defaultAction)
+    .disabled(!draft.hasTitle || isAdding)
+    .accessibilityHint(
+      draft.hasTitle
+        ? Text("Adds the item to your list.", bundle: #bundle) : Text("Give the item a title.", bundle: #bundle))
   }
+
+  /// A field's label is above it, so the field has no prompt of its own.
+  private static let noPrompt = Text(String())
 
   /// Price and Up to, side by side, and stacked at the largest text sizes.
   @ViewBuilder private var priceFields: some View {
     let layout =
       dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading)) : AnyLayout(HStackLayout())
     layout {
-      TextField(value: price(\.priceMinor), format: .currency(code: draft.currency)) {
-        Text("Price", bundle: #bundle)
+      priceField(\.priceMinor, label: Text("Price", bundle: #bundle))
+      priceField(\.topPriceMinor, label: Text("Up to", bundle: #bundle))
+    }
+  }
+
+  private func priceField(_ field: WritableKeyPath<ItemDraft, Int?>, label: Text) -> some View {
+    FormRow(label: label) {
+      TextField(value: price(field), format: .currency(code: draft.currency), prompt: Self.noPrompt) {
+        label
       }
-      #if os(iOS)
-        .keyboardType(.decimalPad)
-      #endif
-      TextField(value: price(\.topPriceMinor), format: .currency(code: draft.currency)) {
-        Text("Up to", bundle: #bundle)
-      }
+      .font(.body)
+      .accessibilityLabel(label)
       #if os(iOS)
         .keyboardType(.decimalPad)
       #endif
