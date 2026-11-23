@@ -121,6 +121,17 @@ public struct FixtureBuilder: Sendable {
       id: person.id, name: person.name, session: try await server.redeem(try await loginLink(for: person)))
   }
 
+  /// The month and day that is `days` days from now, in UTC, for `person(_:birthday:)`. The birthday is then the
+  /// same distance away on every run, whatever the date: a test or a journey that reads Home doesn't change from
+  /// one season to the next. The test servers run in UTC.
+  public static func monthAndDay(daysFromNow days: Int, from now: Date = .now) -> (month: Int, day: Int) {
+    var utc = Calendar(identifier: .gregorian)
+    utc.timeZone = .gmt
+    let date = utc.date(byAdding: .day, value: days, to: now) ?? now
+    let parts = utc.dateComponents([.month, .day], from: date)
+    return (parts.month ?? 1, parts.day ?? 1)
+  }
+
   /// A new login link for the user, made by the admin. It works once.
   public func loginLink(for person: Fixture.Person) async throws -> URL {
     let link = try await adminSession.post("/users/\(person.id)/login-links")

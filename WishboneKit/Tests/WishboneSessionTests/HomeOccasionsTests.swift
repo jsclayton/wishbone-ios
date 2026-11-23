@@ -232,16 +232,9 @@ struct HomeOccasionsCopyTests {
     let instance = try await Instance()
     let builder = instance.builder
     // Emma's birthday is in 10 days, so it is in the window whatever the zone. The giver's own is far away.
-    var utc = Calendar(identifier: .gregorian)
-    utc.timeZone = .gmt
-    let soon = try #require(utc.date(byAdding: .day, value: 10, to: .now))
-    let far = try #require(utc.date(byAdding: .day, value: 180, to: .now))
-    let day = utc.dateComponents([.month, .day], from: soon)
-    let farDay = utc.dateComponents([.month, .day], from: far)
-    let giver = try await builder.person(
-      "Robin", birthday: (try #require(farDay.month), try #require(farDay.day)))
+    let giver = try await builder.person("Robin", birthday: FixtureBuilder.monthAndDay(daysFromNow: 180))
     let emma = try await builder.person(
-      "Emma", birthday: (try #require(day.month), try #require(day.day)), birthYear: 2017)
+      "Emma", birthday: FixtureBuilder.monthAndDay(daysFromNow: 10), birthYear: 2017)
     _ = try await builder.group("Cousins", users: [giver, emma])
     let list = try await builder.primaryList(of: emma)
     let kite = try await builder.item("Kite", on: list, as: emma)
