@@ -87,7 +87,8 @@ private struct GivingHeading: View {
   var body: some View {
     Text(GiftWords.heading(group))
       .font(.headline)
-      .foregroundStyle(.primary)
+      // The absolute primary color: the hierarchical `.primary` takes the header's own secondary style.
+      .foregroundStyle(Color.primary)
       .textCase(nil)
       .fixedSize(horizontal: false, vertical: true)
       .accessibilityAddTraits(.isHeader)
