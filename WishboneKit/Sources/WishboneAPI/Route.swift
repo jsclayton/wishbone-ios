@@ -20,6 +20,7 @@ public enum Route: String, Sendable, CaseIterable {
   case lists
   case list
   case listRecipients
+  case leaveList
   case listItems
   case item
   case invitations
@@ -42,7 +43,7 @@ public enum Route: String, Sendable, CaseIterable {
       "GET"
     case .redeemLoginLink, .confirmProfile, .uploadImage, .blockStore, .claim: "POST"
     case .updateMe: "PATCH"
-    case .revokeCurrentSession, .unblockStore: "DELETE"
+    case .revokeCurrentSession, .unblockStore, .leaveList: "DELETE"
     }
   }
 
@@ -70,6 +71,7 @@ public enum Route: String, Sendable, CaseIterable {
     case .lists: "/lists"
     case .list: "/lists/{id}"
     case .listRecipients: "/lists/{id}/recipients"
+    case .leaveList: "/lists/{id}/recipients/{user_id}"
     case .listItems: "/lists/{id}/items"
     case .item: "/items/{id}"
     case .invitations: "/invitations"
@@ -92,7 +94,8 @@ public enum Route: String, Sendable, CaseIterable {
     case .health, .redeemLoginLink: true
     case .versions, .updateMe, .users, .user, .groups, .group, .groupUsers, .groupGroups, .occasions, .occasion,
       .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation, .gifts, .gift,
-      .claim, .blockedStores, .blockStore, .unblockStore, .revokeCurrentSession, .confirmProfile, .uploadImage, .me:
+      .claim, .blockedStores, .blockStore, .unblockStore, .leaveList, .revokeCurrentSession, .confirmProfile,
+      .uploadImage, .me:
       false
     }
   }
@@ -111,7 +114,7 @@ public enum Route: String, Sendable, CaseIterable {
       .invitations, .blockedStores:
       Self.paging
     case .health, .redeemLoginLink, .versions, .updateMe, .user, .group, .occasion, .list, .item, .invitation, .gift,
-      .claim, .blockStore, .unblockStore, .revokeCurrentSession, .confirmProfile, .uploadImage, .me:
+      .claim, .blockStore, .unblockStore, .leaveList, .revokeCurrentSession, .confirmProfile, .uploadImage, .me:
       []
     }
   }
@@ -134,7 +137,7 @@ public enum Route: String, Sendable, CaseIterable {
     case .claim: ["Idempotency-Key"]
     case .health, .redeemLoginLink, .users, .user, .groups, .group, .groupUsers, .groupGroups, .occasions, .occasion,
       .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation, .gifts, .gift,
-      .blockedStores, .unblockStore, .revokeCurrentSession, .confirmProfile, .uploadImage, .me:
+      .blockedStores, .unblockStore, .leaveList, .revokeCurrentSession, .confirmProfile, .uploadImage, .me:
       []
     }
   }
@@ -148,7 +151,7 @@ public enum Route: String, Sendable, CaseIterable {
     case .claim: fields(of: ClaimBody.CodingKeys.self)
     case .health, .versions, .users, .user, .groups, .group, .groupUsers, .groupGroups, .occasions, .occasion,
       .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation, .gifts, .gift,
-      .blockedStores, .unblockStore, .revokeCurrentSession, .confirmProfile, .uploadImage, .me:
+      .blockedStores, .unblockStore, .leaveList, .revokeCurrentSession, .confirmProfile, .uploadImage, .me:
       []
     }
   }
@@ -180,7 +183,7 @@ public enum Route: String, Sendable, CaseIterable {
     case .gift, .claim: Gift.fields
     case .blockedStores: Page<VersionedRow<BlockedStore>>.fields
     case .blockStore: BlockedStore.fields
-    case .revokeCurrentSession, .unblockStore: NoContent.fields
+    case .revokeCurrentSession, .unblockStore, .leaveList: NoContent.fields
     }
   }
 }
@@ -409,6 +412,12 @@ extension Endpoint where Response == NoContent {
   /// `docs/spec.md`).
   static func unblockStore(_ id: String) -> Endpoint {
     Endpoint(route: .unblockStore, parameters: ["id": id])
+  }
+
+  /// The recipient leaves the extra list, or their parent makes them leave. It sends no `If-Match` (see "No
+  /// If-Match" in `docs/spec.md`).
+  static func leaveList(_ listID: String, userID: String) -> Endpoint {
+    Endpoint(route: .leaveList, parameters: ["id": listID, "user_id": userID])
   }
 }
 

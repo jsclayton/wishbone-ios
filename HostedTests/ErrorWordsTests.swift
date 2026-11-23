@@ -28,6 +28,7 @@ struct ErrorWordsTests {
       "image_invalid": "Wishbone can't use that file. Choose a JPEG, PNG, GIF, or WebP photo.",
       "birthday_required": "A birthday is required.",
       "admin_has_no_parents": "The admin can't have parents.",
+      "primary_list": "You can't do this to a primary list.",
       "login_link_invalid": "That link was already used, or it has expired. Ask for a new one.",
       "item_fully_claimed": "Someone else just got this.",
       "recipient_cannot_claim": "You can't claim on a list that is for you.",
@@ -40,6 +41,14 @@ struct ErrorWordsTests {
     // A code that is not in the table, and one that the table gives to the server.
     #expect(words("a_code_from_a_later_server", detail: "Something new happened.") == "Something new happened.")
     #expect(words("parent_loop", detail: "Robin can't be their own parent.") == "Robin can't be their own parent.")
+
+    // The codes whose words name a list or a person: the screen that meets them gives the name.
+    #expect(
+      ErrorWords.lastRecipient(of: "Our house")
+        == "You're the only recipient of Our house, so you can't leave it. You can delete it.")
+    #expect(
+      ErrorWords.deactivated("Sam")
+        == "Only the admin can reactivate Sam. Until then, you can't change anything for Sam.")
 
     // The codes that count as success show nothing.
     for code in [

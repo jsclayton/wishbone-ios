@@ -26,7 +26,7 @@ From top to bottom:
 7. For a recipient: the list's other pending invitations, each with who invited them and Withdraw, and **Invite**.
 8. **Leave**, **Make {child} leave**, and **Delete list**, from their `can_*` fields.
 
-**Provisional.** Plain default: a system list. The name is the navigation title, the recipients and the description are the first section, and the items are rows with the image at the leading edge. An item with no image has a tile in its recipient's person color. Edit list, Sort, and Open in New Window are in the toolbar's menu, and Reorder is the toolbar's Edit button.
+**Provisional.** Plain default: a system list. The name is the navigation title, the recipients and the description are the first section, and the items are rows with the image at the leading edge. An item with no image has a tile in its recipient's person color. Edit list, Sort, and Open in New Window are in the toolbar's menu, and Reorder is the toolbar's Edit button. Leave and Make {child} leave are destructive rows in the last section, and each confirmation is an alert, with the warning after its line.
 
 ### Edit list
 
@@ -103,6 +103,7 @@ Decided in the spec: "Move to…", "Reorder", "Add item", "Open in New Window".
 | No items, for someone who can edit | "Nothing here yet. Tap Add item to start the list." |
 | Leave, confirmation | "Leave {list}? You can be invited again." |
 | Make leave, confirmation | "Make {name} leave {list}? {name} can be invited again." |
+| Leave, Make leave, the rows | "Leave", "Make {name} leave". Each row's label reads the action in full: "Leave {list}", "Make {name} leave {list}" |
 | Delete, confirmation | "Delete {list} and its items? This can't be undone." |
 | Edit list, title | "Edit list" |
 | Invite, title | "Invite to {list}" |
