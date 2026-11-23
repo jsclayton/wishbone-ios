@@ -99,6 +99,30 @@ public struct APIClient: Sendable {
     try await load(.uploadImage(file))
   }
 
+  /// `POST /images` with an address: the server downloads the image, such as a store's image from a search. It
+  /// refuses one that it can't fetch with 422 `image_fetch_failed`.
+  public func downloadImage(_ address: String) async throws(APIError) -> ImageSummary {
+    try await load(.downloadImage(address))
+  }
+
+  /// `POST /search`: reads a link, or takes typed words as they are, and gives what the add form shows. It saves
+  /// nothing. A link is read on the server, never by the app.
+  public func search(_ text: String) async throws(APIError) -> SearchResult {
+    let body = try await load(.search(text))
+    guard let result = body.results.first else {
+      throw .undecodable(.init(route: .search, keyPath: "results"))
+    }
+    return result
+  }
+
+  /// `POST /lists/{id}/items`: adds the item at the end of the list. `key` is the add's `Idempotency-Key`. Gives
+  /// back the item, with the version that the answer carried.
+  public func createItem(_ item: NewItem, onList listID: String, key: String) async throws(APIError)
+    -> Versioned<Item>
+  {
+    try await versioned(.createItem(item, onList: listID, key: key))
+  }
+
   /// The request for an image of the instance, such as an avatar, with the session's token. The image's address is
   /// a path under `/api/v2`. Nil for any other address, which never gets the token.
   public func imageRequest(_ image: ImageSummary) -> URLRequest? {
@@ -437,6 +461,10 @@ public struct APIClient: Sendable {
     if let file = endpoint.file {
       request.httpBody = file
       request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+    } else if let form = endpoint.form {
+      let boundary = "wishbone-\(UUID().uuidString)"
+      request.httpBody = Self.multipart(form, boundary: boundary)
+      request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
     } else if let body = endpoint.body {
       guard let data = try? await JSONCoding.encode(body) else { throw .undecodable(.init(route: route, keyPath: "")) }
       request.httpBody = data
@@ -521,6 +549,16 @@ public struct APIClient: Sendable {
       if status == 410, code == .apiVersionRemoved { throw .appTooOld }
       throw .refused(.init(route: route, status: status, code: code, detail: problem.detail, fields: problem.fields))
     }
+  }
+
+  /// A `multipart/form-data` body of text fields.
+  private static func multipart(_ form: [FormField], boundary: String) -> Data {
+    var body = ""
+    for field in form {
+      body += "--\(boundary)\r\nContent-Disposition: form-data; name=\"\(field.name)\"\r\n\r\n\(field.value)\r\n"
+    }
+    body += "--\(boundary)--\r\n"
+    return Data(body.utf8)
   }
 
   /// Whether a write is safe to send once more when its connection was lost before its answer: it is idempotent by

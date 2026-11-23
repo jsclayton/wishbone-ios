@@ -36,6 +36,10 @@ public enum ErrorCode: Sendable, Hashable {
   case itemFullyClaimed
   case recipientCannotClaim
   case occasionNotAllowed
+  case imageFetchFailed
+  case storeBlocked
+  case tooManyImages
+  case tooManyStoreLinks
   case unknown(String)
 
   private static let known: [String: ErrorCode] = [
@@ -71,6 +75,10 @@ public enum ErrorCode: Sendable, Hashable {
     "item_fully_claimed": .itemFullyClaimed,
     "recipient_cannot_claim": .recipientCannotClaim,
     "occasion_not_allowed": .occasionNotAllowed,
+    "image_fetch_failed": .imageFetchFailed,
+    "store_blocked": .storeBlocked,
+    "too_many_images": .tooManyImages,
+    "too_many_store_links": .tooManyStoreLinks,
   ]
 
   /// The server's text for the code, such as `login_link_invalid`.
