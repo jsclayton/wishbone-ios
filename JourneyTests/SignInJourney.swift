@@ -265,7 +265,9 @@ nonisolated final class SignInJourney: JourneyTestCase {
     XCTAssertTrue(
       relaunched.staticTexts.matching(lineWords).firstMatch.exists, "The unreachable view doesn't name the instance.")
     XCTAssertFalse(
-      relaunched.staticTexts[Audit.words("No gifts yet.")].exists, "Gifts claims to be empty.")
+      relaunched.staticTexts[
+        Audit.words("You aren't getting anything yet. Open someone on Home and tap I'll get this.")
+      ].exists, "Gifts claims to be empty.")
     try await Audit.run(on: relaunched, showing: "the unreachable view", in: self)
 
     // Try again syncs. The instance is still gone, so the view stays, and the app goes on.
