@@ -51,6 +51,8 @@ extension SessionModel {
       let item = try? await client.item(id)
       guard !hasEnded else { return .failed }
       try await database.saveClaim(gifts, item: item)
+      // A sync that runs now may have asked before the claim, and can take the gift out of the copy again.
+      syncAgainIfSyncing()
       await publishNow()
       return .claimed
     } catch APIError.refused(let refusal) where refusal.code == .itemFullyClaimed {
