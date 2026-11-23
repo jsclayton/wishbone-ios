@@ -52,9 +52,12 @@ enum Audit {
   /// How long the screen may take to show a setting.
   private static let settleTimeout: Duration = .seconds(60)
 
-  /// The app to launch, in the language that the gate asked for.
+  /// The app to launch, in the language that the gate asked for, on the US storefront. StoreKit gives the
+  /// simulator's storefront late, or not at all, so with its own, Settings would show the Support Wishbone rows
+  /// in some runs and not others, and they could come in after the journey looked for them.
   static func app() -> XCUIApplication {
     let app = XCUIApplication()
+    app.launchEnvironment["WISHBONE_JOURNEY_STOREFRONT"] = "USA"
     if isDoubleLength { app.launchArguments += ["-NSDoubleLocalizedStrings", "YES"] }
     return app
   }
@@ -197,14 +200,41 @@ enum Audit {
     test.add(attachment)
     // Every issue on the screen, so one run reports all of them, not only the first. An audit that ran out of time
     // starts again with none: what it found before the limit is not all of the screen.
+    let audited = "\(screen), in \(setting)"
     var issues: [String] = []
-    try await withRetriesAfterTimeOut("\(screen), in \(setting)") {
-      issues = try performAudit(app, setting: setting, types: types, rows: rows, contentTop: contentTop)
+    var lostElements = 0
+    var lostRetries = 0
+    while true {
+      try await withRetriesAfterTimeOut(audited) {
+        (issues, lostElements) = try performAudit(
+          app, setting: setting, types: types, rows: rows, contentTop: contentTop)
+      }
+      guard lostElements > 0, lostRetries < lostElementRetryLimit else { break }
+      lostRetries += 1
+      print(
+        "The audit of \(audited) named an element that was gone from the screen. It runs again "
+          + "(\(lostRetries) of \(lostElementRetryLimit)).")
+      await reportRetry(audited, at: "lost-element-retries")
+      try await Task.sleep(for: auditRetryPause)
     }
     if !issues.isEmpty {
-      XCTFail("\(screen), in \(setting): \(issues.joined(separator: "; "))")
+      let lost =
+        lostElements > 0 && lostRetries > 0
+        ? " The audit named an element that wasn't on the screen \(lostRetries + 1) times in a row." : ""
+      XCTFail("\(audited): \(issues.joined(separator: "; "))\(lost)")
     }
   }
+
+  /// How many times an audit runs again, after the first time, when an issue that no exception allows has no
+  /// element.
+  ///
+  /// This is the named flake "an audit's issue has no element" in `docs/development.md`. The audit reports an
+  /// issue with its element, and the journey reads the element after the audit, to see whether an exception allows
+  /// it. When the element is gone from the screen by then, as a row under the tab bar can be, XCUI gives none, and
+  /// no exception can tell what it was. Each try is a whole audit, so a screen passes only when one audit gave every
+  /// issue with its element, or none. An issue with no element in every try still fails. Each retry is reported to
+  /// the settings helper, so the gate's line after the run names it, and is in the log.
+  private static let lostElementRetryLimit = 2
 
   /// How many times an audit that ran out of time runs again, after the first time.
   private static let auditRetryLimit = 2
@@ -235,7 +265,7 @@ enum Audit {
       } catch let error where isAuditTimeOut(error) && retries < auditRetryLimit {
         retries += 1
         print("The audit of \(audited) didn't complete in time. It runs again (\(retries) of \(auditRetryLimit)).")
-        await reportRetry(audited)
+        await reportRetry(audited, at: "audit-retries")
         try await Task.sleep(for: auditRetryPause)
       } catch let error where isAuditTimeOut(error) {
         throw AuditError(
@@ -245,52 +275,56 @@ enum Audit {
     }
   }
 
-  /// Tells the settings helper that an audit ran again, so the gate's line names the flake. A run with no helper
-  /// has only the line in the log. A report that doesn't arrive is not a failure: the retry is in the log too.
-  private static func reportRetry(_ audited: String) async {
+  /// Tells the settings helper that an audit ran again, at the path of its flake, so the gate's line names the flake.
+  /// A run with no helper has only the line in the log. A report that doesn't arrive is not a failure: the retry is
+  /// in the log too.
+  private static func reportRetry(_ audited: String, at path: String) async {
     guard let helper else { return }
-    var request = URLRequest(url: helper.appending(path: "audit-retries"))
+    var request = URLRequest(url: helper.appending(path: path))
     request.httpMethod = "POST"
     request.httpBody = Data(audited.utf8)
     request.timeoutInterval = 10
     _ = try? await URLSession.shared.data(for: request)
   }
 
-  /// One run of the audit. Returns each issue that no exception allows.
+  /// One run of the audit. Returns each issue that no exception allows, and how many of them have no element.
   private static func performAudit(
     _ app: XCUIApplication, setting: String, types: XCUIAccessibilityAuditType, rows: [String],
     contentTop: CGFloat?
-  ) throws -> [String] {
+  ) throws -> (issues: [String], lostElements: Int) {
     var issues: [String] = []
+    var lostElements = 0
     let hasCutLink = contentTop.map { hasLinkCut(by: $0, in: app) } ?? false
     try app.performAccessibilityAudit(for: types) { issue in
+      // Each read of an issue's element is a query of the app, so the closure reads it once.
+      let element = issue.element
       // On a scrolled screen, a row that starts above the top of the content is under the top bar, partly or
       // whole. It was in the audit before the scroll, whole.
-      if let contentTop, let element = issue.element, element.frame.minY < contentTop - 1 { return true }
+      if let contentTop, let element, element.frame.minY < contentTop - 1 { return true }
       // On a scrolled screen, while a link inside a line of text shows in part only, under a bar or off the screen's
       // edge, the audit reports Dynamic Type and clipped text issues with no element: the link's runs, which XCUI
       // doesn't give as elements. On a person's page at the largest text size, scrolled to the link's row, the line's
       // link is under the navigation bar, and it gives several of each. The exception is for those two types with no
       // element, and only while a link is cut so. Any other scrolled screen keeps every issue.
-      if issue.element == nil, [.dynamicType, .textClipped].contains(issue.auditType), hasCutLink { return true }
+      if element == nil, [.dynamicType, .textClipped].contains(issue.auditType), hasCutLink { return true }
       // Scan QR code is disabled where the camera is denied or not available, as in the simulator, and the words
       // beside it say why. WCAG's contrast rule leaves out a control that is not active (1.4.3, 1.4.11).
-      if issue.auditType == .contrast, let scan = issue.element, scan.label == words("Scan QR code"), !scan.isEnabled {
+      if issue.auditType == .contrast, let scan = element, scan.label == words("Scan QR code"), !scan.isEnabled {
         return true
       }
       // The system search field draws its prompt on one line, at the system's own size. The audit reports the
       // prompt as clipped also when all of it shows, and when the field holds text. The field's label is the whole
       // prompt, so VoiceOver reads it.
-      if issue.auditType == .textClipped, issue.element?.elementType == .searchField { return true }
+      if issue.auditType == .textClipped, element?.elementType == .searchField { return true }
       // A row that a larger text pushes off the screen can't be measured. See `run`. In the double-length
       // pseudo-language, a row's words start with the words of English too, so the prefix still matches.
-      if issue.auditType == .dynamicType, let row = issue.element?.label, rows.contains(where: row.hasPrefix) {
+      if issue.auditType == .dynamicType, let row = element?.label, rows.contains(where: row.hasPrefix) {
         return true
       }
       // On Acknowledgements, a package's heading is the package's own name, such as GRDB.swift, which the license
       // notice must show as it is. The audit reads a name with a file's extension as not human-readable. The
       // exception is for one word with a dot on that screen only, as a package's name is.
-      if issue.auditType == .sufficientElementDescription, let heading = issue.element,
+      if issue.auditType == .sufficientElementDescription, let heading = element,
         heading.elementType == .staticText, app.navigationBars[words("Acknowledgements")].exists,
         heading.label.contains("."), !heading.label.contains(" ")
       {
@@ -300,7 +334,7 @@ enum Audit {
       // title, such as Acknowledgements in the double-length pseudo-language, doesn't fit the bar, and the system
       // cuts it short. VoiceOver reads the title whole. The element must be the bar's own title, not text on the
       // screen with the same words.
-      if issue.auditType == .textClipped, let title = issue.element, title.elementType == .staticText,
+      if issue.auditType == .textClipped, let title = element, title.elementType == .staticText,
         case let bar = app.navigationBars.firstMatch, bar.exists, bar.identifier == title.label,
         case let barTitle = bar.staticTexts[title.label], barTitle.exists, barTitle.frame == title.frame
       {
@@ -311,7 +345,7 @@ enum Audit {
       // (240, 240, 245), near 18:1. It reports that the text doesn't grow, where iOS shows a bar button in the large
       // content viewer instead. A label with a text style of its own changes neither. The exception is for Done in
       // a navigation bar only: the element must be the bar's Done itself, not another Done on the screen.
-      if [.contrast, .dynamicType].contains(issue.auditType), let done = issue.element, done.elementType == .button,
+      if [.contrast, .dynamicType].contains(issue.auditType), let done = element, done.elementType == .button,
         done.label == words("Done"),
         case let barDone = app.navigationBars.buttons[words("Done")].firstMatch, barDone.exists,
         barDone.frame == done.frame
@@ -321,7 +355,7 @@ enum Audit {
       // Sign out and Continue in the profile gate's bar are the same: the system's own bar buttons, on the system's
       // glass, where the screenshot shows black text on near-white glass, and white on dark glass in dark mode.
       // The exception is for those buttons only. Continue reads "Try again" after the instance couldn't be reached.
-      if [.contrast, .dynamicType].contains(issue.auditType), let button = issue.element,
+      if [.contrast, .dynamicType].contains(issue.auditType), let button = element,
         button.elementType == .button,
         let gateButton = ["Sign out", "Continue", "Try again"].map(words).first(where: { $0 == button.label }),
         app.staticTexts[words("Finish your profile")].exists,
@@ -333,7 +367,7 @@ enum Audit {
       }
       // Add in the add form's bar is the same: the system's own bar button, on the system's glass. The exception is
       // for that button only, while the add form shows.
-      if [.contrast, .dynamicType].contains(issue.auditType), let button = issue.element,
+      if [.contrast, .dynamicType].contains(issue.auditType), let button = element,
         button.elementType == .button, button.label == words("Add"),
         case let form = app.navigationBars[words("Add item")], form.exists,
         // The element must be the bar's button itself, not the back button, which reads "Add" too.
@@ -349,7 +383,7 @@ enum Audit {
       // of the two a row is depends on how long the run's names are. In the other settings, it is only a row that
       // starts above the bar: a long screen, such as Home, has its last row there. An element that ends on the
       // screen under the bar, such as a tab or the bar's own button, is never exempt.
-      if issue.auditType == .contrast, let element = issue.element,
+      if issue.auditType == .contrast, let element,
         case let bar = app.tabBars.firstMatch, bar.exists, element.frame.maxY > bar.frame.minY,
         element.frame.minY < bar.frame.minY
           || (setting == largestText.label && element.frame.maxY > app.windows.firstMatch.frame.maxY)
@@ -357,12 +391,15 @@ enum Audit {
         return true
       }
       // The element's words, its type, such as a text field, and its place, so a failure says which it is.
-      let element =
-        issue.element.map { "\($0.label), element type \($0.elementType.rawValue), at \($0.frame)" } ?? "no element"
-      issues.append("\(issue.compactDescription): \(issue.detailedDescription) (\(element))")
+      // An issue with no element is one that XCUI can't place: its element went from the screen between the audit
+      // and this read. The audit runs again. See `audit`.
+      if element == nil { lostElements += 1 }
+      let described =
+        element.map { "\($0.label), element type \($0.elementType.rawValue), at \($0.frame)" } ?? "no element"
+      issues.append("\(issue.compactDescription): \(issue.detailedDescription) (\(described))")
       return true
     }
-    return issues
+    return (issues, lostElements)
   }
 
   /// Whether a link inside a line of text shows on the screen in part only: some of it is on the window, and some of
