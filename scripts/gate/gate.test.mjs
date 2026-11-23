@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 
+import { crashReport } from './crash-report-fixture.mjs';
 import { eventStream, xctestLog } from './event-stream-fixture.mjs';
 import { duration, readFloor, runGate } from './gate.mjs';
 import { checkEventStream } from './reading.mjs';
@@ -96,6 +97,53 @@ test('a test run that failed to build gives its exit code', async (t) => {
   const step = { name: 'package', command: ['false'], limitMs: noLimitMs, check: ({ exit }) => checkEventStream(events, { exit, countName: 'package' }) };
   const result = await runGate({ ...options, steps: [step] });
   assert.equal(result.line, 'GATE FAIL step 1 (package): exit 1 (log: run/1-package.log)');
+});
+
+test("a step whose test process crashed keeps the crash report, and the failure line says where it crashed", async (t) => {
+  const { root, options, lines } = gateIn(t);
+  const reports = path.join(root, 'DiagnosticReports');
+  mkdirSync(reports);
+  const fixture = path.join(root, 'crash.ips');
+  writeFileSync(fixture, crashReport());
+  // The step's test process crashes, and macOS writes its report, as `swift test` and ReportCrash do.
+  const name = 'swiftpm-testing-helper-2026-11-23-074005.ips';
+  const step = {
+    name: 'package',
+    command: ['sh', '-c', `echo "exited with unexpected signal code 6"; cp "${fixture}" "${path.join(reports, name)}"; exit 1`],
+    limitMs: noLimitMs,
+    crashes: (report) => report.process === 'swiftpm-testing-helper',
+  };
+  const result = await runGate({ ...options, steps: [step], crashReports: { directory: reports, waitMs: 0 } });
+  assert.equal(
+    result.line,
+    'GATE FAIL step 1 (package): exit 1 (log: run/1-package.log)' +
+      ' · swiftpm-testing-helper crashed (SIGABRT) at NetworkConditioner.Core.forward(_:) (NetworkConditioner.swift:520)' +
+      ' ← NetworkConditioner.Core.serve(_:) (NetworkConditioner.swift:475)' +
+      ` ← closure #2 in NetworkConditioner.Core.accept(_:) (NetworkConditioner.swift:438) (report: run/${name})`,
+  );
+  assert.equal(lines().at(-1), result.line);
+  assert.equal(readFileSync(path.join(options.runDirectory, name), 'utf8'), crashReport());
+});
+
+test('a step that passes keeps no crash report, and a crash report that no step claims is not kept', async (t) => {
+  const { root, options } = gateIn(t);
+  const reports = path.join(root, 'DiagnosticReports');
+  mkdirSync(reports);
+  const fixture = path.join(root, 'crash.ips');
+  writeFileSync(fixture, crashReport());
+  const crashing = (name, exit, more = {}) => ({
+    name,
+    command: ['sh', '-c', `cp "${fixture}" "${path.join(reports, `${name}.ips`)}"; exit ${exit}`],
+    limitMs: noLimitMs,
+    ...more,
+  });
+  const passed = await runGate({ ...options, steps: [crashing('package', 0, { crashes: () => true })], crashReports: { directory: reports, waitMs: 0 } });
+  assert.equal(passed.ok, true);
+  // A step with no `crashes` claims no report.
+  const failing = crashing('lint', 3);
+  const failed = await runGate({ ...options, steps: [failing], crashReports: { directory: reports, waitMs: 0 } });
+  assert.equal(failed.line, 'GATE FAIL step 1 (lint): exit 3 (log: run/1-lint.log)');
+  assert.deepEqual(readdirSync(options.runDirectory).filter((file) => file.endsWith('.ips')), []);
 });
 
 test('a test run that passes with no summary fails', async (t) => {

@@ -3,6 +3,7 @@
 // Its last line is the result, for example `GATE PASS package=34 hosted=0 ui=0 · 1m12s`.
 
 import { execFileSync } from 'node:child_process';
+import { readdirSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 
@@ -26,6 +27,15 @@ const simulatorDirectory = path.join(runDirectory, 'simulator');
 // (`Module.Suite/function()`), with a comment that says why. A skipped or cancelled test that is not here fails
 // the gate.
 const allowedSkips = [];
+
+// The processes whose crash reports a failed step keeps (see crashes.mjs). `swift test` runs each test target's
+// tests in a process of Xcode's (`swiftpm-testing-helper` for Swift Testing, `xctest` for XCTest) that loads the
+// target's test binary, so the report is known by that binary. The hosted tests run inside the app, and the
+// journeys drive the app and its extensions from a runner.
+const packageTestTargets = readdirSync(path.join(root, 'WishboneKit', 'Tests'));
+const packageCrashes = (report) =>
+  ['swiftpm-testing-helper', 'xctest'].includes(report.process) && report.images.some((name) => packageTestTargets.includes(name));
+const simulatorCrashes = (report) => ['Wishbone', 'ShareExtension', 'WidgetExtension', 'JourneyTests-Runner'].includes(report.process);
 
 // Keep the sum of the steps' limits under the Gate job's `timeout-minutes` in .github/workflows/ci.yml. If the
 // sum is over it, the job's limit can cut the gate off before a step's limit does, and the run ends with no
@@ -57,6 +67,7 @@ const steps = [
     limitMs: 10 * minute,
     counts: ['package'],
     check: ({ exit, logPath }) => checkEventStream(packageEvents, { exit, countName: 'package', allowedSkips, xctestLog: logPath }),
+    crashes: packageCrashes,
   },
   {
     name: 'build',
@@ -94,6 +105,7 @@ const steps = [
     slot: true,
     counts: ['hosted', 'ui'],
     check: ({ exit }) => checkResultBundles(resultBundles(simulatorDirectory), { exit, allowedSkips }),
+    crashes: simulatorCrashes,
     // The simulator belongs to the system, so stopping the step's processes at its limit leaves it running.
     after: shutDownSimulator,
   },
