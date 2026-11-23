@@ -16,7 +16,7 @@ import WishboneSession
 /// A countdown occasion that opens a page is one button: a person's occasion opens their page, and a shared occasion
 /// its page. A shared occasion also has "See who's on it", its own button, which opens the same page. A Coming up
 /// row that opens a page is one link: a person's occasion opens their page, the user's own opens their primary list,
-/// and a shared occasion opens its page. The "Coming up" heading is a link that pushes the Occasions screen.
+/// and a shared occasion opens its page. The "Coming up" heading is a button that pushes the Occasions screen.
 ///
 /// **Provisional.** Plain default: a system list. The countdown is a card in the occasion's person color, one row
 /// for each occasion. The "People" heading is a row that pushes the People page. Each
@@ -123,16 +123,10 @@ struct HomeScreen: View {
     }
   }
 
-  /// Coming up: its heading, which pushes the Occasions screen, then every occasion in the next 60 days, the
-  /// soonest first, or its empty line.
+  /// Coming up: every occasion in the next 60 days, the soonest first, or its empty line, under a heading that
+  /// pushes the Occasions screen.
   @ViewBuilder private func comingUp(_ occasions: [HomeOccasion]) -> some View {
     Section {
-      // A row that pushes the Occasions screen, as the "People" heading pushes the People page.
-      NavigationLink(value: Page.occasions) {
-        Text("Coming up", bundle: #bundle)
-          .font(.title2.weight(.bold))
-      }
-      .accessibilityAddTraits(.isHeader)
       if occasions.isEmpty {
         // In the primary color: the line can sit under the tab bar's glass, where the secondary color fails the
         // contrast rule.
@@ -147,6 +141,26 @@ struct HomeScreen: View {
           ComingUpRow(occasion: occasion, session: session)
         }
       }
+    } header: {
+      // A button that pushes the Occasions screen. The label color itself: in a section's header, `.primary` is the
+      // header's gray, which fails the contrast rule where the heading sits under the tab bar's glass, at the
+      // largest text size.
+      Button {
+        pages.append(.occasions)
+      } label: {
+        HStack(spacing: 4) {
+          Text("Coming up", bundle: #bundle)
+            .font(.title2.weight(.bold))
+          Image(systemName: "chevron.forward")
+            .font(.headline)
+            .accessibilityHidden(true)
+        }
+        .foregroundStyle(Color.primary)
+        .contentShape(.rect)
+      }
+      .buttonStyle(.plain)
+      .textCase(nil)
+      .accessibilityAddTraits(.isHeader)
     }
   }
 
