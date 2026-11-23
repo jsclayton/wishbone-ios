@@ -385,19 +385,26 @@ export function settingsApplier(
  * XCTest said that it didn't complete in time: the named flake "an accessibility audit doesn't complete in time on
  * a CI runner" in docs/development.md. It answers 204. `POST /screenshot-retries`, with the screen and setting as
  * the body, records the same for a screenshot that XCTest didn't get in time: the named flake "XCTest doesn't get a
- * screenshot on a CI runner".
+ * screenshot on a CI runner". `POST /lost-element-retries`, the same way, records an audit that ran again because an
+ * issue that no exception allows had no element: the named flake "an audit's issue has no element".
  *
- * Resolves with `{ address, close, screens, resends, auditRetries, screenshotRetries }`, where `screens()` gives the names, in the
+ * Resolves with `{ address, close, screens, resends, auditRetries, screenshotRetries, lostElementRetries }`, where `screens()` gives the names, in the
  * order they came, `resends()` gives each change that a journey sent again: `{ setting, after, read }`, with the
  * settings' labels and what `readSettings` read before the change was sent again, and `auditRetries()` gives each
  * audit that ran again, by its screen and setting, in the order they came. `screenshotRetries()` gives each
- * screenshot that was asked for again, the same way.
+ * screenshot that was asked for again, the same way, and `lostElementRetries()` each audit that ran again for an
+ * issue with no element.
  */
 export function startSettingsHelper(applySetting, { readSettings = async () => 'not read' } = {}) {
   const resends = [];
   const auditRetries = [];
   const screenshotRetries = [];
-  const retries = { '/audit-retries': [auditRetries, 'audit'], '/screenshot-retries': [screenshotRetries, 'screenshot'] };
+  const lostElementRetries = [];
+  const retries = {
+    '/audit-retries': [auditRetries, 'audit'],
+    '/screenshot-retries': [screenshotRetries, 'screenshot'],
+    '/lost-element-retries': [lostElementRetries, 'audit'],
+  };
   const screens = new Set();
   const server = createServer((request, response) => {
     if (Object.hasOwn(retries, request.url ?? '')) {
@@ -473,6 +480,7 @@ export function startSettingsHelper(applySetting, { readSettings = async () => '
         resends: () => resends.map((one) => ({ ...one })),
         auditRetries: () => [...auditRetries],
         screenshotRetries: () => [...screenshotRetries],
+        lostElementRetries: () => [...lostElementRetries],
       });
     });
   });
@@ -483,6 +491,22 @@ export const resendFlake = "a change of setting doesn't show in the app";
 
 /** The name of the flake that a journey meets by running an audit again. See `startSettingsHelper`. */
 export const auditTimeOutFlake = "an accessibility audit doesn't complete in time on a CI runner";
+
+/** The name of the flake that a journey meets by running an audit again for an issue with no element. */
+export const lostElementFlake = "an audit's issue has no element";
+
+/**
+ * The lines after a run of the journeys, one for each audit that ran again because an issue that no exception allows
+ * had no element (`lostElementRetries()` of `startSettingsHelper`). None when no audit ran again for that.
+ */
+export function lostElementRetryLines(retries) {
+  if (retries.length === 0) return [];
+  const audits = retries.length === 1 ? '1 audit' : `${retries.length} audits`;
+  return [
+    `  The journeys ran ${audits} again, because an issue had no element (the named flake "${lostElementFlake}"):`,
+    ...retries.map((audit) => `    ${audit}.`),
+  ];
+}
 
 /** The name of the flake that a journey meets by asking for a screenshot again. See `startSettingsHelper`. */
 export const screenshotTimeOutFlake = "XCTest doesn't get a screenshot on a CI runner";
@@ -709,6 +733,7 @@ export async function runSimulatorTier({ root, directory, build = true, say = co
           for (const line of resendLines(helper.resends())) say(line);
           for (const line of auditRetryLines(helper.auditRetries())) say(line);
           for (const line of screenshotRetryLines(helper.screenshotRetries())) say(line);
+          for (const line of lostElementRetryLines(helper.lostElementRetries())) say(line);
         }
         return { passed, reading };
       };

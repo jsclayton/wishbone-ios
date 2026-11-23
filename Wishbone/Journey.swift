@@ -2,6 +2,7 @@
   import Foundation
   import WishboneAPI
   import WishboneSession
+  import WishboneUI
 
   /// What a journey (an XCUITest of the whole app) asks of the app at launch. A journey launches the app with a
   /// login link passed in as if pasted. See "The simulator tier" in `docs/development.md`.
@@ -13,6 +14,27 @@
 
     /// Set to start the launch signed out: the app first forgets the session of an earlier launch.
     static let signedOutVariable = "WISHBONE_JOURNEY_START_SIGNED_OUT"
+
+    /// Set to a country code, such as "USA", to fix the App Store storefront at launch. StoreKit gives the
+    /// simulator's storefront late, or not at all, so a journey would see the Support Wishbone row come and go.
+    static let storefrontVariable = "WISHBONE_JOURNEY_STOREFRONT"
+
+    /// The storefront that the launch environment fixes, or `nil` to read StoreKit's.
+    static var storefront: (any StorefrontSource)? {
+      guard let code = ProcessInfo.processInfo.environment[storefrontVariable], !code.isEmpty else { return nil }
+      return FixedStorefront(code: code)
+    }
+
+    /// A storefront that is the same from launch, and never changes.
+    private struct FixedStorefront: StorefrontSource {
+      let code: String
+
+      func current() async -> String? { code }
+
+      func updates() -> AsyncStream<String> {
+        AsyncStream { $0.finish() }
+      }
+    }
 
     /// Forgets the session that an earlier journey left: the session keychain's item, which outlives the app on
     /// a simulator, and the local databases.

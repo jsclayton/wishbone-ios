@@ -59,9 +59,10 @@ nonisolated final class SignInJourney: JourneyTestCase {
     XCTAssertTrue(title.waitForExistence(timeout: 60), "The profile gate didn't show after the sign-in.")
     XCTAssertFalse(app.tabBars.firstMatch.exists, "The tabs show behind the profile gate.")
     XCTAssertTrue(app.staticTexts[Audit.words("Check your name and birthday. Your family sees them.")].exists)
-    // The name field holds the profile's name.
+    // The name field holds the profile's name. The field can fill a moment after the gate's title shows, so the
+    // journey waits for it.
     let nameField = app.descendants(matching: .any).matching(NSPredicate(format: "value == %@", sam.name)).firstMatch
-    XCTAssertTrue(nameField.exists, "The name field doesn't hold the profile's name.")
+    XCTAssertTrue(nameField.waitForExistence(timeout: 10), "The name field doesn't hold the profile's name.")
     XCTAssertTrue([.textField, .textView].contains(nameField.elementType), "The name is not in a field.")
     XCTAssertTrue(app.buttons[Audit.words("Add a photo")].exists, "The gate has no photo control.")
     XCTAssertTrue(gate.buttons[Audit.words("Sign out")].exists, "The gate has no Sign out.")

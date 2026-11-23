@@ -10,6 +10,8 @@ import { readTestResults } from './xcresult.mjs';
 import {
   auditRetryLines,
   auditTimeOutFlake,
+  lostElementFlake,
+  lostElementRetryLines,
   buildArguments,
   compiledFiles,
   gateSimulators,
@@ -671,7 +673,42 @@ test("a journey runs a timed-out audit again a bounded number of times, and only
   assert.ok(limit >= 1 && limit <= 2, `Audit.swift runs a timed-out audit again ${limit} times`);
   assert.match(audit, /error\.domain == "com\.apple\.xcode\.xctest\.accessibilityAudit" && error\.code == -56/);
   // The journey reports each retry at the path that the helper reads.
-  assert.match(audit, /helper\.appending\(path: "audit-retries"\)/);
+  assert.match(audit, /helper\.appending\(path: path\)/);
+  assert.match(audit, /reportRetry\(audited, at: "audit-retries"\)/);
+});
+
+test('the settings helper remembers each audit that ran again for an issue with no element, apart from the time-outs', async (t) => {
+  const { applier, ran } = fakeSimulator();
+  const helper = await startSettingsHelper((setting, options) => applier.apply(setting, options));
+  t.after(() => helper.close());
+  const post = (body, method = 'POST') => fetch(`${helper.address}/lost-element-retries`, { method, body });
+  assert.deepEqual(helper.lostElementRetries(), []);
+  assert.equal((await post('Home, in the largest text size')).status, 204);
+  assert.deepEqual(helper.lostElementRetries(), ['Home, in the largest text size']);
+  // An audit with no name, or a request that isn't a POST, is not a retry.
+  assert.equal((await post('')).status, 400);
+  assert.equal((await post(undefined, 'GET')).status, 404);
+  assert.equal(helper.lostElementRetries().length, 1);
+  // It is not an audit that timed out, changes no setting, and is not a screen.
+  assert.deepEqual(helper.auditRetries(), []);
+  assert.deepEqual(ran, []);
+  assert.deepEqual(helper.screens(), []);
+});
+
+test('the line after the journeys names each audit run again for an issue with no element, and the flake', () => {
+  assert.deepEqual(lostElementRetryLines([]), []);
+  assert.deepEqual(lostElementRetryLines(['Home, in the largest text size']), [
+    `  The journeys ran 1 audit again, because an issue had no element (the named flake "${lostElementFlake}"):`,
+    '    Home, in the largest text size.',
+  ]);
+  assert.match(lostElementRetryLines(['a', 'b'])[0], /ran 2 audits again/);
+});
+
+test('a journey runs an audit again for an issue with no element a bounded number of times', () => {
+  const audit = readFileSync(new URL('../../JourneyTests/Audit.swift', import.meta.url), 'utf8');
+  const limit = Number(/static let lostElementRetryLimit = (\d+)/.exec(audit)[1]);
+  assert.ok(limit >= 1 && limit <= 2, `Audit.swift runs an audit again ${limit} times for an issue with no element`);
+  assert.match(audit, /reportRetry\(audited, at: "lost-element-retries"\)/);
 });
 
 test('the settings helper remembers each screenshot that was asked for again, apart from the audits', async (t) => {

@@ -15,8 +15,16 @@ struct WishboneApp: App {
   @State private var diagnostics: DiagnosticsSettings
 
   /// Whether the Support Wishbone row may show: the storefront and the build's address. Every window's Settings
-  /// reads it.
-  @State private var support = SupportWishbone(source: AppStorefront(), address: AppAbout.current.support)
+  /// reads it. A journey can fix the storefront, in a Debug build.
+  @State private var support = SupportWishbone(source: Self.storefront, address: AppAbout.current.support)
+
+  /// StoreKit's storefront, or the one a journey's launch fixes.
+  private static var storefront: any StorefrontSource {
+    #if DEBUG
+      if let fixed = Journey.storefront { return fixed }
+    #endif
+    return AppStorefront()
+  }
 
   /// The phase of the app as a whole: `.background` once no window is in the foreground.
   @Environment(\.scenePhase) private var phase

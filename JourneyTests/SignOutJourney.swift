@@ -55,19 +55,17 @@ nonisolated final class SignOutJourney: JourneyTestCase {
     XCTAssertTrue(signedIn.waitForExistence(timeout: 10), "Settings doesn't show the name and \(address).")
     // The rows under Sign out, which a larger text pushes off. At the largest text size they are below the fold,
     // so the journey scrolls each on the screen there.
-    // Support Wishbone shows only on the US storefront, which the simulator may or may not have, so its header, row
-    // and footer are in the list only when the row shows.
-    let support = [
-      "Support Wishbone", "Buy John a coffee", "Wishbone is free and open source. A coffee unlocks nothing in the app.",
+    // The journey's launch fixes the US storefront (see `Audit.app()`), and Robin has no parents, so Support
+    // Wishbone's header, row and footer show.
+    XCTAssertTrue(
+      app.descendants(matching: .any).matching(
+        NSPredicate(format: "label BEGINSWITH %@", Audit.words("Buy John a coffee"))
+      ).firstMatch.waitForExistence(timeout: 10), "Settings doesn't show Support Wishbone on the US storefront.")
+    let rowsBelow = [
+      "Share diagnostics", "Support Wishbone", "Buy John a coffee",
+      "Wishbone is free and open source. A coffee unlocks nothing in the app.", "About", "Source code",
+      "Acknowledgements", "Version",
     ]
-    // The storefront comes from StoreKit after the sheet shows, and can be slow. So the journey waits for the row,
-    // and the audit never meets rows it doesn't expect. Where the storefront isn't the US, the wait runs out, and the
-    // rows are not in the list.
-    let showsSupport = app.descendants(matching: .any).matching(
-      NSPredicate(format: "label BEGINSWITH %@", Audit.words("Buy John a coffee"))
-    ).firstMatch.waitForExistence(timeout: 10)
-    let rowsBelow =
-      ["Share diagnostics"] + (showsSupport ? support : []) + ["About", "Source code", "Acknowledgements", "Version"]
     // Reminders leaves the screen too, but the journey doesn't scroll to it: the scroll stops with the long help line
     // above it half under the bar, and the audit reports that line with no element, so it can't be told apart.
     try await Audit.run(
