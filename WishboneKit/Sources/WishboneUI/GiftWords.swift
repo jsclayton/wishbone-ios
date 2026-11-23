@@ -7,9 +7,14 @@ public enum GiftWords {
   /// "For Mom and Dad · Christmas", or "For Mom and Dad · Hidden until Mar 4" when the giver can't see the
   /// occasion. With no recipients that the giver can see, only "Christmas" or "Hidden until Mar 4".
   public static func heading(_ group: GivingGroup) -> String {
-    let occasion = occasion(group.occasion)
-    guard let recipients = group.recipients, !recipients.isEmpty else { return occasion }
-    let names = recipients.map(\.name).formatted(.list(type: .and))
+    heading(recipients: group.recipients?.map(\.name), occasion: group.occasion)
+  }
+
+  /// The heading from the recipients' names, nil when the giver can't see the list, and the occasion.
+  public static func heading(recipients: [String]?, occasion: ItemPage.ClaimLine.Occasion) -> String {
+    let occasion = self.occasion(occasion)
+    guard let recipients, !recipients.isEmpty else { return occasion }
+    let names = recipients.formatted(.list(type: .and))
     return String(
       localized: "For \(names) · \(occasion)", bundle: #bundle,
       comment: "A Giving heading: who the gifts are for, then the occasion or the reveal date")
