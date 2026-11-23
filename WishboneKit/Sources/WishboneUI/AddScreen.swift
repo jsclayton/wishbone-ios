@@ -18,9 +18,6 @@ struct AddScreen: View {
   /// after a change of tab.
   @Binding var state: AddScreenState
 
-  /// The window's pages on this tab: the "Added" row pushes the item's page.
-  @Binding var pages: [Page]
-
   @FocusState private var isFieldFocused: Bool
 
   /// The add form, pushed after a search. It is not restored with the window.
@@ -36,16 +33,9 @@ struct AddScreen: View {
     List {
       if let added = state.added {
         Section {
-          Button {
-            pages.append(.item(id: added.id))
-          } label: {
-            Label {
-              // A long title wraps, and is never cut short.
-              Text("Added \(added.title) to \(added.listName)", bundle: #bundle)
-                .fixedSize(horizontal: false, vertical: true)
-            } icon: {
-              Image(systemName: "checkmark.circle.fill")
-            }
+          // It pushes the item's page on this tab's stack.
+          NavigationLink(value: Page.item(id: added.id)) {
+            Text("Added \(added.title) to \(added.listName)", bundle: #bundle)
           }
         }
       }

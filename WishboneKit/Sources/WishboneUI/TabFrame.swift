@@ -68,7 +68,7 @@ public struct TabFrame: View {
 
       // The plus: the round button that the system sets apart at the end of the tab bar.
       Tab(value: WindowTab.add, role: .search) {
-        stack(on: .add) { AddScreen(session: session, state: $add, pages: $place[pagesOn: .add]) }
+        stack(on: .add) { AddScreen(session: session, state: $add) }
       } label: {
         Label {
           Text("Add", bundle: #bundle)
