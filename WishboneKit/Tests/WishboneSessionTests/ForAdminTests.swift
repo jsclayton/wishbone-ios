@@ -37,18 +37,41 @@ struct ForAdminTests {
     [family.admin, family.parent, family.child, family.deactivatedChild, family.relative, family.outsider]
   }
 
-  @Test("Only the admin gets For the admin")
-  func onlyTheAdmin() async throws {
+  /// The people of a standard family who aren't the admin.
+  enum NonAdmin: CaseIterable, Sendable, CustomTestStringConvertible {
+    case parent, child, relative, outsider
+
+    func person(of family: StandardFamily) -> Fixture.Person {
+      switch self {
+      case .parent: family.parent
+      case .child: family.child
+      case .relative: family.relative
+      case .outsider: family.outsider
+      }
+    }
+
+    var testDescription: String { "\(self)" }
+  }
+
+  // One sign-in for each test, so that each stays well within its time limit on a loaded runner.
+  @Test("A person who isn't the admin doesn't get For the admin", arguments: NonAdmin.allCases)
+  func notTheAdmin(_ role: NonAdmin) async throws {
+    let instance = try await Instance()
+    let family = try await instance.builder.standardFamily()
+    let person = role.person(of: family)
+
+    let session = try await signedIn(as: person, on: instance)
+    try await untilInStep(session, as: person)
+    // Before the copy holds the user's own record, no session is the admin's. So the check counts only after.
+    #expect(session.user?.record != nil)
+    #expect(session.peoplePage.forAdmin == nil)
+  }
+
+  @Test("The admin gets For the admin")
+  func theAdmin() async throws {
     let instance = try await Instance()
     let family = try await instance.builder.standardFamily()
 
-    for person in [family.parent, family.child, family.relative, family.outsider] {
-      let session = try await signedIn(as: person, on: Instance(server: instance.server))
-      try await untilInStep(session, as: person)
-      // Before the copy holds the user's own record, no session is the admin's. So the check counts only after.
-      #expect(session.user?.record != nil, "\(person.name)")
-      #expect(session.peoplePage.forAdmin == nil, "\(person.name)")
-    }
     let admin = try await signedIn(as: family.admin, on: instance)
     await until { admin.user?.record != nil }
     #expect(admin.peoplePage.forAdmin != nil)
