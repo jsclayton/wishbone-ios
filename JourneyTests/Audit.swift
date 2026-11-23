@@ -41,6 +41,11 @@ enum Audit {
   /// Catalog twice. Text that is cut short then fails the audit, and text that is not in the catalog stays single.
   static let isDoubleLength = ProcessInfo.processInfo.environment["WISHBONE_DOUBLE_LENGTH"] == "YES"
 
+  /// How many days on a journey person's birthday is, from the run's date, in UTC. It is far past Home's 60 days, so
+  /// a journey that reaches Home sees the same screen on every date. The builder's own birthday, 15 June, is in
+  /// Home's 60 days from 16 April each year.
+  static let farOff = 180
+
   /// The words of the setting that a run with no helper audits in.
   private static let ownSetting = isDoubleLength ? "the double-length pseudo-language" : "the simulator's settings"
 
