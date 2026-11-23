@@ -1,8 +1,8 @@
 // The simulator tier: the hosted test bundle, then the journeys, on the gate's own simulator. `just simulator`
-// runs it, and it is step 5 of the gate. See "The simulator tier" in docs/development.md.
+// runs it, and it is step 6 of the gate. See "The simulator tier" in docs/development.md.
 //
 // It builds as `just build` does, with the same arguments, and runs the tests from that build's `.xctestrun`
-// file. Under the gate (`--no-build`), it doesn't build: step 4 is `just build`, so it runs step 4's build.
+// file. Under the gate (`--no-build`), it doesn't build: step 5 is `just build`, so it runs step 5's build.
 //
 // The journeys run twice. In the first run, each screen that the journeys reach is audited in the four settings
 // of the audit, once: the journey asks this script's settings helper, a small HTTP server on the Mac, whether a
@@ -33,8 +33,8 @@ const preferredDevice = 'iPhone 18 Pro';
 
 /**
  * The arguments of the one build of the app and its test bundles, for the simulator, in `xcodebuild`'s order.
- * `just build` (step 4 of the gate) builds with these, and so does this script, so the simulator step reuses
- * step 4's build. A gate test holds the justfile to them.
+ * `just build` (step 5 of the gate) builds with these, and so does this script, so the simulator step reuses
+ * step 5's build. A gate test holds the justfile to them.
  */
 export const buildArguments = [
   'build-for-testing',
@@ -653,7 +653,7 @@ function xcodebuild(args, { root, log, env = {} }) {
  * ends it. Returns true when every run passed.
  *
  * With `build: false`, it doesn't build: it runs the tests that `just build` built. The gate asks for that, because
- * its step 4 has just built them. On CI, a build next to a newly booted simulator took minutes, even with nothing
+ * its step 5 has just built them. On CI, a build next to a newly booted simulator took minutes, even with nothing
  * to compile.
  */
 export async function runSimulatorTier({ root, directory, build = true, say = console.log }) {

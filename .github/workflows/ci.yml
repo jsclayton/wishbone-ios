@@ -99,7 +99,7 @@ jobs:
     # Above the sum of the limits of the gate's steps (scripts/gate/main.mjs),
     # with room for the job's own steps before the gate, so that a hung step is
     # stopped by the gate, which says which step it was. A gate test holds it.
-    timeout-minutes: 110
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Select Xcode

@@ -385,7 +385,7 @@ test("the Gate job's limit in CI is above the sum of the gate's step limits, wit
   const main = readFileSync(new URL('./main.mjs', import.meta.url), 'utf8');
   const ci = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
   const stepMinutes = [...main.matchAll(/^\s+limitMs: (\d+) \* minute,$/gm)].map((match) => Number(match[1]));
-  assert.equal(stepMinutes.length, 5, 'each of the five steps has a limit in whole minutes');
+  assert.equal(stepMinutes.length, 6, 'each of the six steps has a limit in whole minutes');
   const gateJob = ci.slice(ci.indexOf('\n  gate:\n'), ci.indexOf('\n  ci-ok:\n'));
   const jobMinutes = Number(/^\s+timeout-minutes: (\d+)$/m.exec(gateJob)[1]);
   const sum = stepMinutes.reduce((total, minutes) => total + minutes, 0);
@@ -402,4 +402,18 @@ test('the package tests run at most 8 at a time, so that a time limit counts one
   const recipe = /^test \*args: server\n((?:    .*\n)+)/m.exec(justfile);
   assert.ok(recipe, 'the justfile has the test recipe');
   assert.match(recipe[1], /^    swift test --package-path WishboneKit --experimental-maximum-parallelization-width 8 "\$@"$/m);
+});
+
+// The package step's time is the tests' own, so that its limit measures the tests, and the build has a limit of
+// its own (issue #199). `--skip-build` runs what the step before built, and fails when it built nothing.
+test('the package tests are built in the step before the package step, which runs them without a build', () => {
+  const main = readFileSync(new URL('./main.mjs', import.meta.url), 'utf8');
+  const justfile = readFileSync(new URL('../../justfile', import.meta.url), 'utf8');
+  const names = [...main.matchAll(/^\s+name: '([a-z-]+)',$/gm)].map((match) => match[1]);
+  assert.deepEqual(names, ['lint', 'server', 'package-build', 'package', 'build', 'simulator']);
+  assert.match(main, /name: 'package-build',\n\s+command: \['just', 'build-package'\],/);
+  assert.match(main, /name: 'package',\n\s+command: \['just', 'test', '--skip-build',/);
+  const recipe = /^build-package:\n((?:    .*\n)+)/m.exec(justfile);
+  assert.ok(recipe, 'the justfile has the build-package recipe');
+  assert.match(recipe[1], /^    swift build --package-path WishboneKit --build-tests$/m);
 });

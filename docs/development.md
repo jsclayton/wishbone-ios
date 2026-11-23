@@ -252,9 +252,10 @@ To move the pin:
 
 1. **Lint:** `swift-format lint --strict`, and the rest of `just lint`.
 2. **Server:** builds the pinned test server, or reuses the built one.
-3. **Package:** `swift test` on macOS, in parallel: the contract test, the fitness tests, the session model, the secrecy suite, and the pure units.
-4. **Build:** the app, the share extension, the widget, and the test bundles for the simulator, with zero warnings. It is the simulator step's build too. Then the check that the build changed nothing that is in git (see [What the build writes](#what-the-build-writes)).
-5. **Simulator:** `just simulator`: the hosted test bundle, then the journeys twice, one at a time, on the gate's own simulator: once with the audit in the four settings, and once in the double-length pseudo-language. It doesn't build: it runs the tests from step 4's `.xctestrun` file. `just simulator` by itself builds first, with the same arguments as `just build`. The result bundles stay inside the checkout, in `build/gate/run/simulator/`, with the log of each run.
+3. **Package build:** `just build-package`: the package and its tests, for macOS.
+4. **Package:** `just test --skip-build`: the tests that step 3 built, on macOS, in parallel: the contract test, the fitness tests, the session model, the secrecy suite, and the pure units.
+5. **Build:** the app, the share extension, the widget, and the test bundles for the simulator, with zero warnings. It is the simulator step's build too. Then the check that the build changed nothing that is in git (see [What the build writes](#what-the-build-writes)).
+6. **Simulator:** `just simulator`: the hosted test bundle, then the journeys twice, one at a time, on the gate's own simulator: once with the audit in the four settings, and once in the double-length pseudo-language. It doesn't build: it runs the tests from step 5's `.xctestrun` file. `just simulator` by itself builds first, with the same arguments as `just build`. The result bundles stay inside the checkout, in `build/gate/run/simulator/`, with the log of each run.
 
 The gate reads its own results:
 
@@ -266,8 +267,8 @@ The gate reads its own results:
 - A test that cancels itself with `Test.cancel`, or that has a case cancelled, is a skip. So is an XCTest test that throws `XCTSkip`.
 - It fails when a count falls below the **floor**: the counts (package, hosted, and UI) in a small file in git, `scripts/gate/floor.json`. A change that adds tests can raise the floor. A commit that lowers it must say why.
 - The named list of skips is `allowedSkips` in `scripts/gate/main.mjs`. Each entry has a comment that says why.
-- When the package step or the simulator step fails, the gate keeps the crash reports of its test processes. macOS writes a report to `~/Library/Logs/DiagnosticReports/` when a process crashes, on the Mac or in a simulator. The gate copies each report written since the step started into `build/gate/run/`, so CI's `gate-results` artifact has it. It waits up to 5 seconds for a report that is still to come. The failure line then says where the first process crashed: its name, its signal, and the crashed thread's top frames in the test's own code, for example `GATE FAIL step 3 (package): exit 1 (log: …) · swiftpm-testing-helper crashed (SIGABRT) at NetworkConditioner.Core.forward(_:) (NetworkConditioner.swift:520) ← … (report: build/gate/run/<name>.ips)`. A report names a file in the user's folder without its path, so the gate knows a report by its process and its test binary's name (`crashes` in `scripts/gate/main.mjs`). On a shared machine, a crash of the same tests in another checkout at the same time is kept too.
-- It ends with one line, for example `GATE PASS package=412 hosted=38 ui=7 · 4m12s`, or `GATE FAIL step 3 (package): 2 failed`, then the names of the failed tests. A pull request quotes that line.
+- When the package step or the simulator step fails, the gate keeps the crash reports of its test processes. macOS writes a report to `~/Library/Logs/DiagnosticReports/` when a process crashes, on the Mac or in a simulator. The gate copies each report written since the step started into `build/gate/run/`, so CI's `gate-results` artifact has it. It waits up to 5 seconds for a report that is still to come. The failure line then says where the first process crashed: its name, its signal, and the crashed thread's top frames in the test's own code, for example `GATE FAIL step 4 (package): exit 1 (log: …) · swiftpm-testing-helper crashed (SIGABRT) at NetworkConditioner.Core.forward(_:) (NetworkConditioner.swift:520) ← … (report: build/gate/run/<name>.ips)`. A report names a file in the user's folder without its path, so the gate knows a report by its process and its test binary's name (`crashes` in `scripts/gate/main.mjs`). On a shared machine, a crash of the same tests in another checkout at the same time is kept too.
+- It ends with one line, for example `GATE PASS package=412 hosted=38 ui=7 · 4m12s`, or `GATE FAIL step 4 (package): 2 failed`, then the names of the failed tests. A pull request quotes that line.
 - A gate that passes names each step that it skipped in that line.
 
 What "zero warnings" means in the build step:
@@ -280,6 +281,8 @@ What "zero warnings" means in the build step:
 Time and load:
 
 - Each step is stopped, with all its child processes, when it passes its time limit. A step past its limit is a hang, not a flake.
+- The package build's limit is 8 minutes. On CI, SwiftPM first resolves the packages, and unpacks sentry-cocoa's frameworks from its cache (about 1m10s), then builds (60 to 151 seconds). On 2026-11-23 the two took 1m49s to 3m58s in 13 runs.
+- The package step's limit is 12 minutes, for the tests alone. On CI on 2026-11-23, with 394 to 403 tests, they took 2m42s to 5m40s in 12 green runs, and more than 6m18s in one run that the old limit stopped, when the build and the tests shared one step of 10 minutes (run 45187683978 attempt 1). A runner has 3 cores for 8 tests at a time, so the time goes with the runner's speed, and with the tests' CPU. Most of that CPU is the session's own work in a debug build, not the test servers: a private server starts in about 0.2 seconds.
 - The lint step's limit is 5 minutes. Most of it is the gate's own tests (`just test-gate`), which take about 10 seconds on a quiet machine, and have taken up to about 140 seconds under a load of 275 to 757.
 - A process that a step leaves behind when it ends is stopped too.
 - The gate shuts its own simulator down when the simulator step ends, however it ends. The simulator belongs to the system, so stopping the step's processes leaves it running.
