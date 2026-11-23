@@ -198,6 +198,7 @@ struct ItemPageTests {
     let device = instance.device()
     await device.signIn(pasting: try await instance.loginLink(for: family.relative))
     let session = try #require(device.session)
+    try await untilInStep(session, as: family.relative)
     #expect(session.itemPage(id: deleted.id) != nil)
     #expect(session.itemPage(id: claimed.id) != nil)
 
@@ -220,6 +221,7 @@ struct ItemPageTests {
     let device = instance.device()
     await device.signIn(pasting: try await instance.loginLink(for: family.relative))
     let session = try #require(device.session)
+    try await untilInStep(session, as: family.relative)
     #expect(try #require(session.itemPage(id: item.id)).list.name == first.name)
 
     try await family.child.signedIn().send("PATCH", "/items/\(item.id)", json: ["list_id": .string(second.id)])

@@ -102,7 +102,7 @@ public struct ItemPage: Equatable, Sendable {
 
   /// What Copy link copies from an item's store links, on its page and in its row's context menu: the first, in
   /// the session's user's order. Nil when there is none.
-  public static func copyLink(of storeLinks: [StoreLinkRow]) -> URL? {
+  static func copyLink(of storeLinks: [StoreLinkRow]) -> URL? {
     ordered(storeLinks).first.flatMap { URL(string: $0.url) }
   }
 
