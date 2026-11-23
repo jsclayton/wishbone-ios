@@ -1,8 +1,8 @@
 import Foundation
 import WishboneAPI
 
-// A list's page, from the copy: the name, the "For {names}" line, the description, the line for a viewer who can
-// edit the list and is also a giver, and the items. See `docs/screens/list.md`, and in `docs/spec.md`: "Whose
+// A list's page, from the copy: the name, the "For {names}" line, the description, the line that says why items
+// can be missing, and the items. See `docs/screens/list.md`, and in `docs/spec.md`: "Whose
 // list: name the recipient", "Claim state on a child's list", and "How each thing is reached".
 //
 // **Claim state shows only as the server sends it**, as on a user's page: a recipient of the list sees none of it,
@@ -19,8 +19,9 @@ public struct ListPage: Equatable, Sendable {
   public let isRecipient: Bool
 
   /// Whether the line "You see what's been claimed here. Fully claimed items don't show." shows above the items:
-  /// the session's user can edit the list and is not a recipient, as a recipient's parent is.
-  public let seesClaimsAsEditor: Bool
+  /// the session's user is not a recipient, and can edit the list or is a parent of one of its recipients. The
+  /// second covers a parent of a deactivated child, who can't edit the child's lists. It is the user page's rule.
+  public let seesWhyItemsAreMissing: Bool
 
   /// The items, in the list's order. A giver's copy has no item that others claimed in full.
   public let items: [UserPage.Item]
@@ -49,6 +50,61 @@ public struct ListPage: Equatable, Sendable {
 
     /// For someone who can edit the list: "Nothing here yet. Tap Add item to start the list."
     case forEditor
+  }
+
+  /// The names on the "For {names}" line, as the locale lists them. Only a linked recipient's name carries a link,
+  /// and the link covers the name alone, never its "(Deactivated)" or the words between names.
+  ///
+  /// - Parameters:
+  ///   - recipients: The recipients, in the line's order.
+  ///   - deactivated: The words for a deactivated recipient, from their name: "{name} (Deactivated)".
+  ///   - link: The link for the recipient with the user ID.
+  public static func forLineNames(
+    of recipients: [Recipient], deactivated: (String) -> String, link: (String) -> URL?
+  ) -> AttributedString {
+    forLineNames(
+      recipients.map {
+        ForLineName(name: $0.user.name, isDeactivated: $0.isDeactivated, link: $0.isLinked ? link($0.id) : nil)
+      },
+      deactivated: deactivated)
+  }
+
+  /// A name on the "For {names}" line: the words of the name, whether "(Deactivated)" follows it, and its link.
+  public struct ForLineName: Equatable, Sendable {
+    public let name: String
+    public let isDeactivated: Bool
+    public let link: URL?
+
+    public init(name: String, isDeactivated: Bool, link: URL?) {
+      self.name = name
+      self.isDeactivated = isDeactivated
+      self.link = link
+    }
+  }
+
+  /// The names on the "For {names}" line, as the locale lists them, each name with its own link.
+  public static func forLineNames(_ names: [ForLineName], deactivated: (String) -> String) -> AttributedString {
+    // Each name's place is a mark that no name or word holds, so no name needs a search: a short name inside
+    // another name, a suffix, or the locale's "and" can't take its link.
+    let open: Character = "\u{E000}"
+    let close: Character = "\u{E001}"
+    let words = names.enumerated().map { index, name in
+      let mark = "\(open)\(index)\(close)"
+      return name.isDeactivated ? deactivated(mark) : mark
+    }
+    var rest = Substring(words.formatted(.list(type: .and)))
+    var line = AttributedString()
+    while let start = rest.firstIndex(of: open), let end = rest[start...].firstIndex(of: close),
+      let index = Int(rest[rest.index(after: start)..<end]), names.indices.contains(index)
+    {
+      line += AttributedString(rest[..<start])
+      var name = AttributedString(names[index].name)
+      name.link = names[index].link
+      line += name
+      rest = rest[rest.index(after: end)...]
+    }
+    line += AttributedString(rest)
+    return line
   }
 
   /// The items in the order of the sort.
@@ -116,12 +172,14 @@ extension SessionModel {
     let items = items(onList: id).map { item in
       UserPage.Item(row: item, claim: isRecipient ? nil : UserPage.Claim(item))
     }
+    let children = Set(self.user?.record?.childIDs ?? [])
+    let isParentOfRecipient = list.recipientIDs.contains { children.contains($0) }
     let noItems: ListPage.NoItems? = items.isEmpty ? (list.canEdit ? .forEditor : .forGiver) : nil
     return ListPage(
       list: list,
       recipients: list.recipientIDs.compactMap { user(id: $0) }.map(ListPage.Recipient.init),
       isRecipient: isRecipient,
-      seesClaimsAsEditor: list.canEdit && !isRecipient,
+      seesWhyItemsAreMissing: !isRecipient && (list.canEdit || isParentOfRecipient),
       items: items,
       noItems: noItems
     )
