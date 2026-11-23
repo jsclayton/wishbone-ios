@@ -584,6 +584,9 @@
     "No longer shared with you" : {
 
     },
+    "No occasions are coming up." : {
+
+    },
     "No stores are blocked." : {
 
     },
@@ -597,6 +600,9 @@
 
     },
     "Nobody is here yet. The admin adds people to your groups." : {
+
+    },
+    "Nobody you can see is on this occasion." : {
 
     },
     "Not bought" : {
@@ -629,6 +635,9 @@
     "Nothing on this list yet." : {
 
     },
+    "Nothing yet" : {
+
+    },
     "Notifications are off for Wishbone. Turn them on in Settings to get reminders." : {
 
     },
@@ -639,6 +648,9 @@
       "comment" : "A gift's flag: the occasion that the gift moved to, or its recipients now, by name"
     },
     "Occasion" : {
+
+    },
+    "Occasions" : {
 
     },
     "On the day" : {
@@ -748,6 +760,9 @@
 
     },
     "Search users" : {
+
+    },
+    "See who's on it" : {
 
     },
     "Selected" : {

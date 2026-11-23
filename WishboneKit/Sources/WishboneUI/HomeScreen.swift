@@ -13,9 +13,10 @@ import WishboneSession
 /// A person is one button, whose words are the ones that show: the name, then "Deactivated" when it applies. The
 /// avatar beside it is a drawing that VoiceOver skips, and a tap on it opens the person too.
 ///
-/// A countdown occasion that opens a page is one button: a person's occasion opens their page. A Coming up row that
-/// opens a page is one link: a person's occasion opens their page, and the user's own opens their primary list. A
-/// shared occasion's page comes later, so its occasion opens nothing yet.
+/// A countdown occasion that opens a page is one button: a person's occasion opens their page, and a shared occasion
+/// its page. A shared occasion also has "See who's on it", its own button, which opens the same page. A Coming up
+/// row that opens a page is one link: a person's occasion opens their page, the user's own opens their primary list,
+/// and a shared occasion opens its page. The "Coming up" heading is a button that pushes the Occasions screen.
 ///
 /// **Provisional.** Plain default: a system list. The countdown is a card in the occasion's person color, one row
 /// for each occasion. The "People" heading is a row that pushes the People page. Each
@@ -91,7 +92,7 @@ struct HomeScreen: View {
         Text("Nothing in the next 60 days.", bundle: #bundle)
       }
       ForEach(occasions) { occasion in
-        Group {
+        VStack(alignment: .leading, spacing: 4) {
           if let destination = occasion.destination {
             Button {
               open(destination)
@@ -102,13 +103,28 @@ struct HomeScreen: View {
           } else {
             CountdownOccasion(occasion: occasion)
           }
+          if case .shared = occasion.whose {
+            // Its own button, after the card's element.
+            Button {
+              open(.sharedOccasion(id: occasion.id))
+            } label: {
+              Text("See who's on it", bundle: #bundle)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white)
+                .underline()
+                .frame(minHeight: 44, alignment: .leading)
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+          }
         }
         .listRowBackground(CountdownOccasion.background(of: occasion))
       }
     }
   }
 
-  /// Coming up: every occasion in the next 60 days, the soonest first, or its empty line.
+  /// Coming up: every occasion in the next 60 days, the soonest first, or its empty line, under a heading that
+  /// pushes the Occasions screen.
   @ViewBuilder private func comingUp(_ occasions: [HomeOccasion]) -> some View {
     Section {
       if occasions.isEmpty {
@@ -118,7 +134,7 @@ struct HomeScreen: View {
       }
       ForEach(occasions) { occasion in
         if let destination = occasion.destination {
-          NavigationLink(value: page(of: destination)) {
+          NavigationLink(value: destination.page) {
             ComingUpRow(occasion: occasion, session: session)
           }
         } else {
@@ -126,27 +142,31 @@ struct HomeScreen: View {
         }
       }
     } header: {
-      // The label color itself: in a section's header, `.primary` is the header's gray, which fails the contrast
-      // rule where the heading sits under the tab bar's glass, at the largest text size.
-      Text("Coming up", bundle: #bundle)
-        .font(.title2.weight(.bold))
+      // A button that pushes the Occasions screen. The label color itself: in a section's header, `.primary` is the
+      // header's gray, which fails the contrast rule where the heading sits under the tab bar's glass, at the
+      // largest text size.
+      Button {
+        pages.append(.occasions)
+      } label: {
+        HStack(spacing: 4) {
+          Text("Coming up", bundle: #bundle)
+            .font(.title2.weight(.bold))
+          Image(systemName: "chevron.forward")
+            .font(.headline)
+            .accessibilityHidden(true)
+        }
         .foregroundStyle(Color.primary)
-        .textCase(nil)
-        .accessibilityAddTraits(.isHeader)
-    }
-  }
-
-  /// The page that an occasion opens.
-  private func page(of destination: HomeOccasion.Destination) -> Page {
-    switch destination {
-    case .user(let id): .user(id: id)
-    case .list(let id): .list(id: id)
+        .contentShape(.rect)
+      }
+      .buttonStyle(.plain)
+      .textCase(nil)
+      .accessibilityAddTraits(.isHeader)
     }
   }
 
   /// Pushes the page that an occasion opens on Home.
   private func open(_ destination: HomeOccasion.Destination) {
-    pages.append(page(of: destination))
+    pages.append(destination.page)
   }
 
   /// A person's avatar. A tap on it opens the person, as a tap on the name does. VoiceOver skips it, and reads the

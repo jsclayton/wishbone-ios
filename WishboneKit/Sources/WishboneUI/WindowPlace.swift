@@ -43,13 +43,19 @@ public enum Page: Codable, Hashable, Sendable {
   /// For the admin, on the People page: the deactivated users.
   case deactivatedUsers
 
+  /// The Occasions screen, pushed from the "Coming up" heading on Home.
+  case occasions
+
+  /// A shared occasion's page.
+  case sharedOccasion(id: String)
+
   /// The tab that owns the page, for a sidebar shortcut: one of your lists is in Lists, a gift is in Gifts, and
-  /// People, a user, or an item is on Home.
+  /// People, a user, an item, or an occasion is on Home.
   public var owner: WindowTab {
     switch self {
     case .list: .lists
     case .gift: .gifts
-    case .user, .item, .people, .allUsers, .allGroups, .deactivatedUsers: .home
+    case .user, .item, .people, .allUsers, .allGroups, .deactivatedUsers, .occasions, .sharedOccasion: .home
     }
   }
 }
@@ -156,6 +162,13 @@ extension Page {
     /// see `SessionModel.peoplePage`.
     case forAdmin(Page)
 
+    /// The Occasions screen. It reads what it shows from the session model: see `SessionModel.everyOccasion(today:)`.
+    case occasions
+
+    /// A shared occasion's page. The page reads what it shows from the session model: see
+    /// `SessionModel.sharedOccasionPage(id:today:)`.
+    case sharedOccasion(id: String)
+
     /// The "not found" page: the page's thing is not in the copy. A missing thing and a hidden thing are the
     /// same, because the copy holds neither. See `docs/screens/not-found.md`.
     case notFound
@@ -173,6 +186,9 @@ extension Page {
     case .people: .people
     // Only the admin has For the admin. A window restored for anyone else doesn't get the page.
     case .allUsers, .allGroups, .deactivatedUsers: session.peoplePage.forAdmin == nil ? .notFound : .forAdmin(self)
+    case .occasions: .occasions
+    // A deleted shared occasion leaves the copy, so its page is the "not found" page.
+    case .sharedOccasion(let id): session.sharedOccasionPage(id: id) == nil ? .notFound : .sharedOccasion(id: id)
     }
   }
 }
@@ -202,6 +218,9 @@ extension Page {
     case .gift: .gifts
     // The admin's lists are a part of the People page. Diagnostics name no more than that.
     case .people, .allUsers, .allGroups, .deactivatedUsers: .people
+    // The Occasions screen and a shared occasion's page are reached only from Home. Diagnostics name no more than
+    // that.
+    case .occasions, .sharedOccasion: .home
     }
   }
 }

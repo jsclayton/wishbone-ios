@@ -200,7 +200,7 @@ struct HomeOccasionsTests {
 
   // MARK: - 8. What a tap opens
 
-  @Test("A person's occasion opens their page, the user's own opens their primary list, and a shared one nothing yet")
+  @Test("A person's occasion opens their page, the user's own opens their primary list, and a shared one its page")
   func destination() {
     let home = Self.home([
       Self.occasion("1", user: Self.me, on: "2026-03-02"),
@@ -211,7 +211,7 @@ struct HomeOccasionsTests {
     ])
     #expect(
       home.comingUp.map(\.destination) == [
-        .list(id: "70"), .list(id: "70"), .user(id: "12"), .user(id: "13"), nil,
+        .list(id: "70"), .list(id: "70"), .user(id: "12"), .user(id: "13"), .sharedOccasion(id: "4"),
       ])
 
     // While the copy has no primary list for the user, their own occasion opens nothing.

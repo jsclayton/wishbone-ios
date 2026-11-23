@@ -67,16 +67,23 @@ struct CountdownOccasion: View {
 }
 
 /// One row of Coming up: the person's avatar, the occasion's words, and the time left. It is one element: the
-/// occasion, the person, the time left.
+/// occasion, the person, the time left. On the Occasions screen, the date shows before the time left.
 struct ComingUpRow: View {
   let occasion: HomeOccasion
   let session: SessionModel
+
+  /// Whether the row shows the occasion's date: on the Occasions screen, not on Home.
+  var showsDate = false
 
   var body: some View {
     HStack(spacing: 12) {
       avatar
       VStack(alignment: .leading, spacing: 2) {
         OccasionWords(occasion: occasion)
+        if showsDate {
+          Text(OccasionDateWords.monthAndDay(occasion.date))
+            .font(.subheadline)
+        }
         TimeLeftWords(timeLeft: occasion.timeLeft)
           .font(.subheadline)
           .foregroundStyle(.secondary)
@@ -104,7 +111,7 @@ struct ComingUpRow: View {
 }
 
 /// The symbol in place of an avatar for a shared occasion, the size of a small avatar.
-private struct SharedOccasionSymbol: View {
+struct SharedOccasionSymbol: View {
   @ScaledMetric(relativeTo: .body) private var scaled: CGFloat = 28
 
   var body: some View {
@@ -138,6 +145,22 @@ struct OccasionWords: View {
     case (.shared, _):
       Text(occasion.name)
     }
+  }
+}
+
+/// An occasion's date, in the device's locale: "December 25".
+enum OccasionDateWords {
+  /// The month and day of a `YYYY-MM-DD` date. Text that is not such a date shows as it is.
+  static func monthAndDay(_ text: String) -> String {
+    let parts = text.split { !$0.isNumber }.compactMap { Int($0) }
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = .gmt
+    guard parts.count == 3,
+      let date = calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2]))
+    else { return text }
+    var style = Date.FormatStyle.dateTime.month(.wide).day()
+    style.timeZone = .gmt
+    return date.formatted(style)
   }
 }
 
@@ -176,6 +199,17 @@ struct MidnightSchedule: TimelineSchedule {
     sequence(first: startDate) { date in
       Calendar.autoupdatingCurrent.nextDate(
         after: date, matching: DateComponents(hour: 0, minute: 0, second: 0), matchingPolicy: .nextTime)
+    }
+  }
+}
+
+extension HomeOccasion.Destination {
+  /// The page that an occasion opens. See "How each thing is reached" in `docs/spec.md`.
+  var page: Page {
+    switch self {
+    case .user(let id): .user(id: id)
+    case .list(let id): .list(id: id)
+    case .sharedOccasion(let id): .sharedOccasion(id: id)
     }
   }
 }
