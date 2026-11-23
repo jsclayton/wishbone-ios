@@ -16,6 +16,7 @@ import {
   helperAnswerLimitMs,
   journeyRuns,
   keepFirstTry,
+  keepStartLogs,
   launchFlake,
   launchFlakeIn,
   parseArguments,
@@ -35,8 +36,12 @@ import {
   settingCommands,
   settings,
   settingsApplier,
+  shutDownBySelf,
+  shutdownFlake,
   simctlWithLimit,
+  startReboots,
   startSettingsHelper,
+  startSimulator,
 } from './simulator.mjs';
 
 const iPhone = (name) => ({ name, identifier: `type.${name.replaceAll(' ', '-')}`, productFamily: 'iPhone' });
@@ -759,4 +764,104 @@ test("CI uploads the gate's files after a pass too, when a first try was kept", 
     .map((kept) => path.basename(kept).replace(/^journeys-settings/, ''));
   assert.ok(condition.includes(`'build/gate/**/*${log}'`), `${condition} has no pattern for *${log}`);
   assert.ok(condition.includes(`'build/gate/**/*${bundle}/**'`), `${condition} has no pattern for *${bundle}`);
+});
+
+/** The error that `simctl ui` gave on CI when the simulator had shut down by itself (run 45151826388). */
+const shutDown = () =>
+  new Error(
+    "simctl ui SIM appearance light An error was encountered processing the command (domain=com.apple.CoreSimulator.SimError, code=405):\nUnable to lookup in current state: Shutdown, so the simulator isn't in the default settings",
+  );
+
+/** The step's start, with each part a fake that records itself and fails as `fails(part, tries)` says. */
+function fakeStart(fails = () => null) {
+  const parts = [];
+  const lines = [];
+  const kept = [];
+  const part = (name) => async () => {
+    parts.push(name);
+    const error = fails(name, parts.filter((one) => one === name).length);
+    if (error) throw error;
+    return name === 'default' ? 'applier' : undefined;
+  };
+  const start = () =>
+    startSimulator({
+      boot: part('boot'),
+      hold: part('hold'),
+      putInDefault: part('default'),
+      keepLogs: (sighting) => {
+        kept.push(sighting);
+        return `build/gate/run/simulator/simulator-start-${sighting}-first.log`;
+      },
+      say: (line) => lines.push(line),
+    });
+  return { start, parts, lines, kept };
+}
+
+test("the step's start boots the simulator, holds its status bar, and puts it in the default settings, once", async () => {
+  const { start, parts, lines, kept } = fakeStart();
+  assert.equal(await start(), 'applier');
+  assert.deepEqual(parts, ['boot', 'hold', 'default']);
+  assert.equal(lines.length, 3);
+  assert.deepEqual(kept, []);
+});
+
+test('a simulator that shuts down by itself at the step\'s start boots again, keeps its logs, and the start passes', async () => {
+  const { start, parts, lines, kept } = fakeStart((part, tries) => (part === 'default' && tries === 1 ? shutDown() : null));
+  assert.equal(await start(), 'applier');
+  assert.deepEqual(parts, ['boot', 'hold', 'default', 'boot', 'hold', 'default']);
+  assert.deepEqual(kept, [1]);
+  const line = lines.find((one) => one.includes(shutdownFlake));
+  assert.ok(line, `no line names the flake: ${lines.join('\n')}`);
+  assert.match(line, /boots again \(1 of 2\)/);
+  assert.match(line, /simulator-start-1-first\.log/);
+  assert.match(line, /Unable to lookup in current state: Shutdown/);
+});
+
+test('a simulator that shuts down while its status bar is held boots again too', async () => {
+  const { start, parts } = fakeStart((part, tries) => (part === 'hold' && tries === 1 ? shutDown() : null));
+  assert.equal(await start(), 'applier');
+  assert.deepEqual(parts, ['boot', 'hold', 'boot', 'hold', 'default']);
+});
+
+test('the simulator boots again at most twice: a third shutdown at the start is red', async () => {
+  const { start, parts, kept } = fakeStart((part) => (part === 'default' ? shutDown() : null));
+  await assert.rejects(start(), /current state: Shutdown/);
+  assert.equal(parts.filter((part) => part === 'boot').length, 1 + startReboots);
+  assert.equal(startReboots, 2);
+  assert.deepEqual(kept, [1, 2, 3]);
+});
+
+test("a failure at the step's start that isn't a shutdown is red at once", async () => {
+  const { start, parts, kept } = fakeStart((part) => (part === 'default' ? new Error('simctl ui SIM appearance light didn\'t return within 5m00s, twice in 10m00s') : null));
+  await assert.rejects(start(), /didn't return/);
+  assert.deepEqual(parts, ['boot', 'hold', 'default']);
+  assert.deepEqual(kept, []);
+});
+
+test("the shutdown's signature is CoreSimulator's error for a device that is shut down, and nothing else", () => {
+  assert.equal(shutDownBySelf(shutDown()), true);
+  // execFileSync's error, as the status bar's override gives it.
+  assert.equal(shutDownBySelf(new Error('Command failed: xcrun simctl status_bar SIM override\nUnable to lookup in current state: Shutdown')), true);
+  assert.equal(shutDownBySelf(new Error('No devices are booted.')), false);
+  assert.equal(shutDownBySelf(new Error('Invalid device state')), false);
+  assert.equal(shutDownBySelf(Object.assign(new Error("didn't return within 30s"), { timedOut: true })), false);
+});
+
+test("the simulator's logs at a shutdown go where CI uploads a first try, and a log that isn't there is named", (t) => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'wishbone-gate-test-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const logs = path.join(directory, 'CoreSimulator');
+  mkdirSync(path.join(logs, 'SIM'), { recursive: true });
+  writeFileSync(path.join(logs, 'CoreSimulator.log'), `${'old line\n'.repeat(10)}SIM state Booted -> Shutdown\n`);
+  const results = path.join(directory, 'results');
+  mkdirSync(results);
+
+  const kept = keepStartLogs({ directory: results, simulator: 'SIM', sighting: 1, logs, limitBytes: 40 });
+  assert.equal(kept, path.join(results, 'simulator-start-1-first.log'));
+  // The upload step's condition has the pattern `build/gate/**/*-first.log`.
+  assert.match(path.basename(kept), /-first\.log$/);
+  const text = readFileSync(kept, 'utf8');
+  assert.match(text, /SIM state Booted -> Shutdown/);
+  assert.ok(!text.includes('old line\nold line\nold line\nold line\nold line'), 'it keeps only the end of a long log');
+  assert.match(text, /system\.log: not there/);
 });

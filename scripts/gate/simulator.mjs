@@ -14,7 +14,8 @@
 // machine" runs again, once (`runAgainOnLaunchFlake`).
 
 import { execFile, execFileSync, spawn } from 'node:child_process';
-import { createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync } from 'node:fs';
+import { closeSync, createWriteStream, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { createServer } from 'node:http';
 import path from 'node:path';
 import process from 'node:process';
@@ -535,22 +536,109 @@ function holdStatusBar(simulator) {
 }
 
 /**
- * Boots the gate's simulator, holds its status bar still, and puts it in the default settings, with a line for
- * each part and its time. Returns `{ simulator, applier }`: the
- * simulator's ID, and the `settingsApplier` that knows its settings.
+ * The named flake "the gate's simulator shuts down by itself at the step's start" in docs/development.md. On CI,
+ * the simulator booted and its status bar was held, and then the first call that put it in the default settings
+ * found it shut down.
  */
-export async function prepareSimulator({ say = console.log } = {}) {
+export const shutdownFlake = "the gate's simulator shuts down by itself at the step's start";
+
+/** How many times the step's start boots the simulator again after it shut down by itself. */
+export const startReboots = 2;
+
+/** Whether a `simctl` call failed because the simulator was shut down: CoreSimulator's error 405 says so. */
+export function shutDownBySelf(error) {
+  return /in current state: Shutdown\b/.test(error?.message ?? '');
+}
+
+/** The most of each log that `keepStartLogs` keeps: the end of it, where the shutdown is. */
+export const startLogLimitBytes = 2 * 1024 * 1024;
+
+/** The end of a file, at most `limitBytes`, or null when the file isn't there. */
+function endOf(file, limitBytes) {
+  if (!existsSync(file)) return null;
+  const size = statSync(file).size;
+  const length = Math.min(size, limitBytes);
+  const buffer = Buffer.alloc(length);
+  const handle = openSync(file, 'r');
+  try {
+    readSync(handle, buffer, 0, length, size - length);
+  } finally {
+    closeSync(handle);
+  }
+  return buffer.toString('utf8');
+}
+
+/**
+ * Keeps the end of CoreSimulator's own log and of the simulator's system log, after the simulator shut down by
+ * itself, in `<directory>/simulator-start-<sighting>-first.log`. The name ends in `-first.log`, so CI uploads it
+ * after a pass too, as it does a first try of the journeys. So the next sighting can say why it shut down. Returns
+ * the file's path.
+ */
+export function keepStartLogs({ directory, simulator, sighting, logs = path.join(homedir(), 'Library', 'Logs', 'CoreSimulator'), limitBytes = startLogLimitBytes }) {
+  const parts = [path.join(logs, 'CoreSimulator.log'), path.join(logs, simulator, 'system.log')].map((file) => {
+    const text = endOf(file, limitBytes);
+    const name = path.relative(logs, file);
+    return text === null ? `── ${name}: not there\n` : `── ${name}: its last ${text.length} characters\n${text}\n`;
+  });
+  const kept = path.join(directory, `simulator-start-${sighting}-first.log`);
+  writeFileSync(kept, parts.join('\n'));
+  return kept;
+}
+
+/**
+ * The step's start: `boot()`, `hold()` the status bar still, and `putInDefault()`, which resolves with the
+ * `settingsApplier` that it used. A line for each part, with its time. When a call of the start finds the
+ * simulator shut down (`shutDownBySelf`), the start keeps its logs (`keepLogs(sighting)`, which returns where), and
+ * runs again from the boot, at most `startReboots` times. Any other failure, and a shutdown after that, is red.
+ * Resolves with the applier.
+ */
+export async function startSimulator({ boot, hold, putInDefault, keepLogs, say = console.log, reboots = startReboots }) {
   const timed = async (what, work) => {
     const started = Date.now();
     const result = await work();
     say(`✓ ${what} (${duration(Date.now() - started)})`);
     return result;
   };
-  const simulator = await timed("Found the gate's simulator", findOrMakeSimulator);
-  await timed("Booted the gate's simulator", () => simctl(['bootstatus', simulator, '-b'], { stdio: 'ignore' }));
-  await timed("Held the simulator's status bar still", () => holdStatusBar(simulator));
-  const applier = settingsApplier(simulator);
-  await timed('Put the simulator in the default settings', () => applier.apply(settings[0], { limitMs: readinessCallLimitMs, answerLimitMs: readinessAnswerLimitMs }));
+  for (let sighting = 1; ; sighting += 1) {
+    const again = sighting === 1 ? '' : ' again';
+    try {
+      await timed(`Booted the gate's simulator${again}`, boot);
+      await timed(`Held the simulator's status bar still${again}`, hold);
+      return await timed(`Put the simulator in the default settings${again}`, putInDefault);
+    } catch (error) {
+      if (!shutDownBySelf(error)) throw error;
+      const kept = keepLogs(sighting);
+      if (sighting > reboots) {
+        say(`  The simulator shut down by itself at the step's start, ${sighting} times (the named flake "${shutdownFlake}"). Its logs are in ${kept}.`);
+        throw error;
+      }
+      const message = error.message.replace(/\s+/g, ' ');
+      say(`  The simulator shut down by itself at the step's start (the named flake "${shutdownFlake}"), so it boots again (${sighting} of ${reboots}). The call: ${message}. Its logs are in ${kept}.`);
+    }
+  }
+}
+
+/**
+ * Boots the gate's simulator, holds its status bar still, and puts it in the default settings, with a line for
+ * each part and its time (`startSimulator`). The simulator's logs at a shutdown go in `directory`. Returns
+ * `{ simulator, applier }`: the simulator's ID, and the `settingsApplier` that knows its settings.
+ */
+export async function prepareSimulator({ directory, say = console.log, relative = (file) => file }) {
+  const started = Date.now();
+  const simulator = findOrMakeSimulator();
+  say(`✓ Found the gate's simulator (${duration(Date.now() - started)})`);
+  const applier = await startSimulator({
+    boot: () => simctl(['bootstatus', simulator, '-b'], { stdio: 'ignore' }),
+    hold: () => holdStatusBar(simulator),
+    // A new applier each time: it runs every call, because the simulator that booted again can be in any setting.
+    putInDefault: async () => {
+      const one = settingsApplier(simulator);
+      await one.apply(settings[0], { limitMs: readinessCallLimitMs, answerLimitMs: readinessAnswerLimitMs });
+      return one;
+    },
+    keepLogs: (sighting) => relative(keepStartLogs({ directory, simulator, sighting })),
+    say,
+  });
   return { simulator, applier };
 }
 
@@ -659,7 +747,7 @@ export async function runSimulatorTier({ root, directory, build = true, say = co
   let simulator = null;
   let applier = null;
   try {
-    ({ simulator, applier } = await prepareSimulator({ say }));
+    ({ simulator, applier } = await prepareSimulator({ directory, say, relative }));
     if (build) {
       if (!(await run('Built the app and the test bundles for the simulator', buildArguments, { log: 'build.log' }))) return false;
       // After `just build`, the build has nothing to compile. The line says so.
