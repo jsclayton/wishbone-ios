@@ -26,7 +26,7 @@ From top to bottom:
 
 The birthday shows the month and the day, and the age that the user is turning when the birthday has a year.
 
-**Provisional.** Plain default: a system list. The header is the avatar in the person's color with the name under it, each part is a section, and the items are rows with the image at the leading edge.
+**Provisional.** Plain default: a system list. The header is the avatar in the person's color with the name under it, each part is a section, and the items are rows with the image at the leading edge. Each web link in Good to know also has a link row under its block.
 
 ### Parents
 
