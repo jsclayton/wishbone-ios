@@ -95,7 +95,10 @@ struct ListPageScreen: View {
         Menu {
           Picker(selection: $sort) {
             ForEach(ListSort.allCases) { sort in
+              // The tag is the order itself. The ForEach's own tag is the order's ID, a string, which never matches
+              // the selection, so a choice would change nothing.
               SortWords(sort: sort)
+                .tag(sort)
             }
           } label: {
             Label {
