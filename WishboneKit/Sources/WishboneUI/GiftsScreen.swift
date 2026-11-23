@@ -28,9 +28,8 @@ struct GiftsScreen: View {
       ForEach(groups) { group in
         Section {
           ForEach(group.gifts) { gift in
-            NavigationLink(value: Page.gift(id: gift.id)) {
-              GivingRow(gift: gift, tileUserID: group.recipients?.first?.id ?? session.session.userID)
-            }
+            GivingRow(
+              gift: gift, tileUserID: group.recipients?.first?.id ?? session.session.userID, session: session)
           }
         } header: {
           GivingHeading(group: group)
@@ -88,18 +87,88 @@ private struct GivingHeading: View {
   var body: some View {
     Text(GiftWords.heading(group))
       .font(.headline)
-      .foregroundStyle(.primary)
+      // The absolute primary color: the hierarchical `.primary` takes the header's own secondary style.
+      .foregroundStyle(Color.primary)
       .textCase(nil)
       .fixedSize(horizontal: false, vertical: true)
       .accessibilityAddTraits(.isHeader)
   }
 }
 
-/// A Giving row: the image, the title, how many when it is more than one, "Hidden until {date}", the from label,
-/// bought or not bought, "Needs attention" in words, and each flag in words. It is one element, read in that order,
-/// and it opens the gift's page.
-/// At the largest text sizes, the image moves above the text.
+/// A Giving row: the gift, which opens the gift's page, and the bought toggle, from `can_edit`. The toggle is an
+/// unsent change, so it works offline, and the row shows it at once. At the largest text sizes, the toggle gets its
+/// own line, with its label.
+///
+/// The gift is one element. Its actions are Open, and Mark bought or Mark not bought. The toggle reads "Bought" and
+/// its state.
 private struct GivingRow: View {
+  let gift: GivingGift
+
+  /// The user whose color the tile takes: the gift's first recipient.
+  let tileUserID: String
+  let session: SessionModel
+
+  @Environment(\.dynamicTypeSize) private var size
+
+  var body: some View {
+    let row = gift.gift
+    let isBought = row.isBought.value == true
+    let layout =
+      size.isAccessibilitySize
+      ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+      : AnyLayout(HStackLayout(alignment: .center, spacing: 12))
+    layout {
+      NavigationLink(value: Page.gift(id: row.id)) {
+        GivingGiftLabel(gift: gift, tileUserID: tileUserID)
+      }
+      .accessibilityActions {
+        if row.canEdit {
+          Button {
+            Task { await session.markBought(gift: row.id, !isBought) }
+          } label: {
+            Text(GiftWords.markBought(!isBought))
+          }
+        }
+      }
+      if row.canEdit {
+        BoughtToggle(gift: row, session: session)
+          .labelsHidden(!size.isAccessibilitySize)
+      }
+    }
+  }
+}
+
+/// The bought toggle of a gift: "Bought", on or off. A change is an unsent change: it shows at once, in every
+/// window, and reaches the instance when it can. See "Mark bought" in `docs/screens/gifts.md`.
+struct BoughtToggle: View {
+  let gift: GiftRow
+  let session: SessionModel
+
+  var body: some View {
+    Toggle(
+      isOn: Binding {
+        gift.isBought.value == true
+      } set: { isBought in
+        Task { await session.markBought(gift: gift.id, isBought) }
+      }
+    ) {
+      Text("Bought", bundle: #bundle)
+    }
+  }
+}
+
+extension View {
+  /// Hides the labels of the controls in this view, when `isHidden`. VoiceOver still reads them.
+  @ViewBuilder
+  fileprivate func labelsHidden(_ isHidden: Bool) -> some View {
+    if isHidden { labelsHidden() } else { self }
+  }
+}
+
+/// The gift of a Giving row: the image, the title, how many when it is more than one, "Hidden until {date}", the from
+/// label, bought or not bought, "Needs attention" in words, and each flag in words. It is one element, read in that
+/// order, and it opens the gift's page. At the largest text sizes, the image moves above the text.
+private struct GivingGiftLabel: View {
   let gift: GivingGift
 
   /// The user whose color the tile takes: the gift's first recipient.

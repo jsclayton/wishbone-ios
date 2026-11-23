@@ -54,6 +54,21 @@ public final class SessionModel {
   /// Every blocked store that the copy holds, by store. Only the admin's copy has any.
   public private(set) var blockedStores: [BlockedStoreRow] = []
 
+  /// How many unsent changes wait in the journal. While the instance can't be reached, the line "Can't reach
+  /// {address}" says how many, and Sign out warns with it. See "Unsent changes, sign-out, and late refusals" in
+  /// `docs/spec.md`.
+  public private(set) var unsentChangeCount = 0
+
+  /// The late refusals that wait for the next window that comes to the foreground. See `lateRefusalAlert`.
+  public private(set) var lateRefusals: [LateRefusal] = []
+
+  /// The one alert, "Some changes couldn't be saved", that the window which last came to the foreground shows, with
+  /// the late refusals that waited. Nil while it shows none. See "Late refusals" in `docs/spec.md`.
+  public internal(set) var lateRefusalAlert: LateRefusalAlert?
+
+  /// The send of the unsent changes that runs. One runs at a time. See `sendUnsentChanges()`.
+  var sending: Task<PullEnd, Never>?
+
   /// Every user that the copy holds, by name: the ones that the session's user sees in full, and the ones that
   /// the user gets only as a summary inside another resource.
   public private(set) var users: [UserRow] = []
@@ -144,7 +159,7 @@ public final class SessionModel {
   static let refreshInterval = Duration.seconds(60 * 60)
 
   /// Where the sync's breadcrumbs go.
-  private let diagnostics: any DiagnosticsReporter
+  let diagnostics: any DiagnosticsReporter
 
   /// Where the session schedules its reminders, with their words and the clock of the plan.
   let reminders: Reminders
@@ -226,6 +241,8 @@ public final class SessionModel {
     groups = snapshot.groups
     occasions = snapshot.occasions
     memberships = snapshot.memberships
+    unsentChangeCount = snapshot.unsentChangeCount
+    lateRefusals = snapshot.lateRefusals
   }
 
   /// Reads the copy, and publishes it now, after a write that every window must show at once, such as a claim. The
@@ -410,12 +427,15 @@ public final class SessionModel {
     return outcome
   }
 
-  /// One sync. Nothing is sent yet: the unsent changes come with their journal.
+  /// One sync: it sends the unsent changes, in order, then pulls. A send that can't reach the instance, or that
+  /// stops, ends the sync with no pull: the changes wait for the next sync. So a pull always comes after the last
+  /// change that a sync sent, and that sync is the one after it. See "When the app syncs" in `docs/spec.md`.
   ///
   /// Diagnostics: a breadcrumb at its start, and one with its outcome, whatever started it. They name nothing more.
   private func runSync() async -> SyncOutcome {
     diagnostics.leave(.syncStarted)
-    let end = await pull()
+    var end = await sendUnsentChanges()
+    if end == .succeeded { end = await pull() }
     if end == .endedByServer {
       // The session is over. No sync starts after this one, and the end of the session waits for no sync: this one
       // is over.
@@ -479,9 +499,9 @@ public final class SessionModel {
     return outcome
   }
 
-  /// How a pull ended.
-  private enum PullEnd {
-    /// The pull ran to its end.
+  /// How a pull, or a send of the unsent changes, ended.
+  enum PullEnd {
+    /// The pull ran to its end, or the send left no change that it could send.
     case succeeded
     /// The instance could not be reached. The session goes on.
     case unreachable
@@ -651,7 +671,12 @@ public final class SessionModel {
     watchingNetwork?.cancel()
     watchingNetwork = nil
     windowsInForeground = []
+    // A send in flight is abandoned, and its answer is never written: the database is about to go.
+    let sending = sending
+    sending?.cancel()
     _ = await running?.value
+    _ = await sending?.value
+    self.sending = nil
     // The device removes every reminder after this, so a rebuild that runs must end first.
     await rebuildingReminders?.value
     // The device removes the image cache's folder after this, so nothing may write to it then. The cache ends
@@ -680,6 +705,9 @@ public final class SessionModel {
     groups = []
     occasions = []
     memberships = []
+    unsentChangeCount = 0
+    lateRefusals = []
+    lateRefusalAlert = nil
     isInstanceUnreachable = false
     hasSynced = false
     versionBlock = nil
@@ -688,9 +716,10 @@ public final class SessionModel {
 
   // MARK: - Windows in the foreground
 
-  /// What the app does each time one of its windows comes to the foreground: it runs the version check, syncs, and
-  /// then reports the time zone. While a version block shows, it does only the check. While any window is in the
-  /// foreground, the timer syncs every 60 seconds. Only the app calls this, never an extension.
+  /// What the app does each time one of its windows comes to the foreground: it shows the late refusals that wait,
+  /// runs the version check, syncs, and then reports the time zone. While a version block shows, it does only the
+  /// check. While any window is in the foreground, the timer syncs every 60 seconds. Only the app calls this, never
+  /// an extension.
   ///
   /// `window` is the window's own ID, the same at each call, so that `leftForeground(window:)` can say that it
   /// left.
@@ -698,6 +727,7 @@ public final class SessionModel {
     guard !hasEnded else { return }
     windowsInForeground.insert(window)
     updateTimer()
+    await showLateRefusals(in: window)
     await checkVersion()
     guard versionBlock == nil else { return }
     await syncNow()
@@ -708,6 +738,13 @@ public final class SessionModel {
   public func leftForeground(window: UUID) {
     windowsInForeground.remove(window)
     updateTimer()
+  }
+
+  /// Whether the alert of late refusals shows in a window that is in the foreground. An alert whose window left the
+  /// foreground, or closed, before the alert was closed doesn't show: it moves to the next window that comes to the
+  /// foreground. See `showLateRefusals(in:)`.
+  var lateRefusalAlertShows: Bool {
+    lateRefusalAlert.map { windowsInForeground.contains($0.window) } ?? false
   }
 
   // MARK: - Version checks

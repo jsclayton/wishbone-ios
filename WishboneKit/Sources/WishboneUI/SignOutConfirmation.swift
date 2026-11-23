@@ -25,7 +25,19 @@ private struct SignOutConfirmation: ViewModifier {
         Text("Cancel", bundle: #bundle)
       }
     } message: {
-      Text("You need a new login link to sign in again.", bundle: #bundle)
+      Text(SignOutWords.warning(unsentChanges: device.session?.unsentChangeCount ?? 0))
     }
+  }
+}
+
+/// The words of the warning before Sign out. See "Sign out" in `docs/spec.md`.
+public enum SignOutWords {
+  /// "You need a new login link to sign in again.", and when unsent changes wait, "{n} changes haven't been sent
+  /// and will be lost."
+  public static func warning(unsentChanges count: Int) -> String {
+    guard count > 0 else { return String(localized: "You need a new login link to sign in again.", bundle: #bundle) }
+    return String(
+      localized: "You need a new login link to sign in again. \(count) changes haven't been sent and will be lost.",
+      bundle: #bundle, comment: "The warning before Sign out, while unsent changes wait")
   }
 }

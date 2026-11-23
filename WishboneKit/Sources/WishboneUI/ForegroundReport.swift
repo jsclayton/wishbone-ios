@@ -5,6 +5,9 @@ extension View {
   /// Tells the session model each time this window comes to the foreground, and when it leaves it or closes. So the
   /// session syncs at each foreground, and its timer runs while any window is in the foreground. See "When the app
   /// syncs" in `docs/spec.md`.
+  ///
+  /// The window shows the late refusals that waited, in one alert, when it is the one that came to the foreground.
+  /// See "Late refusals" in `docs/spec.md`.
   func reportsForeground(to session: SessionModel) -> some View {
     modifier(ForegroundReport(session: session))
   }
@@ -31,5 +34,22 @@ private struct ForegroundReport: ViewModifier {
         }
       }
       .onDisappear { session.leftForeground(window: window) }
+      // The late refusals that waited show once, in the window that came to the foreground.
+      .alert(
+        Text("Some changes couldn't be saved", bundle: #bundle),
+        isPresented: Binding {
+          session.lateRefusalAlert?.window == window
+        } set: { isPresented in
+          if !isPresented { session.lateRefusalsShown() }
+        }
+      ) {
+        Button {
+          session.lateRefusalsShown()
+        } label: {
+          Text("OK", bundle: #bundle)
+        }
+      } message: {
+        Text(LateRefusalWords.message(session.lateRefusalAlert?.refusals ?? []))
+      }
   }
 }

@@ -27,6 +27,7 @@ public enum Route: String, Sendable, CaseIterable {
   case invitation
   case gifts
   case gift
+  case updateGift
   case claim
   case blockedStores
   case blockStore
@@ -44,7 +45,7 @@ public enum Route: String, Sendable, CaseIterable {
       .gifts, .gift, .blockedStores:
       "GET"
     case .redeemLoginLink, .confirmProfile, .uploadImage, .blockStore, .claim, .search, .createItem: "POST"
-    case .updateMe: "PATCH"
+    case .updateMe, .updateGift: "PATCH"
     case .revokeCurrentSession, .unblockStore, .leaveList: "DELETE"
     }
   }
@@ -79,7 +80,7 @@ public enum Route: String, Sendable, CaseIterable {
     case .invitations: "/invitations"
     case .invitation: "/invitations/{id}"
     case .gifts: "/gifts"
-    case .gift: "/gifts/{id}"
+    case .gift, .updateGift: "/gifts/{id}"
     case .claim: "/items/{id}/gifts"
     case .blockedStores, .blockStore: "/blocked-stores"
     case .unblockStore: "/blocked-stores/{id}"
@@ -97,7 +98,8 @@ public enum Route: String, Sendable, CaseIterable {
     case .health, .redeemLoginLink: true
     case .versions, .updateMe, .users, .user, .groups, .group, .groupUsers, .groupGroups, .occasions, .occasion,
       .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation, .gifts, .gift,
-      .claim, .blockedStores, .blockStore, .unblockStore, .leaveList, .revokeCurrentSession, .confirmProfile,
+      .updateGift, .claim, .blockedStores, .blockStore, .unblockStore, .leaveList, .revokeCurrentSession,
+      .confirmProfile,
       .uploadImage, .me, .search, .createItem:
       false
     }
@@ -117,7 +119,8 @@ public enum Route: String, Sendable, CaseIterable {
       .invitations, .blockedStores:
       Self.paging
     case .health, .redeemLoginLink, .versions, .updateMe, .user, .group, .occasion, .list, .item, .invitation, .gift,
-      .claim, .blockStore, .unblockStore, .leaveList, .revokeCurrentSession, .confirmProfile, .uploadImage, .me,
+      .updateGift, .claim, .blockStore, .unblockStore, .leaveList, .revokeCurrentSession, .confirmProfile, .uploadImage,
+      .me,
       .search, .createItem:
       []
     }
@@ -142,6 +145,8 @@ public enum Route: String, Sendable, CaseIterable {
     // A search's key makes a resend after a lost connection read nothing again. The add's key is the add form's own,
     // so a second Add after a lost answer adds the item once.
     case .search, .createItem: ["Idempotency-Key"]
+    // An unsent change keeps its key, so a resend after a lost connection, or in a later sync, is the same write.
+    case .updateGift: ["Idempotency-Key"]
     case .health, .redeemLoginLink, .users, .user, .groups, .group, .groupUsers, .groupGroups, .occasions, .occasion,
       .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation, .gifts, .gift,
       .blockedStores, .unblockStore, .leaveList, .revokeCurrentSession, .confirmProfile, .uploadImage, .me:
@@ -156,6 +161,7 @@ public enum Route: String, Sendable, CaseIterable {
     case .updateMe: fields(of: UserChanges.CodingKeys.self, nested: ["birthday": PartialDate.fields])
     case .blockStore: fields(of: BlockStoreBody.CodingKeys.self)
     case .claim: fields(of: ClaimBody.CodingKeys.self)
+    case .updateGift: fields(of: GiftChanges.CodingKeys.self)
     // A search sends a form, not JSON: its one field is the text.
     case .search: ["text"]
     case .createItem:
@@ -194,7 +200,7 @@ public enum Route: String, Sendable, CaseIterable {
     case .invitations: Page<VersionedRow<Invitation>>.fields
     case .invitation: Invitation.fields
     case .gifts: Page<VersionedRow<Gift>>.fields
-    case .gift, .claim: Gift.fields
+    case .gift, .updateGift, .claim: Gift.fields
     case .blockedStores: Page<VersionedRow<BlockedStore>>.fields
     case .blockStore: BlockedStore.fields
     case .revokeCurrentSession, .unblockStore, .leaveList: NoContent.fields
@@ -410,7 +416,34 @@ struct ClaimBody: Encodable, Sendable {
   }
 }
 
+/// The body of `PATCH /gifts/{id}`: a merge patch of only the fields changed, so a field that is absent doesn't
+/// change. The giver's unsent changes to an open gift send it, with no `If-Match`. See "No If-Match" in
+/// `docs/spec.md`.
+public struct GiftChanges: Codable, Sendable, Equatable {
+  /// The giver's private mark: bought, or not.
+  public var isBought: Bool?
+
+  public init(isBought: Bool? = nil) {
+    self.isBought = isBought
+  }
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case isBought = "is_bought"
+  }
+
+  public func encode(to encoder: any Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encodeIfPresent(isBought, forKey: .isBought)
+  }
+}
+
 extension Endpoint where Response == Gift {
+  /// A merge patch of the giver's open gift, with the unsent change's own key, so that a resend of the change is the
+  /// same write. It sends no `If-Match`.
+  static func updateGift(_ id: String, _ changes: GiftChanges, key: String) -> Endpoint {
+    Endpoint(route: .updateGift, parameters: ["id": id], body: changes, idempotencyKey: key)
+  }
+
   /// Claims one of the item, for the soonest occasion that the giver may pick, with a key of its own, so that a
   /// resend after a lost connection makes one gift.
   static func claim(_ itemID: String) -> Endpoint {
