@@ -4,7 +4,9 @@
 // (jsclayton/wishbone), so both repos read alike. Keep them in step with the PR
 // title check in .github/workflows/pr-title.yml. Its subjectPattern
 // `^(?![A-Z]).+$` is mirrored by the local subject-no-leading-uppercase rule,
-// so subject-case is off.
+// so subject-case is off. The PR title check limits the title to 92 characters, so
+// that the squash merge's " (#NNNN)" keeps the header within the 100 of
+// header-max-length.
 export default {
   extends: ['@commitlint/config-conventional'],
   plugins: [

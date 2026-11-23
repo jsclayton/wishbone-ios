@@ -24,6 +24,16 @@ jobs:
       pull-requests: read
       statuses: write
     steps:
+      # A squash merge adds " (#NNNN)" (up to 8 characters) to the title, and the
+      # Commitlint check on main refuses a header over 100 characters (#168).
+      - name: Leave room for the number a squash merge adds
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          if [ "${#TITLE}" -gt 92 ]; then
+            echo "::error::The title is ${#TITLE} characters. Keep it to 92 or fewer: the squash merge adds \" (#NNNN)\", and a commit header over 100 fails Commitlint on main."
+            exit 1
+          fi
       - uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
