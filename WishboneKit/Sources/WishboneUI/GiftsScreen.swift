@@ -28,7 +28,9 @@ struct GiftsScreen: View {
       ForEach(groups) { group in
         Section {
           ForEach(group.gifts) { gift in
-            GivingRow(gift: gift, tileUserID: group.recipients?.first?.id ?? session.session.userID)
+            NavigationLink(value: Page.gift(id: gift.id)) {
+              GivingRow(gift: gift, tileUserID: group.recipients?.first?.id ?? session.session.userID)
+            }
           }
         } header: {
           GivingHeading(group: group)
@@ -94,7 +96,8 @@ private struct GivingHeading: View {
 }
 
 /// A Giving row: the image, the title, how many when it is more than one, "Hidden until {date}", the from label,
-/// bought or not bought, "Needs attention" in words, and each flag in words. It is one element, read in that order.
+/// bought or not bought, "Needs attention" in words, and each flag in words. It is one element, read in that order,
+/// and it opens the gift's page.
 /// At the largest text sizes, the image moves above the text.
 private struct GivingRow: View {
   let gift: GivingGift

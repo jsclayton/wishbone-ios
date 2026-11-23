@@ -180,7 +180,8 @@ private struct StillWantedLine: View {
   }
 }
 
-/// For a giver: one line for each of their own open gifts on the item, or else I'll get this, and what the last
+/// For a giver: one line for each of their own open gifts on the item, which opens the gift's page, or else I'll get
+/// this, and what the last
 /// claim said in place. The button waits for the server's answer, and says "Claiming" while it waits. A claim that
 /// the server grants plays the system's success haptic, and the result is announced. See `docs/screens/item.md`.
 ///
@@ -204,9 +205,11 @@ private struct ClaimSection: View {
   var body: some View {
     Group {
       ForEach(page.claims) { claim in
-        // The line opens the gift's page in a later step.
-        Text(ClaimWords.line(claim))
-          .font(.body.weight(.semibold))
+        // The line opens the gift's page.
+        NavigationLink(value: Page.gift(id: claim.id)) {
+          Text(ClaimWords.line(claim))
+            .font(.body.weight(.semibold))
+        }
       }
       if page.claims.isEmpty {
         if page.offersClaim, result?.replacesButton != true {

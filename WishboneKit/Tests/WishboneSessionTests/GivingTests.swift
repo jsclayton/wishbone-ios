@@ -10,8 +10,6 @@ import WishboneSession
 @Suite("Giving and the Gifts tab's badge", .timeLimit(.minutes(2)))
 @MainActor
 struct GivingTests {
-  typealias Route = NetworkConditioner.Route
-
   /// A device of the instance, signed in as the person. Its first sync has ended, and the session has published
   /// what the instance names for the person.
   private func signedIn(as person: Fixture.Person, on instance: Instance) async throws -> SessionModel {
@@ -80,38 +78,6 @@ struct GivingTests {
   /// The group that holds the gift.
   private func group(of gift: Fixture.Gift, in groups: [GivingGroup]) throws -> GivingGroup {
     try #require(groups.first { $0.gifts.contains { $0.id == gift.id } })
-  }
-
-  /// Answers the device's next pull with the gift as the instance sends it, edited: `GET /versions` names it with
-  /// a new version, and `GET /gifts/{id}` gives the edited body. Returns when the copy holds it.
-  private func answer(
-    _ gift: Fixture.Gift, as person: Fixture.Person, to session: SessionModel, on instance: Instance,
-    edited edit: (inout [String: JSON]) -> Void
-  ) async throws {
-    guard case .object(var body) = try await person.signedIn().get("/gifts/\(gift.id)") else {
-      Issue.record("The gift is not an object")
-      return
-    }
-    edit(&body)
-    // A new version for each answer, so the pull fetches the gift again.
-    let version = "\"canned-\(UUID().uuidString)\""
-    var entries = try #require(try await person.signedIn().get("/versions")["data"].array)
-    entries = entries.map { entry in
-      guard entry["kind"] == "gift", entry["id"].string == gift.id else { return entry }
-      return ["kind": "gift", "id": entry["id"], "version": .string(version), "list_id": nil, "item_id": nil]
-    }
-    instance.conditioner.answer(
-      Route("GET", "/versions"),
-      with: .init(
-        status: 200, headers: ["Content-Type": "application/json", "ETag": "\"canned\""],
-        body: try JSON.object(["data": .array(entries)]).data))
-    instance.conditioner.answer(
-      Route("GET", "/gifts/\(gift.id)"),
-      with: .init(
-        status: 200, headers: ["Content-Type": "application/json", "ETag": version],
-        body: try JSON.object(body).data))
-    await session.syncNow()
-    await until { session.gift(id: gift.id)?.version == version }
   }
 
   // MARK: - 1. Groups

@@ -97,7 +97,7 @@ extension SessionModel {
     return count == 0 ? nil : count
   }
 
-  private func givingGift(_ gift: GiftRow) -> GivingGift {
+  func givingGift(_ gift: GiftRow) -> GivingGift {
     let flags = (gift.flags.value ?? []).compactMap { flag -> GivingGift.Flag? in
       switch flag {
       case .changed: .changed

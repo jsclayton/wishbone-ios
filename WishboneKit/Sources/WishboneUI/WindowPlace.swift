@@ -29,6 +29,9 @@ public enum Page: Codable, Hashable, Sendable {
 
   /// An item's page. Its address has no list, so the page stays when the item moves.
   case item(id: String)
+
+  /// A gift's page: one of the user's open gifts.
+  case gift(id: String)
   case people
 
   /// For the admin, on the People page: every user, with a search field.
@@ -40,11 +43,12 @@ public enum Page: Codable, Hashable, Sendable {
   /// For the admin, on the People page: the deactivated users.
   case deactivatedUsers
 
-  /// The tab that owns the page, for a sidebar shortcut: one of your lists is in Lists, and People, a user, or an
-  /// item is on Home.
+  /// The tab that owns the page, for a sidebar shortcut: one of your lists is in Lists, a gift is in Gifts, and
+  /// People, a user, or an item is on Home.
   public var owner: WindowTab {
     switch self {
     case .list: .lists
+    case .gift: .gifts
     case .user, .item, .people, .allUsers, .allGroups, .deactivatedUsers: .home
     }
   }
@@ -143,6 +147,9 @@ extension Page {
 
     /// An item's page. The page reads what it shows from the session model: see `SessionModel.itemPage(id:)`.
     case item(id: String)
+
+    /// A gift's page. The page reads what it shows from the session model: see `SessionModel.giftPage(id:)`.
+    case gift(id: String)
     case people
 
     /// For the admin: All users, All groups, or Deactivated. The page reads what it shows from the session model:
@@ -161,6 +168,8 @@ extension Page {
     // A user whom the copy holds only as a summary has no page, on the server or here.
     case .user(let id): session.userPage(id: id) == nil ? .notFound : .user(id: id)
     case .item(let id): session.itemPage(id: id) == nil ? .notFound : .item(id: id)
+    // Only its giver sees an open gift. For anyone else, and once it is gone, it is not in the copy.
+    case .gift(let id): session.giftPage(id: id) == nil ? .notFound : .gift(id: id)
     case .people: .people
     // Only the admin has For the admin. A window restored for anyone else doesn't get the page.
     case .allUsers, .allGroups, .deactivatedUsers: session.peoplePage.forAdmin == nil ? .notFound : .forAdmin(self)
@@ -189,6 +198,8 @@ extension Page {
     case .list: .listPage
     case .user: .userPage
     case .item: .itemPage
+    // A gift's page is a part of the Gifts tab, as diagnostics name it. A breadcrumb never says which gift.
+    case .gift: .gifts
     // The admin's lists are a part of the People page. Diagnostics name no more than that.
     case .people, .allUsers, .allGroups, .deactivatedUsers: .people
     }

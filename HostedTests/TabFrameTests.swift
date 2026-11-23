@@ -30,6 +30,7 @@ struct TabFrameTests {
   func notFound() async throws {
     #expect(Page.list(id: "3").content(in: session) == .notFound)
     #expect(Page.user(id: "8").content(in: session) == .notFound)
+    #expect(Page.gift(id: "5").content(in: session) == .notFound)
     #expect(Page.people.content(in: session) == .people)
 
     let window = try FrameWindow(session: session)

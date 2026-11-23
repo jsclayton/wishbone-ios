@@ -63,6 +63,9 @@
         }
       }
     },
+    "%@ was removed" : {
+      "comment" : "A change of an item: the store link was removed"
+    },
     "%@ · read %@" : {
       "localizations" : {
         "en" : {
@@ -147,6 +150,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$@, %2$@, %3$@"
+          }
+        }
+      }
+    },
+    "%@: %@ → %@" : {
+      "comment" : "A change of a store link's price, old to new, after the store's name. A price can be the word for none",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@: %2$@ → %3$@"
           }
         }
       }
@@ -365,7 +379,7 @@
 
     },
     "For %@" : {
-
+      "comment" : "Who a gift is for, on its page, by name"
     },
     "For %@ · %@" : {
       "comment" : "A Giving heading: who the gifts are for, then the occasion or the reveal date",
@@ -381,10 +395,16 @@
     "For the admin" : {
 
     },
+    "From" : {
+
+    },
     "From %@" : {
       "comment" : "Who a gift in Giving is from, as its giver set it"
     },
     "Getting a login link" : {
+
+    },
+    "Gift" : {
 
     },
     "Gifts" : {
@@ -426,6 +446,9 @@
 
     },
     "Home" : {
+
+    },
+    "How many" : {
 
     },
     "I don't have a link" : {
@@ -543,6 +566,9 @@
     "Newest" : {
 
     },
+    "No" : {
+
+    },
     "No Wishbone found at %@" : {
 
     },
@@ -550,6 +576,9 @@
 
     },
     "No lists yet." : {
+
+    },
+    "No longer always wanted" : {
 
     },
     "No longer shared with you" : {
@@ -582,6 +611,9 @@
     "Not sure" : {
 
     },
+    "Note" : {
+
+    },
     "Notes" : {
 
     },
@@ -600,8 +632,14 @@
     "Notifications are off for Wishbone. Turn them on in Settings to get reminders." : {
 
     },
+    "Now always wanted" : {
+
+    },
     "Now for %@" : {
       "comment" : "A gift's flag: the occasion that the gift moved to, or its recipients now, by name"
+    },
+    "Occasion" : {
+
     },
     "On the day" : {
 
@@ -618,6 +656,9 @@
           }
         }
       }
+    },
+    "Only you see this note." : {
+
     },
     "Open" : {
 
@@ -658,6 +699,17 @@
     },
     "Price" : {
 
+    },
+    "Price: %@ → %@" : {
+      "comment" : "A change of an item's price, old to new. A price can be the word for none",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Price: %1$@ → %2$@"
+          }
+        }
+      }
     },
     "Privacy policy" : {
 
@@ -779,6 +831,18 @@
     "The item changed" : {
 
     },
+    "The notes changed" : {
+
+    },
+    "The occasion changed." : {
+
+    },
+    "The occasion changed. It's now for %@." : {
+      "comment" : "A gift's flag on its page: the gift's occasion stopped applying, and it moved to this one"
+    },
+    "The photo changed" : {
+
+    },
     "The recipients changed" : {
 
     },
@@ -794,14 +858,31 @@
     "This is gone, or it isn't shared with you." : {
 
     },
+    "This list is no longer shared with you. You can still give this, or not." : {
+
+    },
     "This setting is for this device, whoever signs in." : {
 
     },
     "This version of Wishbone is too old for %@. Update the app." : {
 
     },
+    "This was removed from the list. You can still give it." : {
+
+    },
     "Title" : {
 
+    },
+    "Title: %@ → %@" : {
+      "comment" : "A change of an item's title, old to new",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Title: %1$@ → %2$@"
+          }
+        }
+      }
     },
     "To keep your gifts private on a shared device, touch and hold Wishbone on the Home Screen and choose Require Face ID." : {
 
@@ -844,6 +925,20 @@
     "Wants %lld" : {
 
     },
+    "Wants: %@ → %@" : {
+      "comment" : "A change of how many of an item its recipients want, old to new",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wants: %1$@ → %2$@"
+          }
+        }
+      }
+    },
+    "Who it's from, if not only you" : {
+
+    },
     "Wishbone" : {
 
     },
@@ -866,6 +961,9 @@
 
     },
     "Year (optional)" : {
+
+    },
+    "Yes" : {
 
     },
     "You aren't getting anything yet. Open someone on Home and tap I'll get this." : {
@@ -977,6 +1075,9 @@
     },
     "no price" : {
 
+    },
+    "none" : {
+      "comment" : "No value, in a change of an item: no price"
     },
     "opens in browser" : {
 
