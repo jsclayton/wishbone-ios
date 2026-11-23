@@ -190,6 +190,45 @@ struct ClaimTests {
     #expect(!page.offersClaim)
   }
 
+  @Test("A claim made while a sync runs stays in the copy once both end: one more sync runs after that sync")
+  func claimDuringSync() async throws {
+    typealias Route = NetworkConditioner.Route
+    let versions = Route("GET", "/versions")
+    let instance = try await Instance()
+    let builder = instance.builder
+    let family = try await builder.standardFamily()
+    let list = try await builder.list("Wishes", of: family.child)
+    let lamp = try await builder.item("Lamp", on: list, as: family.child, quantity: 2)
+    let session = try await signedIn(as: family.relative, on: instance)
+    // Something changes after the first sync, so the next `GET /versions` is not a 304, and its pull removes what
+    // its answer doesn't name.
+    _ = try await builder.item("Scarf", on: list, as: family.child)
+
+    // The server answers the sync's `GET /versions` before the claim, and the answer arrives after it.
+    let held = instance.conditioner.hold(versions)
+    let early = Task { await session.syncNow() }
+    await held.waitUntilHeld()
+    #expect(await session.claim(item: lamp.id) == .claimed)
+    #expect(try #require(session.itemPage(id: lamp.id)).claims.count == 1)
+
+    // The answer names no gift, so that sync removes it. The sync after it asks again, after the claim.
+    let after = instance.conditioner.hold(versions)
+    held.release()
+    #expect(await early.value == .succeeded)
+    await after.waitUntilHeld()
+    await until { session.itemPage(id: lamp.id)?.claims.isEmpty == true }
+    after.release()
+
+    try await untilInStep(session, as: family.relative)
+    let page = try #require(session.itemPage(id: lamp.id))
+    let onServer = try await giftsOnServer(of: family.relative, onItem: lamp)
+    #expect(onServer.count == 1)
+    #expect(page.claims.map(\.id) == onServer.compactMap { $0["id"].string })
+    #expect(page.item.myClaimedQuantity == .shown(1))
+    #expect(page.stillWanted == .count(1, of: 2))
+    #expect(!page.offersClaim)
+  }
+
   @Test("A gift whose occasion the giver can't see gives its line with the reveal date, not the occasion")
   func hiddenOccasion() async throws {
     let instance = try await Instance()

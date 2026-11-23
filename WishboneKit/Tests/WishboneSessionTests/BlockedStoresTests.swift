@@ -116,6 +116,30 @@ final class BlockedStoresTests {
     #expect(ownStores(of: admin) == [host])
   }
 
+  @Test("A store blocked while a sync runs stays in the copy once both end: one more sync runs after that sync")
+  func blockDuringSync() async throws {
+    let admin = try await signedIn(as: instance.builder.admin)
+    let host = store("during")
+
+    // The server answers the sync's read of the blocked stores before the block, and the answer arrives after it.
+    let held = instance.conditioner.hold(.init("GET", "/blocked-stores"))
+    let early = Task { await admin.syncNow() }
+    await held.waitUntilHeld()
+    #expect(await admin.block(host) == .blocked)
+    await until { self.ownStores(of: admin) == [host] }
+
+    // The answer has no such store, so that sync removes it. The sync after it reads them again, after the block.
+    let after = instance.conditioner.hold(.init("GET", "/versions"))
+    held.release()
+    #expect(await early.value == .succeeded)
+    await after.waitUntilHeld()
+    await until { self.ownStores(of: admin).isEmpty }
+    after.release()
+
+    await until { self.ownStores(of: admin) == [host] }
+    #expect(try await blockedOnServer().contains(host))
+  }
+
   @Test("A store that is already blocked is a success, and the list shows it once")
   func alreadyBlocked() async throws {
     let admin = try await signedIn(as: instance.builder.admin)

@@ -133,6 +133,8 @@ extension SessionModel {
   private func keep(_ user: Versioned<User>) async throws {
     guard !hasEnded else { throw CancellationError() }
     try await database.save([user])
+    // A sync that runs now may have fetched the user before this answer, and can put the old record back.
+    syncAgainIfSyncing()
   }
 
   private func outcome(of error: APIError, photo: Bool) async -> ProfileOutcome {

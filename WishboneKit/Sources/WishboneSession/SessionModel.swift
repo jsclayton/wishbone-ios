@@ -374,6 +374,22 @@ public final class SessionModel {
     return await next.value
   }
 
+  /// Asks for one more sync when a sync runs now, after a write that waits for the server has put the server's
+  /// answer into the copy. Nothing waits for that sync.
+  ///
+  /// A pull writes each thing when its answer arrives, and an answer can be older than the write. A pull whose
+  /// `GET /versions` was answered before the server made the change removes the new row as absent, and a body
+  /// that it fetched before the change puts the old one back. The server is right, and the copy is wrong until a
+  /// pull asks again. So one more sync runs after this one: its `GET /versions` comes after the write, and brings
+  /// the write back. The kept `ETag` can stay: the write changed the versions, so they no longer match it.
+  ///
+  /// A pull that started after the server's answer asks after the write too. So with no sync running, nothing more
+  /// is needed.
+  func syncAgainIfSyncing() {
+    guard !hasEnded, running != nil else { return }
+    Task { await syncNow() }
+  }
+
   /// Starts a sync, as the one that runs, and returns its outcome when it ends. After a sync that succeeded, it
   /// starts the fetch of images ahead of time, which nothing waits for, and returns when the reminders are rebuilt.
   ///
