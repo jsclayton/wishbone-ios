@@ -28,6 +28,9 @@ public struct HomeOccasion: Equatable, Sendable, Identifiable {
 
     /// The user's own occasion opens their primary list.
     case list(id: String)
+
+    /// A shared occasion opens its page.
+    case sharedOccasion(id: String)
   }
 
   /// The user's own open gifts for the occasion, on its next date.
@@ -78,8 +81,7 @@ public struct HomeOccasion: Equatable, Sendable, Identifiable {
 
   public let gifts: Gifts
 
-  /// What a tap opens. Nil for one that opens nothing yet: a shared occasion, whose page comes later, and the user's
-  /// own occasion while the copy has no primary list for them.
+  /// What a tap opens. Nil for the user's own occasion while the copy has no primary list for them.
   public let destination: Destination?
 }
 
@@ -187,15 +189,37 @@ public struct HomeOccasions: Equatable, Sendable {
     today: Date,
     timeZone: TimeZone
   ) {
+    let comingUp = Self.rows(
+      occasions: occasions, people: people, me: me, gifts: gifts, today: today, timeZone: timeZone, within: Self.days)
+    let others = comingUp.filter { $0.whose != .own }
+    let soonest = others.first?.daysLeft
+    self.init(countdown: others.filter { $0.daysLeft == soonest }, comingUp: comingUp)
+  }
+
+  /// The occasions as rows, soonest first: every occasion with a next date from today on, in the device's zone, and
+  /// with `days`, only the ones up to that many days after today. Each occasion is one row: a shared occasion too.
+  /// One whose person is not in the copy, or whose kind the app doesn't know, is left out, as the reminders leave
+  /// it out.
+  ///
+  /// The gift counts are the user's own open gifts for the occasion on its next date.
+  public static func rows(
+    occasions: [Occasion],
+    people: [String: Person],
+    me: String,
+    gifts: [Gift],
+    today: Date,
+    timeZone: TimeZone,
+    within days: Int?
+  ) -> [HomeOccasion] {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = timeZone
     let start = calendar.startOfDay(for: today)
 
     var rows: [HomeOccasion] = []
     for occasion in occasions {
-      guard let text = occasion.nextDate, let date = Self.day(of: text, in: calendar),
+      guard let text = occasion.nextDate, let date = day(of: text, in: calendar),
         let daysLeft = calendar.dateComponents([.day], from: start, to: date).day,
-        (0...Self.days).contains(daysLeft)
+        daysLeft >= 0, days.map({ daysLeft <= $0 }) ?? true
       else { continue }
 
       let whose: HomeOccasion.Whose
@@ -204,7 +228,7 @@ public struct HomeOccasions: Equatable, Sendable {
       switch occasion.kind {
       case .shared:
         whose = .shared(isEveryone: occasion.isEveryone)
-        destination = nil
+        destination = .sharedOccasion(id: occasion.id)
       case .birthday, .custom:
         guard let userID = occasion.userID else { continue }
         if userID == me {
@@ -233,17 +257,14 @@ public struct HomeOccasions: Equatable, Sendable {
           destination: destination))
     }
     // The soonest first. Two on one day keep the order they came in: the copy's, by name.
-    let comingUp = rows.enumerated().sorted { first, second in
+    return rows.enumerated().sorted { first, second in
       first.element.daysLeft != second.element.daysLeft
         ? first.element.daysLeft < second.element.daysLeft : first.offset < second.offset
     }.map(\.element)
-    let others = comingUp.filter { $0.whose != .own }
-    let soonest = others.first?.daysLeft
-    self.init(countdown: others.filter { $0.daysLeft == soonest }, comingUp: comingUp)
   }
 
   /// The start of the day of a `YYYY-MM-DD` date, in the calendar's zone. Nil for text that is not such a date.
-  private static func day(of text: String, in calendar: Calendar) -> Date? {
+  static func day(of text: String, in calendar: Calendar) -> Date? {
     let parts = text.split(separator: "-").compactMap { Int($0) }
     guard parts.count == 3 else { return nil }
     let components = DateComponents(year: parts[0], month: parts[1], day: parts[2])
@@ -255,25 +276,42 @@ public struct HomeOccasions: Equatable, Sendable {
 extension SessionModel {
   /// Home's occasions, from the copy, for the day of `today` in the device's zone.
   public func homeOccasions(today: Date = .now) -> HomeOccasions {
-    let me = session.userID
+    let inputs = occasionInputs()
+    return HomeOccasions(
+      occasions: inputs.occasions, people: inputs.people, me: session.userID, gifts: inputs.gifts, today: today,
+      timeZone: deviceTimeZone)
+  }
+
+  /// The Occasions screen's Coming up, from the copy: every occasion that has a next date, from the day of `today`
+  /// in the device's zone, soonest first, the user's own included. See `docs/screens/occasions.md`.
+  public func everyOccasion(today: Date = .now) -> [HomeOccasion] {
+    let inputs = occasionInputs()
+    return HomeOccasions.rows(
+      occasions: inputs.occasions, people: inputs.people, me: session.userID, gifts: inputs.gifts, today: today,
+      timeZone: deviceTimeZone, within: nil)
+  }
+
+  /// The device's zone, as the session model knows it.
+  var deviceTimeZone: TimeZone { TimeZone(identifier: timeZoneIdentifier) ?? .gmt }
+
+  /// The occasions, the people, and the user's own open gifts, from the copy, as the occasions' rows read them.
+  private func occasionInputs() -> (
+    occasions: [HomeOccasions.Occasion], people: [String: HomeOccasions.Person], gifts: [HomeOccasions.Gift]
+  ) {
     var people: [String: HomeOccasions.Person] = [:]
     for user in users {
       people[user.id] = HomeOccasions.Person(
         name: user.name, birthYear: user.record?.birthday.year, primaryListID: user.record?.primaryListID)
     }
-    return HomeOccasions(
-      occasions: occasions.map { row in
-        HomeOccasions.Occasion(
-          id: row.id, kind: row.kind, name: row.name, userID: row.userID, isEveryone: row.isEveryone ?? false,
-          nextDate: row.nextDate)
-      },
-      people: people,
-      me: me,
-      gifts: giving.map { gift in
-        HomeOccasions.Gift(
-          occasionID: gift.occasion?.id, occasionDate: gift.occasionDate, isBought: gift.isBought.value ?? false)
-      },
-      today: today,
-      timeZone: TimeZone(identifier: timeZoneIdentifier) ?? .gmt)
+    let occasions = occasions.map { row in
+      HomeOccasions.Occasion(
+        id: row.id, kind: row.kind, name: row.name, userID: row.userID, isEveryone: row.isEveryone ?? false,
+        nextDate: row.nextDate)
+    }
+    let gifts = giving.map { gift in
+      HomeOccasions.Gift(
+        occasionID: gift.occasion?.id, occasionDate: gift.occasionDate, isBought: gift.isBought.value ?? false)
+    }
+    return (occasions, people, gifts)
   }
 }
