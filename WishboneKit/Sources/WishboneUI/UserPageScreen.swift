@@ -35,7 +35,6 @@ struct UserPageScreen: View {
       if let list = page.primaryList {
         Section {
           if page.seesClaimsAsParent {
-            // The primary color: the system's secondary gray is below 4.5:1 on the row.
             Text("You see what's been claimed here. Fully claimed items don't show.", bundle: #bundle)
           }
           if page.items.isEmpty {
@@ -66,8 +65,7 @@ struct UserPageScreen: View {
     #endif
   }
 
-  /// The items part with no items. For a viewer who can edit the list, it points to Add item. The primary color: the
-  /// system's secondary gray is below 4.5:1 on the row.
+  /// The items part with no items. For a viewer who can edit the list, it points to Add item.
   @ViewBuilder private func noItems(on list: ListRow) -> some View {
     Group {
       if list.canEdit {
@@ -90,7 +88,6 @@ private struct Header: View {
       VStack(spacing: 2) {
         Text(fullName)
           .font(.title2.weight(.bold))
-        // The primary color: the system's secondary gray is below 4.5:1 on the row.
         if page.user.isDeactivated {
           Text("Deactivated", bundle: #bundle)
             .font(.subheadline)
@@ -179,7 +176,6 @@ struct ItemRowView: View {
         if let price = PriceWords.row(
           priceMinor: item.row.priceMinor, topPriceMinor: item.row.topPriceMinor, currency: item.row.currency)
         {
-          // The primary color: the system's secondary gray is below 4.5:1 on the row.
           Text(price)
         }
         if let claim = item.claim {
@@ -200,7 +196,6 @@ struct ClaimLines: View {
   let claim: UserPage.Claim
 
   var body: some View {
-    // The primary color: the system's secondary gray is below 4.5:1 on the row.
     if let stillWanted = claim.stillWanted {
       Text("\(stillWanted) of \(claim.quantity) still wanted", bundle: #bundle)
     } else {
@@ -253,7 +248,6 @@ private struct OtherListRow: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 2) {
       Text(list.name)
-      // The primary color: the system's secondary gray is below 4.5:1 on the row.
       Text("\(list.itemCount) items", bundle: #bundle)
         .font(.subheadline)
     }
