@@ -82,10 +82,12 @@ nonisolated final class PeopleJourney: JourneyTestCase {
     XCTAssertTrue(app.staticTexts["Size medium"].exists)
     // The rows below Good to know's first line, which the larger text pushes down and off: the link's row, the
     // numbered list's number and item, the item and its price, Other lists' heading, and the other list with its
-    // count. The page has one item, so that in the
-    // default settings no row is under the tab bar, where the audit measures the bar's glass.
+    // count. The page is short, so that no row is under the tab bar, where the audit measures the bar's glass. In
+    // the double-length pseudo-language, iOS shows the count's plural string as its raw format, "#@value@
+    // %#@value@", and the item reads "Always wanted Always wanted".
     let pageRows = [
-      "Lego set", "1", "Size medium", "Kite", "$20", "Other lists", camping.name, "3 items",
+      "Lego set", "1", "Size medium", "Kite", "$20", "Always wanted", "Other lists", camping.name, "3 items",
+      "#@value@",
     ]
     try await Audit.run(
       on: app, showing: "a person's page", in: self, rowsThatLeaveTheScreen: pageRows,
