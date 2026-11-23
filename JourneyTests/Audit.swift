@@ -85,8 +85,9 @@ enum Audit {
   ) async throws {
     guard let helper else {
       // A run with no helper is at the simulator's own text size, as the double-length run is.
+      let shown = try await Screenshot.take(of: app, showing: "\(screen), in \(ownSetting)")
       try await audit(
-        app, screen, in: ownSetting, screenshot: app.screenshot(), rows: rowsThatLeaveTheScreen, test: test)
+        app, screen, in: ownSetting, screenshot: shown.screenshot, rows: rowsThatLeaveTheScreen, test: test)
       return
     }
     guard try await isNew(screen, helper: helper) else { return }
@@ -94,20 +95,20 @@ enum Audit {
     // still. Between two settings, the simulator goes back to the default. So the audit never reads a screen that
     // is still on its way from one setting to the next, and each change is of one setting only.
     try await apply(settings[0], helper: helper)
-    var current = try await settledScreen(of: app, in: settings[0], where: { _ in true })
+    var current = try await settledScreen(of: app, screen, in: settings[0], where: { _ in true })
     try await audit(
       app, screen, in: settings[0].label, screenshot: current.screenshot, rows: rowsThatLeaveTheScreen, test: test)
     for setting in settings.dropFirst() {
       try await apply(setting, helper: helper)
       let toSetting = Change(from: settings[0], before: current.pixels, helper: helper)
-      var shown = try await settledScreen(of: app, in: setting, after: toSetting)
+      var shown = try await settledScreen(of: app, screen, in: setting, after: toSetting)
       // The largest text size gets no rows, so it checks Dynamic Type on every row that shows. See above.
       let rows = setting.name == largestText.name ? [] : rowsThatLeaveTheScreen
       try await audit(app, screen, in: setting.label, screenshot: shown.screenshot, rows: rows, test: test)
       if setting.name == largestText.name {
         for row in rowsToScrollTo {
           guard let top = try await scroll(app, to: row, in: screen) else { continue }
-          let scrolled = try await settledScreen(of: app, in: setting, where: { _ in true })
+          let scrolled = try await settledScreen(of: app, screen, in: setting, where: { _ in true })
           // The words after the setting keep the screenshot out of the gate's count of the screen's four settings.
           // The audit is of Dynamic Type and clipped text only. The screen as it opens had the other checks, and a
           // scrolled screen has rows under the top bar, which the system fades: the contrast check reads those.
@@ -119,7 +120,7 @@ enum Audit {
       }
       try await apply(settings[0], helper: helper)
       let toDefault = Change(from: setting, before: shown.pixels, helper: helper)
-      current = try await settledScreen(of: app, in: settings[0], after: toDefault)
+      current = try await settledScreen(of: app, screen, in: settings[0], after: toDefault)
     }
   }
 
@@ -147,7 +148,11 @@ enum Audit {
         throw AuditError("\(row) is too tall to show whole on the screen of \(screen) at the largest text size.")
       }
       let before = element.exists ? element.frame : nil
-      let screenBefore = before == nil ? app.screenshot().pngRepresentation : nil
+      let shown = "\(screen), scrolled to \(row)"
+      var screenBefore: Data?
+      if before == nil {
+        screenBefore = try await Screenshot.take(of: app, showing: shown).screenshot.pngRepresentation
+      }
       // A short press and a slow drag with a hold, so the list doesn't coast, and nothing is tapped. A drag moves the
       // content a little less than the finger, so the loop drags again for the rest.
       let from = window.frame.minY + window.frame.height * 0.8
@@ -161,7 +166,7 @@ enum Audit {
       // The row's place tells whether the list moved: a screenshot differs while the scroll indicator fades.
       let moved =
         if let before { !element.exists || element.frame != before } else {
-          app.screenshot().pngRepresentation != screenBefore
+          try await Screenshot.take(of: app, showing: shown).screenshot.pngRepresentation != screenBefore
         }
       if !moved {
         // A drag can be lost on a busy machine. A list at its end doesn't move three times in a row.
@@ -398,13 +403,13 @@ enum Audit {
   /// before, in the setting's appearance. Each send gets the whole `settleTimeout`. A screen that showed the change
   /// is only slow, so its change isn't sent again.
   private static func settledScreen(
-    of app: XCUIApplication, in setting: Setting, after change: Change
+    of app: XCUIApplication, _ screen: String, in setting: Setting, after change: Change
   ) async throws -> (screenshot: XCUIScreenshot, pixels: Data) {
     var resends = 0
     while true {
       do {
         return try await settledScreen(
-          of: app, in: setting, where: { $0 != change.before }, before: change.before,
+          of: app, screen, in: setting, where: { $0 != change.before }, before: change.before,
           unchangedLimit: resends < resendLimit ? unchangedLimit : nil)
       } catch is Unchanged {
         resends += 1
@@ -431,18 +436,27 @@ enum Audit {
   ///
   /// `before` is the screen before a change. With `unchangedLimit`, it throws `Unchanged` when no screenshot
   /// showed the change for that long: each was exactly `before`, or not in the setting's appearance.
+  ///
+  /// A request for a screenshot that XCTest timed out (see `Screenshot`) starts the wait again from that point, with
+  /// no screenshot before it: the runner stalled, so the time before is not the app's, and the screenshot before the
+  /// stall is not one of two in a row. What the screen showed before the stall still counts as shown.
   private static func settledScreen(
-    of app: XCUIApplication, in setting: Setting, where accept: (Data) -> Bool, before: Data? = nil,
-    unchangedLimit: Duration? = nil
+    of app: XCUIApplication, _ screen: String, in setting: Setting, where accept: (Data) -> Bool,
+    before: Data? = nil, unchangedLimit: Duration? = nil
   ) async throws -> (screenshot: XCUIScreenshot, pixels: Data) {
-    let started = ContinuousClock.now
-    let deadline = started + settleTimeout
+    var started = ContinuousClock.now
+    var deadline = started + settleTimeout
     var last: Data?
     var moved = false
     var inAppearance = false
     var onlyBefore = true
     while true {
-      let screenshot = app.screenshot()
+      let (screenshot, timeOuts) = try await Screenshot.take(of: app, showing: "\(screen), in \(setting.label)")
+      if timeOuts > 0 {
+        started = ContinuousClock.now
+        deadline = started + settleTimeout
+        last = nil
+      }
       let pixels = screenshot.pngRepresentation
       let shows = isInAppearance(screenshot, of: setting)
       if pixels == last, shows, accept(pixels) { return (screenshot, pixels) }

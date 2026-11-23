@@ -383,19 +383,25 @@ export function settingsApplier(
  *
  * `POST /audit-retries`, with the audit's screen and setting as the body, records that an audit ran again after
  * XCTest said that it didn't complete in time: the named flake "an accessibility audit doesn't complete in time on
- * a CI runner" in docs/development.md. It answers 204.
+ * a CI runner" in docs/development.md. It answers 204. `POST /screenshot-retries`, with the screen and setting as
+ * the body, records the same for a screenshot that XCTest didn't get in time: the named flake "XCTest doesn't get a
+ * screenshot on a CI runner".
  *
- * Resolves with `{ address, close, screens, resends, auditRetries }`, where `screens()` gives the names, in the
+ * Resolves with `{ address, close, screens, resends, auditRetries, screenshotRetries }`, where `screens()` gives the names, in the
  * order they came, `resends()` gives each change that a journey sent again: `{ setting, after, read }`, with the
  * settings' labels and what `readSettings` read before the change was sent again, and `auditRetries()` gives each
- * audit that ran again, by its screen and setting, in the order they came.
+ * audit that ran again, by its screen and setting, in the order they came. `screenshotRetries()` gives each
+ * screenshot that was asked for again, the same way.
  */
 export function startSettingsHelper(applySetting, { readSettings = async () => 'not read' } = {}) {
   const resends = [];
   const auditRetries = [];
+  const screenshotRetries = [];
+  const retries = { '/audit-retries': [auditRetries, 'audit'], '/screenshot-retries': [screenshotRetries, 'screenshot'] };
   const screens = new Set();
   const server = createServer((request, response) => {
-    if (request.url === '/audit-retries') {
+    if (Object.hasOwn(retries, request.url ?? '')) {
+      const [list, what] = retries[request.url];
       if (request.method !== 'POST') {
         response.writeHead(404).end();
         return;
@@ -403,12 +409,12 @@ export function startSettingsHelper(applySetting, { readSettings = async () => '
       const body = [];
       request.on('data', (chunk) => body.push(chunk));
       request.on('end', () => {
-        const audit = Buffer.concat(body).toString('utf8');
-        if (audit === '') {
-          response.writeHead(400, { 'Content-Type': 'text/plain' }).end("the audit's screen and setting, as the body");
+        const retried = Buffer.concat(body).toString('utf8');
+        if (retried === '') {
+          response.writeHead(400, { 'Content-Type': 'text/plain' }).end(`the ${what}'s screen and setting, as the body`);
           return;
         }
-        auditRetries.push(audit);
+        list.push(retried);
         response.writeHead(204).end();
       });
       return;
@@ -466,6 +472,7 @@ export function startSettingsHelper(applySetting, { readSettings = async () => '
         screens: () => [...screens],
         resends: () => resends.map((one) => ({ ...one })),
         auditRetries: () => [...auditRetries],
+        screenshotRetries: () => [...screenshotRetries],
       });
     });
   });
@@ -476,6 +483,22 @@ export const resendFlake = "a change of setting doesn't show in the app";
 
 /** The name of the flake that a journey meets by running an audit again. See `startSettingsHelper`. */
 export const auditTimeOutFlake = "an accessibility audit doesn't complete in time on a CI runner";
+
+/** The name of the flake that a journey meets by asking for a screenshot again. See `startSettingsHelper`. */
+export const screenshotTimeOutFlake = "XCTest doesn't get a screenshot on a CI runner";
+
+/**
+ * The lines after a run of the journeys, one for each screenshot that a journey asked for again because XCTest
+ * didn't get it in time (`screenshotRetries()` of `startSettingsHelper`). None when no screenshot was asked again.
+ */
+export function screenshotRetryLines(retries) {
+  if (retries.length === 0) return [];
+  const screenshots = retries.length === 1 ? '1 screenshot' : `${retries.length} screenshots`;
+  return [
+    `  The journeys asked for ${screenshots} again, because XCTest didn't get it in time (the named flake "${screenshotTimeOutFlake}"):`,
+    ...retries.map((shown) => `    ${shown}.`),
+  ];
+}
 
 /**
  * The lines after a run of the journeys, one for each audit that ran again because XCTest said that it didn't
@@ -685,6 +708,7 @@ export async function runSimulatorTier({ root, directory, build = true, say = co
           say(`  The settings helper made ${applier.calls() - helperCalls} simctl calls, in ${duration(applier.ms() - helperMs)}${again}.`);
           for (const line of resendLines(helper.resends())) say(line);
           for (const line of auditRetryLines(helper.auditRetries())) say(line);
+          for (const line of screenshotRetryLines(helper.screenshotRetries())) say(line);
         }
         return { passed, reading };
       };

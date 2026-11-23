@@ -7,7 +7,7 @@ import XCTest
 ///
 /// It audits the Settings sheet, the Reminders screen and Acknowledgements, and attaches a screenshot of each as
 /// evidence for a person.
-nonisolated final class SignOutJourney: XCTestCase {
+nonisolated final class SignOutJourney: JourneyTestCase {
   @MainActor
   func testSignOut() async {
     continueAfterFailure = false

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -27,6 +27,8 @@ import {
   resendLines,
   resultBundles,
   runAgainOnLaunchFlake,
+  screenshotRetryLines,
+  screenshotTimeOutFlake,
   settingCallLimitMs,
   settingPauseMs,
   settingReadLimitMs,
@@ -670,6 +672,53 @@ test("a journey runs a timed-out audit again a bounded number of times, and only
   assert.match(audit, /error\.domain == "com\.apple\.xcode\.xctest\.accessibilityAudit" && error\.code == -56/);
   // The journey reports each retry at the path that the helper reads.
   assert.match(audit, /helper\.appending\(path: "audit-retries"\)/);
+});
+
+test('the settings helper remembers each screenshot that was asked for again, apart from the audits', async (t) => {
+  const { applier, ran } = fakeSimulator();
+  const helper = await startSettingsHelper((setting, options) => applier.apply(setting, options));
+  t.after(() => helper.close());
+  const post = (body, method = 'POST') => fetch(`${helper.address}/screenshot-retries`, { method, body });
+  assert.deepEqual(helper.screenshotRetries(), []);
+  assert.equal((await post('the Add screen, in the default settings')).status, 204);
+  assert.equal((await post('Home, in dark mode')).status, 204);
+  assert.deepEqual(helper.screenshotRetries(), ['the Add screen, in the default settings', 'Home, in dark mode']);
+  // A screenshot with no name, or a request that isn't a POST, is not a retry.
+  assert.equal((await post('')).status, 400);
+  assert.equal((await post(undefined, 'GET')).status, 404);
+  assert.equal(helper.screenshotRetries().length, 2);
+  // A screenshot asked for again is not an audit that ran again, changes no setting, and is not a screen.
+  assert.deepEqual(helper.auditRetries(), []);
+  assert.deepEqual(ran, []);
+  assert.deepEqual(helper.screens(), []);
+});
+
+test('the line after the journeys names each screenshot asked for again, and the flake, and there is none when none was', () => {
+  assert.deepEqual(screenshotRetryLines([]), []);
+  assert.deepEqual(screenshotRetryLines(['the Add screen, in the default settings']), [
+    `  The journeys asked for 1 screenshot again, because XCTest didn't get it in time (the named flake "${screenshotTimeOutFlake}"):`,
+    '    the Add screen, in the default settings.',
+  ]);
+  assert.match(screenshotRetryLines(['a', 'b'])[0], /asked for 2 screenshots again/);
+});
+
+test("a journey asks for a timed-out screenshot again a bounded number of times, and only on XCTest's time-out", () => {
+  const journeys = new URL('../../JourneyTests/', import.meta.url);
+  const screenshot = readFileSync(new URL('Screenshot.swift', journeys), 'utf8');
+  const limit = Number(/static let retryLimit = (\d+)/.exec(screenshot)[1]);
+  assert.ok(limit >= 1 && limit <= 2, `Screenshot.swift asks for a timed-out screenshot again ${limit} times`);
+  assert.match(screenshot, /static let timeOutWords = "Failed to get screenshot: Timed out"/);
+  // The journey reports each retry at the path that the helper reads.
+  assert.match(screenshot, /helper\.appending\(path: "screenshot-retries"\)/);
+  // Every screenshot that a journey reads goes through the retry, and every journey's test case holds the
+  // time-out back, so XCTest's issue doesn't fail the journey before the retry.
+  const files = readdirSync(journeys).filter((file) => file.endsWith('.swift') && file !== 'Screenshot.swift');
+  assert.ok(files.includes('Audit.swift') && files.includes('SignInJourney.swift'));
+  for (const file of files) {
+    const source = readFileSync(new URL(file, journeys), 'utf8');
+    assert.doesNotMatch(source, /\.screenshot\(\)/, `${file} asks XCTest for a screenshot with no retry`);
+    assert.doesNotMatch(source, /class \w+: XCTestCase\b/, `${file} has a test case that doesn't hold the time-out back`);
+  }
 });
 
 test("the settings applier reads each option back, and says which it couldn't read", async () => {
