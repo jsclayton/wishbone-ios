@@ -126,9 +126,11 @@ struct HomeScreen: View {
         }
       }
     } header: {
+      // The label color itself: in a section's header, `.primary` is the header's gray, which fails the contrast
+      // rule where the heading sits under the tab bar's glass, at the largest text size.
       Text("Coming up", bundle: #bundle)
         .font(.title2.weight(.bold))
-        .foregroundStyle(.primary)
+        .foregroundStyle(Color.primary)
         .textCase(nil)
         .accessibilityAddTraits(.isHeader)
     }
