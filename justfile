@@ -27,7 +27,7 @@ gate:
 # `just simulator` by itself builds with the same arguments (`buildArguments` in scripts/gate/simulator.mjs). A
 # gate test holds the two to one build.
 
-# Build the app, both extensions and the test bundles for the simulator, then add new strings to the String Catalog, and make the Acknowledgements
+# Build the app, both extensions and the test bundles for the simulator, then add new strings to the String Catalog, make the Acknowledgements, and register the catalog's merge driver
 build:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -54,6 +54,7 @@ build:
     fi
     just sync-strings
     just acknowledgements
+    node scripts/xcstrings-merge.mjs --register
     echo "✓ Built Wishbone, ShareExtension, WidgetExtension and the test bundles for the simulator (log: build/xcodebuild.log)"
 
 # Xcode adds new strings to the catalog when it builds. A build from the command line only writes
