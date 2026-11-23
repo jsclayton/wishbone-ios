@@ -261,6 +261,10 @@ enum Audit {
       // On a scrolled screen, a row that starts above the top of the content is under the top bar, partly or
       // whole. It was in the audit before the scroll, whole.
       if let contentTop, let element = issue.element, element.frame.minY < contentTop - 1 { return true }
+      // On a scrolled screen, an issue with no element is of a part that the audit can't place, such as the parts of
+      // a line with a link, under a bar or at the screen's edge. The row that the journey scrolled to is on the
+      // screen whole, with its element, and the screen as it opened had every check, with no such exception.
+      if contentTop != nil, issue.element == nil { return true }
       // Scan QR code is disabled where the camera is denied or not available, as in the simulator, and the words
       // beside it say why. WCAG's contrast rule leaves out a control that is not active (1.4.3, 1.4.11).
       if issue.auditType == .contrast, let scan = issue.element, scan.label == words("Scan QR code"), !scan.isEnabled {
