@@ -125,7 +125,7 @@ public final class SessionModel {
 
   /// Whether the session is over: the device signed out. An ended session model publishes nothing, and asks the
   /// instance nothing.
-  var hasEnded = false
+  private(set) var hasEnded = false
 
   /// Stops when the session model goes.
   private var observation: AnyDatabaseCancellable?
@@ -738,6 +738,13 @@ public final class SessionModel {
   public func leftForeground(window: UUID) {
     windowsInForeground.remove(window)
     updateTimer()
+  }
+
+  /// Whether the alert of late refusals shows in a window that is in the foreground. An alert whose window left the
+  /// foreground, or closed, before the alert was closed doesn't show: it moves to the next window that comes to the
+  /// foreground. See `showLateRefusals(in:)`.
+  var lateRefusalAlertShows: Bool {
+    lateRefusalAlert.map { windowsInForeground.contains($0.window) } ?? false
   }
 
   // MARK: - Version checks

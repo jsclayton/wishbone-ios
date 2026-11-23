@@ -140,18 +140,22 @@ extension SessionModel {
     refusal.status == 408 || refusal.status == 429 || refusal.code.text == "idempotency_key_in_use"
   }
 
-  /// Whether a late refusal is captured here: never a 404, for something deleted elsewhere, and never a 400 or a
-  /// 422 of a write, which the client captures for every write.
+  /// Whether a late refusal is captured here: never a 404 or a 410, for something deleted elsewhere, and never a 400
+  /// or a 422 of a write, which the client captures for every write. See "Never captured" in `docs/spec.md`.
   private static func isCaptured(_ refusal: APIError.Refusal) -> Bool {
-    refusal.status != 404 && !(refusal.route.isWrite && [400, 422].contains(refusal.status))
+    ![404, 410].contains(refusal.status) && !(refusal.route.isWrite && [400, 422].contains(refusal.status))
   }
 
   // MARK: - Late refusals
 
   /// Shows the late refusals that wait, in the window that came to the foreground, in one alert. They leave the
   /// journal as the alert shows, so they show once, and never again.
+  ///
+  /// While the alert shows in a window that is in the foreground, it stays there, and the refusals that came since
+  /// wait for it to close. An alert whose window left the foreground, or closed, before it was closed moves to this
+  /// window, with the refusals that came since, so none is lost.
   func showLateRefusals(in window: UUID) async {
-    guard !hasEnded, lateRefusalAlert == nil else { return }
+    guard !hasEnded, !lateRefusalAlertShows else { return }
     let refusals: [LateRefusal]
     do {
       refusals = try await database.lateRefusals()
@@ -160,10 +164,14 @@ extension SessionModel {
       return
     }
     // Another window may have shown them meanwhile.
-    guard !refusals.isEmpty, !hasEnded, lateRefusalAlert == nil else { return }
-    lateRefusalAlert = LateRefusalAlert(window: window, refusals: refusals)
+    guard !hasEnded, !lateRefusalAlertShows else { return }
+    let earlier = lateRefusalAlert?.refusals ?? []
+    let new = refusals.filter { refusal in !earlier.contains { $0.id == refusal.id } }
+    guard !earlier.isEmpty || !new.isEmpty else { return }
+    lateRefusalAlert = LateRefusalAlert(window: window, refusals: earlier + new)
+    guard !new.isEmpty else { return }
     do {
-      try await database.removeLateRefusals(refusals.map(\.id))
+      try await database.removeLateRefusals(new.map(\.id))
     } catch {
       Log.fault(.session, "The journal can't forget the late refusals.", detail: "\(error)")
     }
