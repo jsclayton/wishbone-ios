@@ -38,9 +38,13 @@ nonisolated final class SignInJourney: JourneyTestCase {
   private func signInToTheProfileGate() async throws {
     let server = try await TestServer.shared()
     let builder = try await FixtureBuilder(server: server)
+    // Sam keeps the builder's birthday: the profile gate shows it, and the gate's audit reads the same month on
+    // every date. The journey doesn't audit Home, where Sam's own birthday is in Coming up from 16 April.
     let sam = try await builder.person("Sam")
-    // Someone to give to, so Home shows People.
-    let ash = try await builder.person("Ash", signedIn: false)
+    // Someone to give to, so Home shows People. Their birthday is far off on every date, so Home's countdown is
+    // the same screen whenever the journey runs.
+    let ash = try await builder.person(
+      "Ash", birthday: FixtureBuilder.monthAndDay(daysFromNow: Audit.farOff), signedIn: false)
     _ = try await builder.group("Camp", users: [sam, ash])
 
     let app = Audit.app()
@@ -83,10 +87,12 @@ nonisolated final class SignInJourney: JourneyTestCase {
   private func signIn() async throws {
     let server = try await TestServer.shared()
     let builder = try await FixtureBuilder(server: server)
-    // Home's People: Robin's parent, and the people of Robin's group.
-    let morgan = try await builder.person("Morgan", signedIn: false)
-    let jordan = try await builder.person("Jordan", signedIn: false)
-    let robin = try await builder.person("Robin", parents: [morgan])
+    // Home's People: Robin's parent, and the people of Robin's group. Every birthday is far off on every date, so
+    // Home has nothing in the next 60 days whenever the journey runs.
+    let farOff = FixtureBuilder.monthAndDay(daysFromNow: Audit.farOff)
+    let morgan = try await builder.person("Morgan", birthday: farOff, signedIn: false)
+    let jordan = try await builder.person("Jordan", birthday: farOff, signedIn: false)
+    let robin = try await builder.person("Robin", birthday: farOff, parents: [morgan])
     _ = try await builder.group("Family", users: [robin, morgan, jordan])
     // A user who confirmed their profile, so the app shows them no profile gate.
     try await builder.confirmProfile(of: robin)
@@ -175,7 +181,16 @@ nonisolated final class SignInJourney: JourneyTestCase {
     }
     // The sidebar's shortcuts are not in a tab bar, so it never grows a "More" tab.
     XCTAssertFalse(tabs.buttons["More"].exists || tabs.buttons[Audit.words("More")].exists)
-    try await Audit.run(on: app, showing: "Home", in: self)
+    // Home has nothing in the next 60 days, so the countdown and Coming up each say so. Coming up is last, and its
+    // line goes on under the tab bar, where the Dynamic Type check can't measure it. The journey doesn't scroll to
+    // Coming up at the largest text size: its only line has the same words as the countdown's line, which the audit
+    // checks there before any scroll. And Coming up is a short last part, so the list ends before it reaches the
+    // top: a People row stays partly under the top bar, where the audit reports it with no element to exempt.
+    XCTAssertTrue(
+      labelled(Audit.words("Nothing in the next 60 days.")).firstMatch.exists,
+      "Home has an occasion in the next 60 days.")
+    try await Audit.run(
+      on: app, showing: "Home", in: self, rowsThatLeaveTheScreen: ["Nothing in the next 60 days."])
 
     for name in ["Lists", "Gifts"] {
       tabs.buttons[Audit.words(name)].tap()
@@ -222,9 +237,11 @@ nonisolated final class SignInJourney: JourneyTestCase {
   private func instanceGoesAway() async throws {
     let server = try await TestServer.start()
     let builder = try await FixtureBuilder(server: server)
-    let sky = try await builder.person("Sky")
+    // Both birthdays are far off on every date, so Home has nothing in the next 60 days whenever the journey runs.
+    let farOff = FixtureBuilder.monthAndDay(daysFromNow: Audit.farOff)
+    let sky = try await builder.person("Sky", birthday: farOff)
     try await builder.confirmProfile(of: sky)
-    let rowan = try await builder.person("Rowan", signedIn: false)
+    let rowan = try await builder.person("Rowan", birthday: farOff, signedIn: false)
     _ = try await builder.group("Friends", users: [sky, rowan])
     let link = try await builder.loginLink(for: sky)
     let parts = try XCTUnwrap(URLComponents(url: link, resolvingAgainstBaseURL: false))
@@ -247,7 +264,17 @@ nonisolated final class SignInJourney: JourneyTestCase {
     XCTAssertTrue(
       app.staticTexts.matching(lineWords).firstMatch.waitForExistence(timeout: 60), "The line didn't show on Home.")
     XCTAssertTrue(app.buttons[rowan.name].exists, "What is saved went with the instance.")
-    try await Audit.run(on: app, showing: "Home, with the line", in: self)
+    XCTAssertTrue(
+      app.descendants(matching: .any)
+        .matching(NSPredicate(format: "label == %@", Audit.words("Nothing in the next 60 days."))).firstMatch.exists,
+      "Home has an occasion in the next 60 days.")
+    // The Dynamic Type check reports Home's "Nothing in the next 60 days." as "partially unsupported" in the
+    // default settings, as on Home itself. It is allowed as there, and never at the largest text size. In the
+    // double-length pseudo-language, the line above People pushes Rowan's row down, and the check reports it the
+    // same way.
+    try await Audit.run(
+      on: app, showing: "Home, with the line", in: self,
+      rowsThatLeaveTheScreen: ["Nothing in the next 60 days.", rowan.name])
     app.terminate()
 
     // A relaunch with the instance still gone. Gifts has nothing saved, and no sync has reached the instance in this

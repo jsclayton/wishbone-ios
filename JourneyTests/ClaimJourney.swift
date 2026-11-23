@@ -25,10 +25,13 @@ nonisolated final class ClaimJourney: JourneyTestCase {
   private func claim() async throws {
     let server = try await TestServer.shared()
     let builder = try await FixtureBuilder(server: server)
-    let robin = try await builder.person("Robin")
+    // Both birthdays are far off on every date, so Home has nothing in the next 60 days whenever the journey runs.
+    // The person's page names Morgan's birthday, whose month changes with the date.
+    let farOff = FixtureBuilder.monthAndDay(daysFromNow: Audit.farOff)
+    let robin = try await builder.person("Robin", birthday: farOff)
     // A user who confirmed their profile, so the app shows them no profile gate.
     try await builder.confirmProfile(of: robin)
-    let morgan = try await builder.person("Morgan")
+    let morgan = try await builder.person("Morgan", birthday: farOff)
     _ = try await builder.group("Family", users: [robin, morgan])
     let list = try await builder.primaryList(of: morgan)
     let title = builder.name("Kite")
@@ -46,7 +49,15 @@ nonisolated final class ClaimJourney: JourneyTestCase {
     app.launch()
     let person = app.buttons[morgan.name].firstMatch
     XCTAssertTrue(person.waitForExistence(timeout: 60), "Home didn't show after the sign-in.")
-    try await Audit.run(on: app, showing: "Home", in: self)
+    // Home has nothing in the next 60 days, so the countdown and Coming up each say so. Coming up is last, and its
+    // line goes on under the tab bar, where the Dynamic Type check can't measure it. It is allowed as in the
+    // sign-in journey, and never at the largest text size.
+    XCTAssertTrue(
+      app.descendants(matching: .any)
+        .matching(NSPredicate(format: "label == %@", Audit.words("Nothing in the next 60 days."))).firstMatch.exists,
+      "Home has an occasion in the next 60 days.")
+    try await Audit.run(
+      on: app, showing: "Home", in: self, rowsThatLeaveTheScreen: ["Nothing in the next 60 days."])
 
     // The person's page, with the item's row.
     person.tap()

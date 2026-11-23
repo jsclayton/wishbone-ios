@@ -121,6 +121,17 @@ public struct FixtureBuilder: Sendable {
       id: person.id, name: person.name, session: try await server.redeem(try await loginLink(for: person)))
   }
 
+  /// The month and day that is `days` days from now, in UTC, for `person(_:birthday:)`. The birthday is then the
+  /// same distance away on every run, whatever the date: a test or a journey that reads Home doesn't change from
+  /// one season to the next. The test servers run in UTC.
+  public static func monthAndDay(daysFromNow days: Int, from now: Date = .now) -> (month: Int, day: Int) {
+    var utc = Calendar(identifier: .gregorian)
+    utc.timeZone = .gmt
+    let date = utc.date(byAdding: .day, value: days, to: now) ?? now
+    let parts = utc.dateComponents([.month, .day], from: date)
+    return (parts.month ?? 1, parts.day ?? 1)
+  }
+
   /// A new login link for the user, made by the admin. It works once.
   public func loginLink(for person: Fixture.Person) async throws -> URL {
     let link = try await adminSession.post("/users/\(person.id)/login-links")
@@ -232,6 +243,15 @@ public struct FixtureBuilder: Sendable {
     return Fixture.Occasion(id: try id(of: made), name: self.name(name))
   }
 
+  /// The user's birthday, as the viewer sees it: every user has one.
+  public func birthday(of person: Fixture.Person, as viewer: Fixture.Person) async throws -> Fixture.Occasion {
+    let rows = try await viewer.signedIn().all("/occasions?user_id=\(person.id)&kind=birthday")
+    guard let row = rows.first(where: { $0["user"]["id"].string == person.id }), let id = row["id"].string else {
+      throw Unreadable(what: "a birthday of user \(person.id)", json: .array(rows))
+    }
+    return Fixture.Occasion(id: id, name: row["name"].string ?? "Birthday")
+  }
+
   /// Blocks a store, as the admin. The store's host name holds this builder's tag.
   public func blockedStore(_ name: String = "blocked") async throws -> Fixture.BlockedStore {
     let store = "\(name)-\(tag).example"
@@ -311,13 +331,15 @@ public struct FixtureBuilder: Sendable {
     for occasion: Fixture.Occasion? = nil,
     quantity: Int = 1,
     fromLabel: String? = nil,
-    note: String? = nil
+    note: String? = nil,
+    isBought: Bool = false
   ) async throws -> Fixture.Gift {
     var body: [String: JSON] = [:]
     if quantity != 1 { body["quantity"] = .number(Double(quantity)) }
     body["occasion_id"] = occasion.map { .string($0.id) }
     body["from_label"] = fromLabel.map { .string($0) }
     body["note"] = note.map { .string($0) }
+    if isBought { body["is_bought"] = .bool(true) }
     let made = try await giver.signedIn().post("/items/\(item.id)/gifts", .object(body))
     return Fixture.Gift(id: try id(of: made), item: item, giver: giver)
   }

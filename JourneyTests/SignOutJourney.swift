@@ -24,10 +24,12 @@ nonisolated final class SignOutJourney: JourneyTestCase {
   private func signOut() async throws {
     let server = try await TestServer.shared()
     let builder = try await FixtureBuilder(server: server)
-    let robin = try await builder.person("Robin")
+    // Both birthdays are far off on every date, so Home has nothing in the next 60 days whenever the journey runs.
+    let farOff = FixtureBuilder.monthAndDay(daysFromNow: Audit.farOff)
+    let robin = try await builder.person("Robin", birthday: farOff)
     // A user who confirmed their profile, so the app shows them no profile gate.
     try await builder.confirmProfile(of: robin)
-    let morgan = try await builder.person("Morgan", signedIn: false)
+    let morgan = try await builder.person("Morgan", birthday: farOff, signedIn: false)
     _ = try await builder.group("Family", users: [robin, morgan])
     let link = try await builder.loginLink(for: robin).absoluteString
     let address = try XCTUnwrap(link.components(separatedBy: "/login/").first)
@@ -58,9 +60,12 @@ nonisolated final class SignOutJourney: JourneyTestCase {
     let support = [
       "Support Wishbone", "Buy John a coffee", "Wishbone is free and open source. A coffee unlocks nothing in the app.",
     ]
+    // The storefront comes from StoreKit after the sheet shows, and can be slow. So the journey waits for the row,
+    // and the audit never meets rows it doesn't expect. Where the storefront isn't the US, the wait runs out, and the
+    // rows are not in the list.
     let showsSupport = app.descendants(matching: .any).matching(
       NSPredicate(format: "label BEGINSWITH %@", Audit.words("Buy John a coffee"))
-    ).firstMatch.exists
+    ).firstMatch.waitForExistence(timeout: 10)
     let rowsBelow =
       ["Share diagnostics"] + (showsSupport ? support : []) + ["About", "Source code", "Acknowledgements", "Version"]
     // Reminders leaves the screen too, but the journey doesn't scroll to it: the scroll stops with the long help line

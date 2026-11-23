@@ -1,17 +1,24 @@
 import SwiftUI
 import WishboneSession
 
-/// The Home tab. For now it holds People: "Your children", then "Your parents", then one part for each of the
-/// user's groups, each with its users as initials avatars. The countdown and Coming up come later. See
+/// The Home tab: the countdown to the next occasion, People, and Coming up. People has "Your children", then
+/// "Your parents", then one part for each of the user's groups, each with its users as initials avatars. See
 /// `docs/screens/home.md`.
 ///
 /// Its states are the ones that every screen shares. "Nobody to see" is People's empty line, after a sync that
-/// found nobody.
+/// found nobody. With no occasion in the next 60 days, the countdown and Coming up each say so.
+///
+/// The countdown and Coming up count the days from the device's day, and change at its midnight.
 ///
 /// A person is one button, whose words are the ones that show: the name, then "Deactivated" when it applies. The
 /// avatar beside it is a drawing that VoiceOver skips, and a tap on it opens the person too.
 ///
-/// **Provisional.** Plain default: a system list. The "People" heading is a row that pushes the People page. Each
+/// A countdown occasion that opens a page is one button: a person's occasion opens their page. A Coming up row that
+/// opens a page is one link: a person's occasion opens their page, and the user's own opens their primary list. A
+/// shared occasion's page comes later, so its occasion opens nothing yet.
+///
+/// **Provisional.** Plain default: a system list. The countdown is a card in the occasion's person color, one row
+/// for each occasion. The "People" heading is a row that pushes the People page. Each
 /// part is a section. Each person is a row, with the avatar and the name beside it, at every text size, and the rows
 /// flow into as many columns as fit, in a system grid: one in a narrow window, more in a wide one.
 struct HomeScreen: View {
@@ -21,11 +28,23 @@ struct HomeScreen: View {
   @Binding var pages: [Page]
 
   var body: some View {
+    TimelineView(MidnightSchedule()) { context in
+      content(occasions: session.homeOccasions(today: context.date))
+    }
+    .navigationTitle(Text("Home", bundle: #bundle))
+  }
+
+  private func content(occasions: HomeOccasions) -> some View {
     let people = session.people
-    let state = session.screenState(hasRows: !people.isEmpty)
-    List {
-      // The heading shows over People, and over its empty line. While nothing is known, the state shows alone.
-      if state != .loading && state != .cantReach {
+    let hasRows = !people.isEmpty || !occasions.comingUp.isEmpty
+    let state = session.screenState(hasRows: hasRows)
+    // The headings show over their parts, and over their empty lines. While nothing is known, the state shows alone.
+    let showsParts = state != .loading && state != .cantReach
+    return List {
+      if showsParts {
+        countdown(occasions.countdown)
+      }
+      if showsParts {
         Section {
           NavigationLink(value: Page.people) {
             Text("People", bundle: #bundle)
@@ -53,12 +72,81 @@ struct HomeScreen: View {
           PartHeading(part: part)
         }
       }
+      if showsParts {
+        comingUp(occasions.comingUp)
+      }
     }
-    .sharedStates(of: session, hasRows: !people.isEmpty) {
-      // People's empty line is in the list, under its heading.
+    .sharedStates(of: session, hasRows: hasRows) {
+      // The empty lines are in the list, under their headings.
       EmptyView()
     }
-    .navigationTitle(Text("Home", bundle: #bundle))
+  }
+
+  /// The countdown: one card row for each occasion on the next day, or the line that says there is none.
+  @ViewBuilder private func countdown(_ occasions: [HomeOccasion]) -> some View {
+    Section {
+      if occasions.isEmpty {
+        // In the primary color: the line can sit under the tab bar's glass, where the secondary color fails the
+        // contrast rule.
+        Text("Nothing in the next 60 days.", bundle: #bundle)
+      }
+      ForEach(occasions) { occasion in
+        Group {
+          if let destination = occasion.destination {
+            Button {
+              open(destination)
+            } label: {
+              CountdownOccasion(occasion: occasion)
+            }
+            .buttonStyle(.plain)
+          } else {
+            CountdownOccasion(occasion: occasion)
+          }
+        }
+        .listRowBackground(CountdownOccasion.background(of: occasion))
+      }
+    }
+  }
+
+  /// Coming up: every occasion in the next 60 days, the soonest first, or its empty line.
+  @ViewBuilder private func comingUp(_ occasions: [HomeOccasion]) -> some View {
+    Section {
+      if occasions.isEmpty {
+        // In the primary color: the line can sit under the tab bar's glass, where the secondary color fails the
+        // contrast rule.
+        Text("Nothing in the next 60 days.", bundle: #bundle)
+      }
+      ForEach(occasions) { occasion in
+        if let destination = occasion.destination {
+          NavigationLink(value: page(of: destination)) {
+            ComingUpRow(occasion: occasion, session: session)
+          }
+        } else {
+          ComingUpRow(occasion: occasion, session: session)
+        }
+      }
+    } header: {
+      // The label color itself: in a section's header, `.primary` is the header's gray, which fails the contrast
+      // rule where the heading sits under the tab bar's glass, at the largest text size.
+      Text("Coming up", bundle: #bundle)
+        .font(.title2.weight(.bold))
+        .foregroundStyle(Color.primary)
+        .textCase(nil)
+        .accessibilityAddTraits(.isHeader)
+    }
+  }
+
+  /// The page that an occasion opens.
+  private func page(of destination: HomeOccasion.Destination) -> Page {
+    switch destination {
+    case .user(let id): .user(id: id)
+    case .list(let id): .list(id: id)
+    }
+  }
+
+  /// Pushes the page that an occasion opens on Home.
+  private func open(_ destination: HomeOccasion.Destination) {
+    pages.append(page(of: destination))
   }
 
   /// A person's avatar. A tap on it opens the person, as a tap on the name does. VoiceOver skips it, and reads the
