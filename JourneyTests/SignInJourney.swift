@@ -190,9 +190,13 @@ nonisolated final class SignInJourney: JourneyTestCase {
     tabs.buttons[Audit.words("Add")].tap()
     let field = app.searchFields[Audit.words("Paste a link or type what you want")]
     XCTAssertTrue(field.waitForExistence(timeout: 10), "The Add screen's field didn't show.")
-    // The field is ready: the words go in with no tap on it first. The keyboard's Search key ends the typing,
-    // and the keyboard goes.
+    // The field is ready: the words go in with no tap on it first. The keyboard's Search key searches them, and
+    // pushes the add form. Back goes to the field, with the words still in it, and the keyboard gone.
     field.typeText("Kite\n")
+    let form = app.navigationBars[Audit.words("Add item")]
+    XCTAssertTrue(form.waitForExistence(timeout: 30), "The Search key didn't open the add form.")
+    form.buttons.firstMatch.tap()
+    XCTAssertTrue(field.waitForExistence(timeout: 10), "Back didn't go to the Add screen.")
     XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 10), "The keyboard didn't go.")
     XCTAssertEqual(field.value as? String, "Kite")
     // The audit is of the app's screen, not of the system keyboard. Once the keyboard has shown in a launch, it
