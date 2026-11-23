@@ -29,6 +29,14 @@ export function duration(ms) {
   return minutes === 0 ? `${seconds}s` : `${minutes}m${String(seconds % 60).padStart(2, '0')}s`;
 }
 
+/**
+ * A step's time against its limit, such as `6m06s, 61% of its limit of 10m00s`. The share is rounded down, so a
+ * step that came within a second of its limit never reads as 100%.
+ */
+export function usedOfLimit(ms, limitMs) {
+  return `${duration(ms)}, ${Math.floor((100 * ms) / limitMs)}% of its limit of ${duration(limitMs)}`;
+}
+
 /** Reads the floor file: the lowest count of tests that each tier may have. */
 export function readFloor(file) {
   let floor;
@@ -72,6 +80,7 @@ export async function runGate({
   const say = (line) => out.write(`${line}\n`);
   const counts = Object.fromEntries(countNames.map((name) => [name, 0]));
   const times = {};
+  const limits = {};
   const skipped = [];
   let waitedMs = 0;
   let slot = null;
@@ -128,6 +137,7 @@ export async function runGate({
       }
       slot?.forget(result.pid);
       times[step.name] = result.ms;
+      limits[step.name] = step.limitMs;
 
       if (result.interrupted) fail('interrupted');
       else if (result.timedOut) fail(`stopped at its limit of ${duration(step.limitMs)} (log: ${logName})`);
@@ -146,7 +156,8 @@ export async function runGate({
         }
       }
       if (failure !== null) break;
-      say(`── ${step.name} passed in ${duration(result.ms)}`);
+      // The time against the limit, so that a step that comes near its limit shows before it fails.
+      say(`── ${step.name} passed in ${usedOfLimit(result.ms, step.limitMs)}`);
     }
   } catch (error) {
     failure ??= `${place}: ${error.message}`;
@@ -161,7 +172,7 @@ export async function runGate({
 
   if (timesFile !== undefined) {
     mkdirSync(path.dirname(timesFile), { recursive: true });
-    const record = { at: new Date(started).toISOString(), result: ok ? 'pass' : 'fail', totalMs, waitedMs, steps: times, counts };
+    const record = { at: new Date(started).toISOString(), result: ok ? 'pass' : 'fail', totalMs, waitedMs, steps: times, limits, counts };
     appendFileSync(timesFile, `${JSON.stringify(record)}\n`);
   }
 
