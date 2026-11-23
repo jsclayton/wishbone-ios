@@ -335,8 +335,8 @@ extension NetworkConditioner {
       var connections: [ObjectIdentifier: NWConnection] = [:]
       var listener: NWListener?
       var requests: [SeenRequest] = []
-      /// The session of each request that is on its way to the server, or back. A stop cancels them.
-      var forwards: [ObjectIdentifier: URLSession] = [:]
+      /// The call of each request that is on its way to the server, or back, by its session. A stop cancels them.
+      var forwards: [ObjectIdentifier: Task<(Data, URLResponse), any Error>] = [:]
       var isStopped = false
     }
 
@@ -394,7 +394,7 @@ extension NetworkConditioner {
       listener?.cancel()
       connections.forEach { $0.cancel() }
       releaseHolds()
-      forwards.forEach { $0.invalidateAndCancel() }
+      forwards.forEach { $0.cancel() }
     }
 
     func add(_ rule: Rule) {
@@ -507,17 +507,20 @@ extension NetworkConditioner {
         forwarded.addValue(value, forHTTPHeaderField: name)
       }
       if !request.body.isEmpty { forwarded.httpBody = request.body }
+      // Only this function invalidates the session, after its one task has ended. A task made in a session that is
+      // already invalidated raises an exception, which aborts the test process. So a stop cancels the call instead,
+      // and the call's task, whenever it is made, ends at once. Seen on CI on 2026-11-23 (run 45131695827 attempt 1),
+      // when a stop invalidated the session between its start here and its task.
       let session = TestHTTP.newSession()
+      defer { session.finishTasksAndInvalidate() }
+      let call = Task { try await session.data(for: TestHTTP.alone(forwarded), delegate: NoRedirects()) }
       let isStopped = state.withLock { state in
-        if !state.isStopped { state.forwards[ObjectIdentifier(session)] = session }
+        if !state.isStopped { state.forwards[ObjectIdentifier(session)] = call }
         return state.isStopped
       }
-      defer {
-        state.withLock { _ = $0.forwards.removeValue(forKey: ObjectIdentifier(session)) }
-        session.finishTasksAndInvalidate()
-      }
-      guard !isStopped else { throw CancellationError() }
-      let (body, response) = try await session.data(for: TestHTTP.alone(forwarded), delegate: NoRedirects())
+      defer { state.withLock { _ = $0.forwards.removeValue(forKey: ObjectIdentifier(session)) } }
+      if isStopped { call.cancel() }
+      let (body, response) = try await call.value
       guard let response = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
       var headers: [String: String] = [:]
       for (name, value) in response.allHeaderFields {

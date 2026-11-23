@@ -197,6 +197,34 @@ struct NetworkConditionerTests {
     #expect(conditioner.requests.filter { $0.isOn(Route("POST", "/groups")) }.count == 3)
   }
 
+  /// A test's `Instance` stops its conditioner when the test ends, and the session can still have requests on their
+  /// way then. A forward that had made its session, and not yet its task, when a stop invalidated that session
+  /// raised `Task created in a session that has been invalidated`, which aborts the test process. Seen on CI on
+  /// 2026-11-23 (run 45131695827 attempt 1). The released requests race the stop, so each round puts some of them
+  /// in a forward as the stop comes.
+  @Test("A stop while requests are on their way to the server ends them, and the test process goes on")
+  func stopDuringForwards() async throws {
+    let requests = 8
+    for round in 0..<120 {
+      let conditioner = try await NetworkConditioner(to: server.address)
+      let hold = conditioner.hold(Route("GET", "/health"), at: .request)
+      let sent = (0..<requests).map { _ in
+        Task { try? await TestHTTP.send("GET", conditioner.url("/health")).status }
+      }
+      while conditioner.requests.count < requests {
+        try await Task.sleep(for: .milliseconds(5))
+      }
+      hold.release()
+      // The stop comes a little later in each round, so in some round it finds the forwards at each of their steps.
+      for _ in 0..<round { await Task.yield() }
+      conditioner.stop()
+      for request in sent {
+        // Each ends: with the server's answer when its forward came before the stop, and with no answer after.
+        if let status = await request.value { #expect(status == 200) }
+      }
+    }
+  }
+
   @Test("A route matches its method, and its path under /api/v2 with any ID")
   func routes() {
     let route = Route("post", "/items/{id}/gifts")

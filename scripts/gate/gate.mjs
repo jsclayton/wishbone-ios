@@ -9,10 +9,14 @@
 //   `{ fail, counts }`: `fail` is the reason why the step fails, and `counts` are its test counts.
 // - `after()`: runs when the step has ended, however it ended: it passed, it failed, it was stopped at its limit,
 //   or the gate was interrupted. It stops what the step started and doesn't own, such as a simulator.
+// - `crashes(report)`: says whether a crash report (see crashes.mjs) is of one of the step's test processes. When
+//   the step fails, the gate keeps each such report written since the step started in the run's folder, and the
+//   failure line says where the first crashed.
 
 import { appendFileSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 
+import { crashSummary, keepCrashReports } from './crashes.mjs';
 import { slotHeldVariable, takeSlot } from './slot.mjs';
 import { runStep } from './step.mjs';
 
@@ -44,6 +48,9 @@ export function readFloor(file) {
 /**
  * Runs the steps. The first failure stops the gate.
  *
+ * `crashReports` is `{ directory, waitMs }` for `keepCrashReports`: where the crash reports are, and how long to
+ * wait for one after a failed step. Tests pass a folder of their own.
+ *
  * Writes each step's output and the result to `out`. The last line is the result: `GATE PASS …` or `GATE FAIL …`.
  * Resolves with `{ ok, line }`.
  */
@@ -59,6 +66,7 @@ export async function runGate({
   owner = '',
   signal,
   out = process.stdout,
+  crashReports = {},
 }) {
   const started = Date.now();
   const say = (line) => out.write(`${line}\n`);
@@ -110,6 +118,7 @@ export async function runGate({
       say(`── step ${number} of ${steps.length}: ${step.name} (limit ${duration(step.limitMs)})`);
       const logPath = path.join(runDirectory, `${number}-${step.name}.log`);
       const logName = path.relative(root, logPath);
+      const stepStarted = Date.now();
       let result;
       try {
         const env = step.slot ? { ...process.env, [slotHeldVariable]: '1' } : undefined;
@@ -128,6 +137,13 @@ export async function runGate({
         if (checked.fail !== undefined) fail(checked.fail);
         else if (result.exit !== 0) fail(`exit ${result.exit ?? 'on a signal'} (log: ${logName})`);
         else if (belowFloor() !== '') fail(belowFloor());
+      }
+      if (failure !== null && step.crashes !== undefined && !result.interrupted) {
+        const kept = await keepCrashReports({ ...crashReports, since: stepStarted, into: runDirectory, matches: step.crashes });
+        if (kept.length > 0) {
+          const more = kept.length > 1 ? `, and ${kept.length - 1} more in ${path.relative(root, runDirectory)}` : '';
+          failure += ` · ${crashSummary(kept[0].report)} (report: ${path.relative(root, kept[0].file)}${more})`;
+        }
       }
       if (failure !== null) break;
       say(`── ${step.name} passed in ${duration(result.ms)}`);
