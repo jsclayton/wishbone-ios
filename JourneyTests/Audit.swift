@@ -262,10 +262,17 @@ enum Audit {
     contentTop: CGFloat?
   ) throws -> [String] {
     var issues: [String] = []
+    let hasCutLink = contentTop.map { hasLinkCut(by: $0, in: app) } ?? false
     try app.performAccessibilityAudit(for: types) { issue in
       // On a scrolled screen, a row that starts above the top of the content is under the top bar, partly or
       // whole. It was in the audit before the scroll, whole.
       if let contentTop, let element = issue.element, element.frame.minY < contentTop - 1 { return true }
+      // On a scrolled screen, while a link inside a line of text shows in part only, under a bar or off the screen's
+      // edge, the audit reports Dynamic Type and clipped text issues with no element: the link's runs, which XCUI
+      // doesn't give as elements. On a person's page at the largest text size, scrolled to the link's row, the line's
+      // link is under the navigation bar, and it gives several of each. The exception is for those two types with no
+      // element, and only while a link is cut so. Any other scrolled screen keeps every issue.
+      if issue.element == nil, [.dynamicType, .textClipped].contains(issue.auditType), hasCutLink { return true }
       // Scan QR code is disabled where the camera is denied or not available, as in the simulator, and the words
       // beside it say why. WCAG's contrast rule leaves out a control that is not active (1.4.3, 1.4.11).
       if issue.auditType == .contrast, let scan = issue.element, scan.label == words("Scan QR code"), !scan.isEnabled {
@@ -356,6 +363,22 @@ enum Audit {
       return true
     }
     return issues
+  }
+
+  /// Whether a link inside a line of text shows on the screen in part only: some of it is on the window, and some of
+  /// it is above the top of the content, under the navigation bar, or below the content's bottom, under the tab bar
+  /// or off the screen. A web link row is a link too, but it is an element of its own, which the audit places, so
+  /// it doesn't count. Its words end with "opens in browser".
+  private static func hasLinkCut(by contentTop: CGFloat, in app: XCUIApplication) -> Bool {
+    let window = app.windows.firstMatch.frame
+    let bar = app.tabBars.firstMatch
+    let bottom = bar.exists ? min(bar.frame.minY, window.maxY) : window.maxY
+    return app.links.allElementsBoundByIndex.contains { link in
+      guard !link.label.hasSuffix(words("opens in browser")) else { return false }
+      let frame = link.frame
+      let showsInPart = frame.maxY > window.minY && frame.minY < window.maxY
+      return showsInPart && (frame.minY < contentTop - 1 || frame.maxY > bottom + 1)
+    }
   }
 
   /// How long the settings helper may take to answer. It gives each `simctl` call 30 seconds, and runs a call that

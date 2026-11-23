@@ -151,9 +151,6 @@
         }
       }
     },
-    "%@, opens in browser" : {
-
-    },
     "%@–%@" : {
       "comment" : "A price range on a row",
       "localizations" : {

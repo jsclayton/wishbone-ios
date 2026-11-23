@@ -40,8 +40,8 @@ struct ListPageScreen: View {
       }
       Section {
         if page.seesWhyItemsAreMissing {
+          // The primary color: the system's secondary gray is below 4.5:1 on the row.
           Text("You see what's been claimed here. Fully claimed items don't show.", bundle: #bundle)
-            .foregroundStyle(.secondary)
         }
         if let noItems = page.noItems {
           NoItemsLine(noItems: noItems)
@@ -95,7 +95,10 @@ struct ListPageScreen: View {
         Menu {
           Picker(selection: $sort) {
             ForEach(ListSort.allCases) { sort in
+              // The tag is the order itself. The ForEach's own tag is the order's ID, a string, which never matches
+              // the selection, so a choice would change nothing.
               SortWords(sort: sort)
+                .tag(sort)
             }
           } label: {
             Label {
@@ -224,7 +227,8 @@ private struct SortWords: View {
   }
 }
 
-/// The page's words when the list has no items. For someone who can edit, they point to Add item.
+/// The page's words when the list has no items. For someone who can edit, they point to Add item. The primary color:
+/// the system's secondary gray is below 4.5:1 on the row.
 private struct NoItemsLine: View {
   let noItems: ListPage.NoItems
 
@@ -235,7 +239,6 @@ private struct NoItemsLine: View {
       case .forEditor: Text("Nothing here yet. Tap Add item to start the list.", bundle: #bundle)
       }
     }
-    .foregroundStyle(.secondary)
   }
 }
 

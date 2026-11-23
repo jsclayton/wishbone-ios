@@ -163,6 +163,11 @@ public struct FixtureBuilder: Sendable {
     return imageID
   }
 
+  /// Sets the user's good to know, as the user. The text is markdown, as the web's subset has it.
+  public func goodToKnow(_ text: String, of person: Fixture.Person) async throws {
+    try await person.signedIn().send("PATCH", "/users/me", json: ["good_to_know": .string(text)]).expecting(200)
+  }
+
   /// Uploads a small image, as the user, attached to nothing yet. Returns the image's ID.
   public func image(as person: Fixture.Person) async throws -> String {
     let session = try person.signedIn()

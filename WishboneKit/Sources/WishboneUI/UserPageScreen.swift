@@ -29,7 +29,7 @@ struct UserPageScreen: View {
         Section {
           MarkdownView(goodToKnow)
         } header: {
-          Text("Good to know", bundle: #bundle)
+          SectionHeading(Text("Good to know", bundle: #bundle))
         }
       }
       if let list = page.primaryList {
@@ -54,7 +54,7 @@ struct UserPageScreen: View {
             }
           }
         } header: {
-          Text("Other lists", bundle: #bundle)
+          SectionHeading(Text("Other lists", bundle: #bundle))
         }
       }
     }
@@ -253,5 +253,25 @@ private struct OtherListRow: View {
     }
     .fixedSize(horizontal: false, vertical: true)
     .accessibilityElement(children: .combine)
+  }
+}
+
+/// A part's heading on a user's page: "Good to know" and "Other lists". It is a headline in the label color itself,
+/// because a list draws a section's header in the system's secondary gray, which is below 4.5:1. The hierarchical
+/// `.primary` of a section's header is that gray. It is a heading for the VoiceOver rotor.
+private struct SectionHeading: View {
+  let text: Text
+
+  init(_ text: Text) {
+    self.text = text
+  }
+
+  var body: some View {
+    text
+      .font(.headline)
+      .foregroundStyle(Color.primary)
+      .textCase(nil)
+      .fixedSize(horizontal: false, vertical: true)
+      .accessibilityAddTraits(.isHeader)
   }
 }

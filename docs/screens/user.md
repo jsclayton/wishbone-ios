@@ -26,7 +26,7 @@ From top to bottom:
 
 The birthday shows the month and the day, and the age that the user is turning when the birthday has a year.
 
-**Provisional.** Plain default: a system list. The header is the avatar in the person's color with the name under it, each part is a section, and the items are rows with the image at the leading edge.
+**Provisional.** Plain default: a system list. The header is the avatar in the person's color with the name under it, each part is a section, and the items are rows with the image at the leading edge. Each web link in Good to know also has a link row under its block.
 
 ### Parents
 
@@ -88,7 +88,7 @@ Decided in the spec, some marked as drafts there: the For rows, "Deactivated", t
 ## Accessibility
 
 - The header is one element: the name, "Deactivated" when it applies, and the birthday.
-- Good to know is read as text, and each web link in it reads "opens in browser".
+- Good to know is read as it shows, and each web link in it is a link, for the Links rotor and Voice Control. Each web link also has a row under its block, which reads its words, then "opens in browser". A numbered list reads its numbers.
 - An item row is one element, with its actions, as on a list's page.
 - Each For row names the user in its label, so the row makes sense out of context.
 - At the largest text sizes, an item's image sits above its text.
