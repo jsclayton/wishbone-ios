@@ -667,20 +667,24 @@ export async function prepareSimulator({ directory, say = console.log, relative 
 }
 
 /**
- * The named flake "the app's launch gets no process ID on a busy machine" in docs/development.md. XCTest's
- * `launch()` waits for the app's process, and on a machine under very high load it gives up with "Application
- * '<bundle ID>' does not have a process ID". The app's code never ran. On CI, the test runner then failed too, and
- * Xcode reports that as a test of its own, named "<runner> (<pid>) encountered an error".
+ * The named flake "the app's launch gets no process ID on a busy machine" in docs/development.md. On a machine
+ * under very high load, XCTest's `launch()` gives up before the app is ready, at one of two of its steps. First
+ * it waits for the app's process, and it can fail with "Application '<bundle ID>' does not have a process ID".
+ * After the app's first activation, it asks for a background assertion for the app's process, and it can fail
+ * with "Failed to get background assertion for target app with pid <pid>". Both are in XCUIAutomation's
+ * `-[XCUIApplicationImpl _launchWithRequest:]`, before it waits for the app's accessibility and for the app to go
+ * idle. On CI, the test runner then failed too, and Xcode reports that as a test of its own, named
+ * "<runner> (<pid>) encountered an error".
  */
 export const launchFlake = {
   name: "the app's launch gets no process ID on a busy machine",
-  message: /Application '[^']+' does not have a process ID/,
+  message: /Application '[^']+' does not have a process ID|Failed to get background assertion for target app with pid \d+/,
   runner: /-Runner \(\d+\) encountered an error$/,
 };
 
 /**
  * Whether a reading of a run of the journeys failed with the launch flake's signature, and nothing else: at least
- * one test failed, and each of its failure messages is the launch that got no process ID, and every other failure
+ * one test failed, and each of its failure messages is a launch that `launch()` gave up on, and every other failure
  * is the test runner's error. A launch that got its process ID and then crashed has another message, so it stays
  * red, and so does a runner's error with no launch that failed.
  *
@@ -706,7 +710,7 @@ export async function runAgainOnLaunchFlake(runOnce, { keep, say = console.log }
   const launches = first.passed ? null : launchFlakeIn(first.reading);
   if (launches === null) return first.passed;
   const kept = keep();
-  say(`  ${launches.join(', ')}: the launch got no process ID (the named flake "${launchFlake.name}"), so this run of the journeys runs again, once. The first run is in ${kept.join(' and ')}.`);
+  say(`  ${launches.join(', ')}: XCTest gave up on the launch (the named flake "${launchFlake.name}"), so this run of the journeys runs again, once. The first run is in ${kept.join(' and ')}.`);
   return (await runOnce()).passed;
 }
 
