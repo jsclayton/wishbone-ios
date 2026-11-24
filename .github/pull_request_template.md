@@ -10,7 +10,7 @@ Closes #
 
 ## Testing
 
-<!-- Paste the last line of `just gate`. -->
+<!-- Paste the last line of `just gate`, run on your Mac on the head commit. CI doesn't run the full gate on a pull request. -->
 
 - [ ] `just gate` passes
 - [ ] `docs/spec.md`, the screen's spec, and `GLOSSARY.md` are updated if behavior or vocabulary changed

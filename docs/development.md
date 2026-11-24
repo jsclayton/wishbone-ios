@@ -250,7 +250,7 @@ To move the pin:
 
 ### The gate
 
-`just gate` runs every check that a pull request must pass. Each step has a time limit, and the first failure stops the gate:
+`just gate` runs every check that a pull request must pass. You run it on your Mac before the pull request is ready, and quote its last line in the pull request. A pull request's CI runs only the fast checks (see [CI](#ci)), and the maintainer sets the `gate` status from your result (see [Review and the PR](workflow.md#review-and-the-pr)). Each step has a time limit, and the first failure stops the gate:
 
 1. **Lint:** `swift-format lint --strict`, and the rest of `just lint`.
 2. **Server:** builds the pinned test server, or reuses the built one.
@@ -353,10 +353,11 @@ A flake that the gate retries is named here, with its signature. Each other fail
 
 ### CI
 
-- GitHub Actions runs the same `just gate`, on a macOS runner with the pinned Xcode, for every pull request and on `main`. The runner is GitHub's `xcode-27` image.
-- CI builds unsigned, with no secrets, so a fork's pull request runs the whole gate.
-- CI keeps the gate's logs and results (`build/gate/`) and the build's log as the run's `gate-results` artifact, for 7 days. It uploads them when the gate fails, and when the gate passes after it ran a run of the journeys again, or booted the simulator again, for a named flake: then the artifact holds the first try's result bundle and log, or the simulator's logs at its shutdown, too. A pass with no second run uploads nothing.
-- CI caches the built server, Go's caches, and SwiftPM's, keyed on the pin and `Package.resolved`. The workflow finds the pin file by its name (`server-pin`, in any folder) and caches `build/server/`. A pin file with another name, or a server built in another folder, gets no cache and no error.
+- On each pull request and each push to `main`, GitHub Actions runs only the fast checks: the docs check, and `just lint` (`swift-format`, actionlint, shellcheck, and the gate's own tests). The list of jobs is in [`workflow.md`](workflow.md#ci).
+- The **Gate** job runs the same `just gate`, on a macOS runner with the pinned Xcode, only when the CI workflow is run by hand: before each release, from `just cloud-build` (see [Releases](#releases)), or from the Actions tab. The runner is GitHub's `xcode-27` image. Its time limits in [The gate](#the-gate) hold for these runs.
+- CI builds unsigned, with no secrets, so a fork's pull request runs every job.
+- The Gate job keeps the gate's logs and results (`build/gate/`) and the build's log as the run's `gate-results` artifact, for 7 days. It uploads them when the gate fails, and when the gate passes after it ran a run of the journeys again, or booted the simulator again, for a named flake: then the artifact holds the first try's result bundle and log, or the simulator's logs at its shutdown, too. A pass with no second run uploads nothing.
+- The Gate job caches the built server, Go's caches, and SwiftPM's, keyed on the pin and `Package.resolved`. The workflow finds the pin file by its name (`server-pin`, in any folder) and caches `build/server/`. A pin file with another name, or a server built in another folder, gets no cache and no error.
 - The built server's key also holds Go's version and the build script, so a change of either builds the server again.
 - The workflows and the required checks are in [`workflow.md`](workflow.md#ci).
 
@@ -372,12 +373,18 @@ just cloud-build --app-store "What to look at"                     # App Store
 
 `scripts/xcode-cloud-build.sh` does the steps in this order:
 
-1. It starts the workflow on the branch: **Tester** by default, or **App Store** with `--app-store`. Tester builds go to internal testers only. The App Store workflow needs the explicit flag.
-2. It waits for the build run, and for App Store Connect to process the build.
-3. It sets the build's What to Test notes. The notes are the command's argument, never a file in the repo.
-4. It adds the build to the TestFlight group, which tells the testers. The notes are set first, so the testers get them with the build.
+1. It finds the commit at the head of the branch on GitHub, and checks it with the CI workflow's Gate job (the full `just gate`, see [CI](#ci)):
+   - **Tester:** it starts a Gate run on that commit, prints the run's URL, and goes on without waiting. Check the run before you send the build further.
+   - **App Store:** it uses a Gate run that passed on that exact commit, or waits for one under way, or starts one and waits for it (up to an hour). If the Gate fails, it stops with the run's URL and starts no build. To try again after a fix, push the fix and run the command again.
+   - `--build-only` follows the rule of the workflow that it builds.
+2. It starts the workflow on the branch: **Tester** by default, or **App Store** with `--app-store`. Tester builds go to internal testers only. The App Store workflow needs the explicit flag.
+3. It waits for the build run, and for App Store Connect to process the build.
+4. It sets the build's What to Test notes. The notes are the command's argument, never a file in the repo.
+5. It adds the build to the TestFlight group, which tells the testers. The notes are set first, so the testers get them with the build.
 
-The script reads the App Store Connect key from `asc` on that Mac (its default profile, or `ASC_PROFILE`), never from the repo. `--build-only` stops after step 2. `--help` lists every option.
+Xcode Cloud builds the head of the branch when step 2 starts it. So don't push to the branch while the command runs, or the build is not the commit that the Gate checked.
+
+The script reads the App Store Connect key from `asc` on that Mac (its default profile, or `ASC_PROFILE`), never from the repo. `--build-only` stops after step 3. The script needs `gh`, signed in to GitHub, to start and read the Gate runs. `--help` lists every option.
 
 In Xcode Cloud:
 

@@ -1,9 +1,9 @@
 name: CI
 
 # What runs where (docs/workflow.md, "CI"):
-# - On a pull request and on a push to main, CI runs only fast checks: Changes,
-#   Lint, Format and Package. The full gate runs on the contributor's Mac
-#   before the pull request is ready, and its last line is in the PR.
+# - On a pull request and on a push to main, CI runs only fast checks: Changes
+#   and Lint. The full gate runs on the contributor's Mac before the pull
+#   request is ready, and its last line is in the PR.
 # - The Gate job runs the full `just gate` only on a manual run
 #   (workflow_dispatch): before each release, from `just cloud-build`, or by
 #   hand from the Actions tab. Its input `sha` names the commit to check, and
@@ -18,7 +18,8 @@ name: CI
 # - On a PR, a new push cancels the older run.
 # - Every job has timeout-minutes, so a hung step ends the job. The gate also
 #   stops each of its own steps at a limit.
-# - The ruleset requires only "PR Title" and "CI OK". CI OK fails if a job it
+# - The ruleset requires "PR Title" and "CI OK", and the "gate" and "review"
+#   commit statuses, which people set (docs/workflow.md). CI OK fails if a job it
 #   needs failed or was cancelled. A skipped job counts as passed. On a manual
 #   run, the Gate job is the only one that runs, so CI OK is the gate's result.
 # - Every job runs on a GitHub-hosted runner. Don't use a self-hosted runner:
@@ -108,95 +109,31 @@ jobs:
           echo "code=$code"
           echo "code=$code" >> "$GITHUB_OUTPUT"
 
-  # actionlint, shellcheck, and the tests of the gate's scripts. All of it
-  # runs on Linux. The docs check is in Changes.
+  # `just lint`: swift-format, actionlint, shellcheck, the docs check, and the
+  # tests of the gate's scripts. swift-format comes with Xcode, and the gate's
+  # tests expect macOS (they fail on Linux), so the job needs a macOS runner.
+  # The package tests are not here: with warm caches they took 8m18s (run
+  # 45463826364), so they stay in the full gate.
   lint:
     name: Lint
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-26.04
+    runs-on: xcode-27
     timeout-minutes: 10
     env:
       MISE_ENABLE_TOOLS: node,just,actionlint,shellcheck
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Select Xcode
+        run: |
+          sudo xcode-select --switch "/Applications/Xcode_${XCODE_VERSION}.app"
+          xcodebuild -version
       - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
         with:
           install_args: node just actionlint shellcheck
           minimum_release_age: 3d
-      - name: Lint the workflows and the shell scripts
-        run: just lint-ci
-      - name: Test the gate's scripts
-        run: just test-gate
-
-  # swift-format comes with Xcode, so this job needs a macOS runner.
-  format:
-    name: Format
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
-    runs-on: xcode-27
-    timeout-minutes: 10
-    env:
-      MISE_ENABLE_TOOLS: just
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Select Xcode
-        run: |
-          sudo xcode-select --switch "/Applications/Xcode_${XCODE_VERSION}.app"
-          xcodebuild -version
-      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
-        with:
-          install_args: just
-          minimum_release_age: 3d
-      - name: Lint the Swift files
-        run: just lint-swift
-
-  # The package tests on macOS, against the pinned test server.
-  package:
-    name: Package
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
-    runs-on: xcode-27
-    timeout-minutes: 30
-    env:
-      MISE_ENABLE_TOOLS: node,just,go
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Select Xcode
-        run: |
-          sudo xcode-select --switch "/Applications/Xcode_${XCODE_VERSION}.app"
-          xcodebuild -version
-      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
-        with:
-          install_args: node just go
-          minimum_release_age: 3d
-      - name: Read Go's version
-        id: go
-        run: echo "version=$(go env GOVERSION)" >> "$GITHUB_OUTPUT"
-      - name: Cache the built test server
-        if: hashFiles('**/server-pin*') != ''
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: build/server
-          key: server-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.version }}-${{ hashFiles('**/server-pin*', 'scripts/server/build.mjs', 'scripts/server/pin.mjs') }}
-      - name: Cache Go's caches
-        if: hashFiles('**/server-pin*') != ''
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/Library/Caches/go-build
-            ~/go/pkg/mod
-          key: go-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', '**/server-pin*') }}
-          restore-keys: go-${{ runner.os }}-${{ runner.arch }}-
-      - name: Cache SwiftPM's cache
-        if: hashFiles('**/Package.resolved') != ''
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/Library/Caches/org.swift.swiftpm
-          key: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Package.resolved') }}
-          restore-keys: swiftpm-${{ runner.os }}-${{ runner.arch }}-
-      - name: Package tests
-        run: just test
+      - name: Lint
+        run: just lint
 
   # The full gate. It runs only on a manual run (workflow_dispatch), on the
   # commit in the input `sha`, or on the head of the branch that it runs on.
@@ -275,7 +212,7 @@ jobs:
 
   ci-ok:
     name: CI OK
-    needs: [changes, lint, format, package, gate]
+    needs: [changes, lint, gate]
     if: always() && (github.event_name != 'pull_request' || !github.event.pull_request.draft)
     runs-on: ubuntu-26.04
     timeout-minutes: 5
