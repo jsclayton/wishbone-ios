@@ -209,7 +209,9 @@ enum Audit {
         (issues, lostElements) = try performAudit(
           app, setting: setting, types: types, rows: rows, contentTop: contentTop)
       }
-      guard lostElements > 0, lostRetries < lostElementRetryLimit else { break }
+      // Only an audit whose every issue has no element runs again. An issue with an element is real, and a retry
+      // whose audit missed it would hide it, so an audit with one fails at once.
+      guard lostElements > 0, lostElements == issues.count, lostRetries < lostElementRetryLimit else { break }
       lostRetries += 1
       print(
         "The audit of \(audited) named an element that was gone from the screen. It runs again "
@@ -225,14 +227,15 @@ enum Audit {
     }
   }
 
-  /// How many times an audit runs again, after the first time, when an issue that no exception allows has no
+  /// How many times an audit runs again, after the first time, when every issue that no exception allows has no
   /// element.
   ///
   /// This is the named flake "an audit's issue has no element" in `docs/development.md`. The audit reports an
   /// issue with its element, and the journey reads the element after the audit, to see whether an exception allows
   /// it. When the element is gone from the screen by then, as a row under the tab bar can be, XCUI gives none, and
   /// no exception can tell what it was. Each try is a whole audit, so a screen passes only when one audit gave every
-  /// issue with its element, or none. An issue with no element in every try still fails. Each retry is reported to
+  /// issue with its element, or none. An issue with no element in every try still fails, and an audit with any
+  /// issue that has an element fails at once, so a retry never hides it. Each retry is reported to
   /// the settings helper, so the gate's line after the run names it, and is in the log.
   private static let lostElementRetryLimit = 2
 
