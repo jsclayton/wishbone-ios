@@ -16,6 +16,24 @@ nonisolated class JourneyTestCase: XCTestCase {
     if Screenshot.catches(issue) { return }
     super.record(issue)
   }
+
+  /// How long a journey waits for the app to leave the foreground, and to come back to it. On 2026-11-23, in CI run
+  /// 45187683978 attempt 2, the app was still in the foreground 10 seconds after the press of the Home button, on a
+  /// slow runner. A wait for a state that comes ends when it comes, so a long limit costs a passing run nothing.
+  static let foregroundTimeout: TimeInterval = 60
+
+  /// Sends the app to the Home Screen and back, so its window leaves the foreground and comes back to it. The app
+  /// gives up the system keyboard when it leaves the foreground.
+  @MainActor
+  func sendHomeAndBack(_ app: XCUIApplication) {
+    XCUIDevice.shared.press(.home)
+    let left = XCTNSPredicateExpectation(
+      predicate: NSPredicate { _, _ in app.state != .runningForeground }, object: nil)
+    XCTAssertEqual(
+      XCTWaiter.wait(for: [left], timeout: Self.foregroundTimeout), .completed, "The app didn't leave the foreground.")
+    app.activate()
+    XCTAssertTrue(app.wait(for: .runningForeground, timeout: Self.foregroundTimeout), "The app didn't come back.")
+  }
 }
 
 /// The screenshots that a journey reads, with the named flake "XCTest doesn't get a screenshot on a CI runner" in

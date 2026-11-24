@@ -111,12 +111,12 @@ nonisolated final class PeopleJourney: JourneyTestCase {
     price.tap()
     XCTAssertTrue(price.waitForNonExistence(timeout: 10), "The Sort menu didn't close.")
     // The rows move to their new places with the system's motion, so the journey waits for the order.
-    let top = { (title: String) in starting(title).frame.minY }
-    let sorted = XCTNSPredicateExpectation(
-      predicate: NSPredicate { _, _ in top("Lamp") < top("Tent") && top("Tent") < top("Stove") }, object: nil)
-    XCTAssertEqual(
-      XCTWaiter.wait(for: [sorted], timeout: 10), .completed,
-      "Sort by Price didn't order the items Lamp, Tent, Stove: \(top("Lamp")), \(top("Tent")), \(top("Stove")).")
+    let order = ["Lamp", "Tent", "Stove"]
+    let tops = try await waitForOrder(of: order, in: app)
+    XCTAssertTrue(
+      Self.isInOrder(tops),
+      "Sort by Price didn't order the items \(order.joined(separator: ", ")) within \(Self.orderTimeout): "
+        + tops.map { $0.map { "\($0)" } ?? "not on the screen" }.joined(separator: ", ") + ".")
 
     // A recipient's name on the For line is a link to their page.
     let recipient = app.links[ash.name]
@@ -126,5 +126,48 @@ nonisolated final class PeopleJourney: JourneyTestCase {
       starting("Kite").waitForExistence(timeout: 10) && app.navigationBars[ash.name].exists,
       "The recipient's name didn't open their page.")
     app.terminate()
+  }
+
+  /// How long the journey waits for the rows' order after a sort.
+  static let orderTimeout: Duration = .seconds(30)
+
+  /// Waits until the rows that start with the titles are on the screen from top to bottom in that order, and returns
+  /// the top of each row, or nil for a row that isn't on the screen, as the last look read them.
+  ///
+  /// Each look reads every row from one snapshot of the app, so the places it compares are of one moment, and it
+  /// looks again until the order shows or `orderTimeout` has gone. On 2026-11-23, in CI run 45175209747 attempt 3,
+  /// in the double-length pseudo-language, a wait of 10 seconds that read each row's place with a query of its own
+  /// ran out on a slow runner, and the read just after it was in order.
+  @MainActor
+  private func waitForOrder(of titles: [String], in app: XCUIApplication) async throws -> [CGFloat?] {
+    let deadline = ContinuousClock.now + Self.orderTimeout
+    var tops: [CGFloat?] = titles.map { _ in nil }
+    while true {
+      // A snapshot can fail while the rows move. The next look takes another.
+      if let snapshot = try? app.snapshot() {
+        tops = titles.map { title in Self.firstElement(in: snapshot, startingWith: title)?.frame.minY }
+        if Self.isInOrder(tops) { return tops }
+      }
+      guard ContinuousClock.now < deadline else { return tops }
+      try await Task.sleep(for: .milliseconds(250))
+    }
+  }
+
+  /// Whether every row is on the screen, each below the one before it.
+  private static func isInOrder(_ tops: [CGFloat?]) -> Bool {
+    let shown = tops.compactMap { $0 }
+    return shown.count == tops.count && zip(shown, shown.dropFirst()).allSatisfy { $0 < $1 }
+  }
+
+  /// The first element, depth first as a query's `firstMatch` finds it, whose label starts with the words.
+  @MainActor
+  private static func firstElement(
+    in snapshot: any XCUIElementSnapshot, startingWith words: String
+  ) -> (any XCUIElementSnapshot)? {
+    if snapshot.label.hasPrefix(words) { return snapshot }
+    for child in snapshot.children {
+      if let found = firstElement(in: child, startingWith: words) { return found }
+    }
+    return nil
   }
 }

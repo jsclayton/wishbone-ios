@@ -219,13 +219,8 @@ nonisolated final class SignInJourney: JourneyTestCase {
     // stays in the app when it hides, and the audit lays it out again hundreds of times: on a slow runner, past
     // the audit's time limit. The app gives up the keyboard when it leaves the foreground, so the journey sends it
     // to the Home Screen and back first. The screen comes back as it was, with the words in the field.
-    XCUIDevice.shared.press(.home)
-    let left = XCTNSPredicateExpectation(
-      predicate: NSPredicate { _, _ in app.state != .runningForeground }, object: nil)
-    XCTAssertEqual(XCTWaiter.wait(for: [left], timeout: 10), .completed, "The app didn't leave the foreground.")
-    app.activate()
-    XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10), "The app didn't come back.")
-    XCTAssertTrue(field.waitForExistence(timeout: 10), "The Add screen didn't come back.")
+    sendHomeAndBack(app)
+    XCTAssertTrue(field.waitForExistence(timeout: 30), "The Add screen didn't come back.")
     XCTAssertEqual(field.value as? String, "Kite")
     XCTAssertFalse(app.keyboards.firstMatch.exists, "The keyboard came back with the app.")
     try await Audit.run(on: app, showing: "the Add screen", in: self)
@@ -265,7 +260,7 @@ nonisolated final class SignInJourney: JourneyTestCase {
     // The instance goes away. A window that comes to the foreground syncs, and finds it gone. The journey never
     // pulls to refresh, which is a swipe.
     server.stop()
-    try sendHomeAndBack(app)
+    sendHomeAndBack(app)
     XCTAssertTrue(
       app.staticTexts.matching(lineWords).firstMatch.waitForExistence(timeout: 60), "The line didn't show on Home.")
     XCTAssertTrue(app.buttons[rowan.name].exists, "What is saved went with the instance.")
@@ -307,16 +302,5 @@ nonisolated final class SignInJourney: JourneyTestCase {
     tryAgain.tap()
     XCTAssertTrue(tryAgain.waitForExistence(timeout: 30), "The unreachable view went with the instance still gone.")
     relaunched.terminate()
-  }
-
-  /// Sends the app to the Home Screen and back, so its window leaves the foreground and comes back to it.
-  @MainActor
-  private func sendHomeAndBack(_ app: XCUIApplication) throws {
-    XCUIDevice.shared.press(.home)
-    let left = XCTNSPredicateExpectation(
-      predicate: NSPredicate { _, _ in app.state != .runningForeground }, object: nil)
-    XCTAssertEqual(XCTWaiter.wait(for: [left], timeout: 10), .completed, "The app didn't leave the foreground.")
-    app.activate()
-    XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10), "The app didn't come back.")
   }
 }
