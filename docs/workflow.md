@@ -54,9 +54,14 @@ A ticket with an open question is not `ready-for-agent`.
 ## Review and the PR
 
 - Every change is reviewed on two axes against the default branch: repo standards, and the ticket and the spec. The reviewer wrote none of the change.
-- Before you push, rebase on `origin/main` and run `just gate`.
-- Open a **ready** pull request. The title is a Conventional Commit (CI checks it). The body says `Closes #<issue>`, and follows [the PR body](#the-pr-body).
+- Before you push, rebase on `origin/main` and run `just gate` on your Mac. A pull request's CI runs only the fast checks, not the full gate (see [CI](#ci)), so the gate on your Mac is the full check.
+- Open a **ready** pull request. The title is a Conventional Commit (CI checks it). The body says `Closes #<issue>`, and follows [the PR body](#the-pr-body). Its Testing section quotes the last line of `just gate`, from a run on the head commit.
 - Local checks catch most failures, so CI runs about once for each pull request. CI must be green.
+- The maintainer checks the gate's result for the head commit, and then sets the `gate` commit status on it. When the reviewer approves the head commit, they set the `review` commit status on it. A push after either needs them again. A status is set with:
+
+  ```bash
+  gh api repos/jsclayton/wishbone-ios/statuses/<head SHA> -f state=success -f context=gate -f description=pass
+  ```
 
 ### The PR body
 
@@ -84,7 +89,7 @@ You can file a GitHub issue for a problem that is out of the ticket's scope: a b
 - Merge with `gh pr merge --squash`, when all of these are true:
   - The pull request is ready for review, not a draft.
   - Someone who wrote none of the change approved it in review, for the current head commit. A push after the review needs a new review.
-  - `PR Title` and `CI OK` pass.
+  - `PR Title` and `CI OK` pass, and the `gate` and `review` commit statuses on the head commit are `success`.
   - No spec question in the pull request is still open.
 - A pull request for a `ready-for-agent` ticket can merge without the maintainer, once every condition above is true.
 - The maintainer merges, or says to merge, a pull request that does any of these:
@@ -108,16 +113,19 @@ These GitHub settings enforce the merge rules:
 - **Branches:** GitHub deletes the head branch after the merge.
 - **Ruleset `main`:** applies to the default branch, with no bypass actors. It has two rules:
   - **Pull request:** every change to `main` goes through a pull request. Squash is the only merge method. No approving review is required, because GitHub doesn't let an author approve their own pull request. The review is a rule, not a setting.
-  - **Required status checks:** `PR Title` and `CI OK` must pass before a merge.
+  - **Required status checks:** `PR Title`, `CI OK`, `gate` and `review` must pass before a merge. `gate` and `review` are commit statuses that people set (see [Review and the PR](#review-and-the-pr)), not workflows.
 
 ## CI
 
 The workflows:
 
-- **CI**, with three jobs:
+- **CI** runs on each pull request and on each push to `main`, with the fast checks only:
   - **Changes** finds what changed. It also fails when a private file is tracked: `.agent/`, `.claude/`, `.beads/`, or `*.local.md`. It runs the docs check (`node scripts/check-docs.mjs`, which is `just lint-docs` on a Mac) on every change, so a change to docs only can't merge a broken link.
-  - **Gate** runs `just gate` on a macOS runner, unsigned, with no secrets.
-  - **CI OK** is the required check. It fails if Gate failed or was cancelled. A skipped job counts as passed.
+  - **Lint** runs `just lint` on a macOS runner, with the pinned Xcode: `swift-format lint --strict`, actionlint, shellcheck, the docs check, and the tests of the gate's scripts. It takes about a minute.
+  - **CI OK** is the required check. It fails if a job that it needs failed or was cancelled. A skipped job counts as passed.
+- **CI**, run by hand (`workflow_dispatch`), runs only the **Gate** job: the full `just gate`, on a macOS runner, unsigned, with no secrets. It is the check before each release. Its input `sha` names the commit to check, and the run's name is `Gate on <sha>`. Then **CI OK** is the Gate's result. It runs:
+  - from `just cloud-build`, on the commit that the build builds (see [Releases](development.md#releases));
+  - by hand, from the Actions tab (**CI**, then **Run workflow**), on any branch or commit, or with `gh workflow run ci.yml --ref <branch> -f sha=<full SHA>`.
 - **PR Title** checks that the pull request's title is a Conventional Commit of at most 92 characters.
 - **Commitlint** lints each commit pushed to `main`.
 
@@ -126,7 +134,8 @@ The workflows:
 macOS runners cost more than Linux runners, so CI avoids needless runs:
 
 - CI doesn't run on draft pull requests.
-- A change to docs only skips Gate, and gets the docs check in Changes, on a Linux runner. Docs are `docs/`, `LICENSE`, any `*.md` file, `.github/ISSUE_TEMPLATE/`, and `.github/pull_request_template.md`.
+- The full gate, the longest job by far, runs only before a release, or by hand. On a pull request, the contributor's Mac runs it. The package tests stay in the full gate too: with warm caches, they took more than 8 minutes on a runner.
+- A change to docs only skips every job but Changes, and gets the docs check in Changes, on a Linux runner. Docs are `docs/`, `LICENSE`, any `*.md` file, `.github/ISSUE_TEMPLATE/`, and `.github/pull_request_template.md`.
 - A new push to a pull request cancels its older run.
 - Every job has a time limit.
 - Don't use a self-hosted runner: in a public repo, it runs code from anyone's fork.

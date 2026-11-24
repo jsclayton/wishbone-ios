@@ -1,19 +1,33 @@
 name: CI
 
+# What runs where (docs/workflow.md, "CI"):
+# - On a pull request and on a push to main, CI runs only fast checks: Changes
+#   and Lint. The full gate runs on the contributor's Mac before the pull
+#   request is ready, and its last line is in the PR.
+# - The Gate job runs the full `just gate` only on a manual run
+#   (workflow_dispatch): before each release, from `just cloud-build`, or by
+#   hand from the Actions tab. Its input `sha` names the commit to check, and
+#   the run's name is "Gate on <sha>", so a run can be matched to a commit.
+#
 # Cost notes (macOS runners cost more than Linux runners, so CI avoids needless
 # runs and keeps a hung job from running for hours):
 # - Draft PRs don't run CI. Mark the PR ready for review to run it.
 # - Title and body edits don't run CI. See pr-title.yml.
-# - Docs-only changes skip the Gate job, the only one on a macOS runner. The
-#   Changes job runs the docs check on every change, so docs-only changes get it.
+# - Docs-only changes skip every job but Changes. The Changes job runs the docs
+#   check on every change, so docs-only changes get it.
 # - On a PR, a new push cancels the older run.
 # - Every job has timeout-minutes, so a hung step ends the job. The gate also
 #   stops each of its own steps at a limit.
-# - The ruleset requires only "PR Title" and "CI OK". CI OK fails if a job it
-#   needs failed or was cancelled. A skipped job counts as passed.
+# - The ruleset requires "PR Title" and "CI OK", and the "gate" and "review"
+#   commit statuses, which people set (docs/workflow.md). CI OK fails if a job it
+#   needs failed or was cancelled. A skipped job counts as passed. On a manual
+#   run, the Gate job is the only one that runs, so CI OK is the gate's result.
 # - Every job runs on a GitHub-hosted runner. Don't use a self-hosted runner:
 #   it would run code from fork PRs.
-# - CI builds unsigned and uses no secrets, so a fork's PR runs the whole gate.
+# - CI builds unsigned and uses no secrets, so a fork's PR runs every pull
+#   request job.
+
+run-name: ${{ github.event_name == 'workflow_dispatch' && format('Gate on {0}', inputs.sha || github.sha) || '' }}
 
 on:
   push:
@@ -21,11 +35,18 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "The commit to check, as a full SHA. Empty: the head of the branch that you run on"
+        required: false
+        default: ""
 
 # On a PR, a new push cancels the older run. On main, every push has a group of
-# its own, so each commit gets its own run and none is cancelled.
+# its own, so each commit gets its own run and none is cancelled. A manual run
+# has a group for its commit, apart from the push of the same commit.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || inputs.sha || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -39,7 +60,7 @@ env:
 jobs:
   changes:
     name: Changes
-    if: github.event_name == 'push' || !github.event.pull_request.draft
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && !github.event.pull_request.draft)
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     outputs:
@@ -89,12 +110,39 @@ jobs:
           echo "code=$code"
           echo "code=$code" >> "$GITHUB_OUTPUT"
 
+  # `just lint`: swift-format, actionlint, shellcheck, the docs check, and the
+  # tests of the gate's scripts. swift-format comes with Xcode, and the gate's
+  # tests expect macOS (they fail on Linux), so the job needs a macOS runner.
+  # The package tests are not here: with warm caches they took 8m18s (run
+  # 45463826364), so they stay in the full gate.
+  lint:
+    name: Lint
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: xcode-27
+    timeout-minutes: 10
+    env:
+      MISE_ENABLE_TOOLS: node,just,actionlint,shellcheck
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Select Xcode
+        run: |
+          sudo xcode-select --switch "/Applications/Xcode_${XCODE_VERSION}.app"
+          xcodebuild -version
+      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+        with:
+          install_args: node just actionlint shellcheck
+          minimum_release_age: 3d
+      - name: Lint
+        run: just lint
+
+  # The full gate. It runs only on a manual run (workflow_dispatch), on the
+  # commit in the input `sha`, or on the head of the branch that it runs on.
   gate:
     name: Gate
     env:
       MISE_ENABLE_TOOLS: node,just,go,actionlint,shellcheck
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: github.event_name == 'workflow_dispatch'
     runs-on: xcode-27
     # Above the sum of the limits of the gate's steps (scripts/gate/main.mjs),
     # with room for the job's own steps before the gate, so that a hung step is
@@ -102,6 +150,8 @@ jobs:
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.sha || github.sha }}
       - name: Select Xcode
         run: |
           sudo xcode-select --switch "/Applications/Xcode_${XCODE_VERSION}.app"
@@ -163,8 +213,8 @@ jobs:
 
   ci-ok:
     name: CI OK
-    needs: [changes, gate]
-    if: always() && (github.event_name == 'push' || !github.event.pull_request.draft)
+    needs: [changes, lint, gate]
+    if: always() && (github.event_name != 'pull_request' || !github.event.pull_request.draft)
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
