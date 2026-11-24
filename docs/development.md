@@ -375,14 +375,19 @@ just cloud-build --app-store "What to look at"                     # App Store
 
 1. It finds the commit at the head of the branch on GitHub, and checks it with the CI workflow's Gate job (the full `just gate`, see [CI](#ci)):
    - **Tester:** it starts a Gate run on that commit, prints the run's URL, and goes on without waiting. Check the run before you send the build further.
-   - **App Store:** it uses a Gate run that passed on that exact commit, or waits for one under way, or starts one and waits for it (up to an hour). If the Gate fails, it stops with the run's URL and starts no build. To try again after a fix, push the fix and run the command again.
+   - **App Store:** it uses a Gate run that passed on that exact commit, or waits for the oldest one under way, or starts one and waits for it (up to an hour). A run counts only when it ran from that commit too, so the Gate job and the checked code are one commit. If the Gate fails, it stops with the run's URL and starts no build. To try again after a fix, push the fix and run the command again.
    - `--build-only` follows the rule of the workflow that it builds.
 2. It starts the workflow on the branch: **Tester** by default, or **App Store** with `--app-store`. Tester builds go to internal testers only. The App Store workflow needs the explicit flag.
 3. It waits for the build run, and for App Store Connect to process the build.
 4. It sets the build's What to Test notes. The notes are the command's argument, never a file in the repo.
 5. It adds the build to the TestFlight group, which tells the testers. The notes are set first, so the testers get them with the build.
 
-Xcode Cloud builds the head of the branch when step 2 starts it. So don't push to the branch while the command runs, or the build is not the commit that the Gate checked.
+Xcode Cloud builds the head of the branch when step 2 starts it, and a merge can move the branch while the Gate runs. So, for an App Store build:
+
+- Just before step 2, the script finds the head of the branch again. If it moved, it stops, starts no build, and says to run the command again.
+- After step 3, it compares the commit that the build run built with the one that the Gate checked. If they differ, it stops before the notes and the group, and says not to send the build to the App Store.
+
+A Tester build doesn't wait for its Gate run, so it only says when the build run built another commit, and goes on.
 
 The script reads the App Store Connect key from `asc` on that Mac (its default profile, or `ASC_PROFILE`), never from the repo. `--build-only` stops after step 3. The script needs `gh`, signed in to GitHub, to start and read the Gate runs. `--help` lists every option.
 

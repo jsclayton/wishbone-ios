@@ -5,8 +5,9 @@
 #   scripts/xcode-cloud-build.sh [options] "What to Test"
 #
 # First it finds the commit at the head of the branch on GitHub, and checks it with the Gate job of the CI workflow
-# (the full `just gate` on a hosted runner). An App Store build waits for a green Gate run on that exact commit, and
-# starts no build when the Gate fails. A Tester build starts a Gate run and doesn't wait for it.
+# (the full `just gate` on a hosted runner). An App Store build waits for a green Gate run on that exact commit. It
+# starts no build when the Gate fails, or when the branch moved while the Gate ran, and it stops before the notes and
+# the group when Xcode Cloud built another commit. A Tester build starts a Gate run and doesn't wait for it.
 #
 # Then it starts the workflow on the branch, waits for the build run and for App Store Connect to process the build,
 # sets the build's What to Test notes, and then adds the build to the TestFlight group, which tells the testers.
@@ -30,7 +31,8 @@ TestFlight group.
 
 Before the build, it starts the CI workflow's Gate job on the commit at the head of the branch. A Tester build
 doesn't wait for it. An App Store build waits for a green Gate run on that commit (or uses one that passed
-before), and starts no build if the Gate fails.
+before). It starts no build if the Gate fails or the branch moved while the Gate ran, and it stops before the
+notes and the group if Xcode Cloud built another commit.
 
 Options:
   --app-store      Start the App Store workflow instead of Tester. Its build can go to the App Store
@@ -122,16 +124,18 @@ resolve_commit() {
   gh api "repos/$repo/commits/$1" --jq .sha
 }
 
-# The Gate run for a commit that counts: the newest one that passed, or else the newest one that hasn't ended. It
-# prints "<run ID> <status> <URL>", or nothing when there is neither. A run that failed doesn't count.
+# The Gate run for a commit that counts: the newest one that passed, or else the oldest one that hasn't ended, which
+# ends first. It prints "<run ID> <status> <URL>", or nothing when there is neither. A run that failed doesn't count.
+# A run counts only when it ran from the same commit that it checked (its head is the SHA in its name), so the
+# workflow's Gate job and the checked code are one commit. The list is newest first.
 find_gate_run() {
   gh run list --repo "$repo" --workflow ci.yml --event workflow_dispatch --limit 100 \
-    --json databaseId,displayTitle,status,conclusion,url |
-    jq -r --arg title "Gate on $1" '
-      [.[] | select(.displayTitle == $title)] as $runs
-      | ([$runs[] | select(.status == "completed" and .conclusion == "success")]
-        + [$runs[] | select(.status != "completed")])
-      | first // empty
+    --json databaseId,displayTitle,headSha,status,conclusion,url |
+    jq -r --arg sha "$1" '
+      [.[] | select(.displayTitle == "Gate on \($sha)" and .headSha == $sha)] as $runs
+      | ([$runs[] | select(.status == "completed" and .conclusion == "success")][0]
+        // [$runs[] | select(.status != "completed")][-1])
+      | select(. != null)
       | "\(.databaseId) \(.status) \(.url)"'
 }
 
@@ -194,6 +198,13 @@ if [ "$workflow" = "App Store" ]; then
     fi
     say "The Gate passed on $sha."
   fi
+  # Xcode Cloud builds the head of the branch when the build starts. So check that the head is still the commit that
+  # the Gate checked: the wait above can take an hour, and a merge in that time moves the branch.
+  head_now="$(resolve_commit "$branch")" || { echo "Can't find '$branch' on GitHub ($repo) again." >&2; exit 1; }
+  if [ "$head_now" != "$sha" ]; then
+    echo "'$branch' moved from $sha to $head_now while the Gate ran; no App Store build was started. Run the command again." >&2
+    exit 1
+  fi
 else
   gate_run="$(dispatch_gate "$branch" "$sha")"
   say "Started the Gate on $sha. The build doesn't wait for it: ${gate_run##* }"
@@ -233,6 +244,19 @@ if [ "$status" != "SUCCEEDED" ]; then
   exit 1
 fi
 say "Build run $run_id (number $number) succeeded."
+
+# The commit that Xcode Cloud built. If it isn't the one the Gate checked, an App Store build stops here, before its
+# notes and its group. A Tester build goes on: it doesn't wait for its Gate run anyway.
+built="$(jq -r '.data.attributes.sourceCommit.commitSha // empty' <<<"$view")"
+if [ -z "$built" ]; then
+  say "App Store Connect doesn't say which commit build run $run_id built, so it can't be checked against $sha."
+elif [ "$built" != "$sha" ]; then
+  if [ "$workflow" = "App Store" ]; then
+    echo "Build run $run_id (number $number) built $built, not $sha, which the Gate checked. The build has no notes and is in no group. Don't send it to the App Store: run the command again." >&2
+    exit 1
+  fi
+  say "Build run $run_id built $built, not $sha. The Gate run that this command started checks $sha."
+fi
 
 # 4. Find the build that the run uploaded. App Store Connect can take a few minutes to list it.
 build_id=""

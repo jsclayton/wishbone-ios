@@ -24,7 +24,8 @@ name: CI
 #   run, the Gate job is the only one that runs, so CI OK is the gate's result.
 # - Every job runs on a GitHub-hosted runner. Don't use a self-hosted runner:
 #   it would run code from fork PRs.
-# - CI builds unsigned and uses no secrets, so a fork's PR runs every job.
+# - CI builds unsigned and uses no secrets, so a fork's PR runs every pull
+#   request job.
 
 run-name: ${{ github.event_name == 'workflow_dispatch' && format('Gate on {0}', inputs.sha || github.sha) || '' }}
 
