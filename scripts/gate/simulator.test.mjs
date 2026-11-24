@@ -738,6 +738,15 @@ test('a journey runs an audit again for an issue with no element a bounded numbe
   assert.match(audit, /reportRetry\(audited, at: "lost-element-retries"\)/);
 });
 
+test('a journey runs an audit again only when every issue has no element, so a retry never hides an issue with one', () => {
+  const audit = readFileSync(new URL('../../JourneyTests/Audit.swift', import.meta.url), 'utf8');
+  // The one guard that decides a retry. An audit that reports an issue with an element, beside one with none, fails
+  // at once: a second audit that missed the first issue would pass the screen and leave it only in the log.
+  const guards = audit.match(/guard [^\n]*lostRetries < lostElementRetryLimit[^\n]*/g) ?? [];
+  assert.equal(guards.length, 1, 'Audit.swift has one guard for the retry of an issue with no element');
+  assert.match(guards[0], /lostElements > 0, lostElements == issues\.count, /);
+});
+
 test('the settings helper remembers each screenshot that was asked for again, apart from the audits', async (t) => {
   const { applier, ran } = fakeSimulator();
   const helper = await startSettingsHelper((setting, options) => applier.apply(setting, options));
