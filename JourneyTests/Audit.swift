@@ -139,9 +139,19 @@ enum Audit {
   /// How many drags may bring a row on the screen.
   private static let scrollLimit = 20
 
+  /// How far under the top of the content a drag down puts a row whose top went past it.
+  private static let overshootMargin: CGFloat = 20
+
   /// Drags the screen's content up until the row's top is at the top of the content, under the navigation bar, so
   /// the row is on the screen whole. A list that stops moving before the row is in place fails. Returns the top of the content when it
   /// scrolled, or nil when the row was on the screen whole already.
+  ///
+  /// After each drag, it waits for a still screen before it reads the row's place. A drag on a slow runner can let the
+  /// list coast: on 2026-11-24, in CI run 45292582179 attempt 2, a drag of 69 points moved the help sheet's list about
+  /// 150, and the list went on moving for seconds. A read 250 milliseconds after the drag found the row on its way,
+  /// and the next read found it past the top of the content, which the journey then called too tall. A row past the
+  /// top is dragged back down. A row is too tall only when its top is at the top of the content and its bottom is
+  /// still below the screen.
   private static func scroll(_ app: XCUIApplication, to row: String, in screen: String) async throws -> CGFloat? {
     let element = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", words(row)))
       .firstMatch
@@ -153,33 +163,36 @@ enum Audit {
     }
     if isOnScreen() { return nil }
     var stillDrags = 0
+    let shown = "\(screen), scrolled to \(row)"
     for _ in 0..<scrollLimit {
-      // A list makes a row's element only near the screen, so a row that has none yet is a long drag away.
-      let distance = element.exists ? element.frame.minY - top : window.frame.height * 0.4
-      if element.exists, distance < 4 {
+      // A list makes a row's element only near the screen, so a row that has none yet is a long drag away. A row
+      // whose top is past the top of the content went too far: the drag is down, to put its top a little under the
+      // top of the content, so the drag is long enough to move the list.
+      let offset = element.exists ? element.frame.minY - top : nil
+      let distance = offset.map { $0 < -1 ? $0 - overshootMargin : $0 } ?? window.frame.height * 0.4
+      // The row isn't on the screen whole, and its top is at the top of the content: its bottom is below the screen.
+      if let offset, offset >= -1, offset < 4 {
         throw AuditError("\(row) is too tall to show whole on the screen of \(screen) at the largest text size.")
       }
       let before = element.exists ? element.frame : nil
-      let shown = "\(screen), scrolled to \(row)"
       var screenBefore: Data?
       if before == nil {
         screenBefore = try await Screenshot.take(of: app, showing: shown).screenshot.pngRepresentation
       }
       // A short press and a slow drag with a hold, so the list doesn't coast, and nothing is tapped. A drag moves the
-      // content a little less than the finger, so the loop drags again for the rest.
-      let from = window.frame.minY + window.frame.height * 0.8
-      let to = max(from - distance, top + 8)
+      // content a little less than the finger, so the loop drags again for the rest. A drag down starts under the top
+      // of the content.
+      let from = distance > 0 ? window.frame.minY + window.frame.height * 0.8 : top + 8
+      let to = distance > 0 ? max(from - distance, top + 8) : min(from - distance, window.frame.maxY - 8)
       let origin = window.coordinate(withNormalizedOffset: .zero)
       let start = origin.withOffset(CGVector(dx: window.frame.width / 2, dy: from - window.frame.minY))
       let end = origin.withOffset(CGVector(dx: window.frame.width / 2, dy: to - window.frame.minY))
       start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.2)
-      try await Task.sleep(for: .milliseconds(250))
+      // The list can coast after the drag all the same, so the row's place is read when the screen is still.
+      let after = try await stillScreen(of: app, shown, in: largestText.label)
       if isOnScreen(), element.frame.minY - top < 60 { return top }
-      // The row's place tells whether the list moved: a screenshot differs while the scroll indicator fades.
-      let moved =
-        if let before { !element.exists || element.frame != before } else {
-          try await Screenshot.take(of: app, showing: shown).screenshot.pngRepresentation != screenBefore
-        }
+      // The row's place tells whether the list moved. With no row yet, the still screen does.
+      let moved = if let before { !element.exists || element.frame != before } else { after.pixels != screenBefore }
       if !moved {
         // A drag can be lost on a busy machine. A list at its end doesn't move three times in a row.
         stillDrags += 1
