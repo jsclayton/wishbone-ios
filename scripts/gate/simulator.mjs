@@ -388,23 +388,30 @@ export function settingsApplier(
  * the body, records the same for a screenshot that XCTest didn't get in time: the named flake "XCTest doesn't get a
  * screenshot on a CI runner". `POST /lost-element-retries`, the same way, records an audit that ran again because an
  * issue that no exception allows had no element: the named flake "an audit's issue has no element".
+ * `POST /partly-scaling-retries`, the same way, records an audit that ran again because every issue that no
+ * exception allows was text that the Dynamic Type check called partially unsupported: the named flake "the Dynamic
+ * Type check calls text that scales partially unsupported".
  *
- * Resolves with `{ address, close, screens, resends, auditRetries, screenshotRetries, lostElementRetries }`, where `screens()` gives the names, in the
+ * Resolves with `{ address, close, screens, resends, auditRetries, screenshotRetries, lostElementRetries,
+ * partlyScalingRetries }`, where `screens()` gives the names, in the
  * order they came, `resends()` gives each change that a journey sent again: `{ setting, after, read }`, with the
  * settings' labels and what `readSettings` read before the change was sent again, and `auditRetries()` gives each
  * audit that ran again, by its screen and setting, in the order they came. `screenshotRetries()` gives each
- * screenshot that was asked for again, the same way, and `lostElementRetries()` each audit that ran again for an
- * issue with no element.
+ * screenshot that was asked for again, the same way, `lostElementRetries()` each audit that ran again for an
+ * issue with no element, and `partlyScalingRetries()` each audit that ran again for text called partially
+ * unsupported.
  */
 export function startSettingsHelper(applySetting, { readSettings = async () => 'not read' } = {}) {
   const resends = [];
   const auditRetries = [];
   const screenshotRetries = [];
   const lostElementRetries = [];
+  const partlyScalingRetries = [];
   const retries = {
     '/audit-retries': [auditRetries, 'audit'],
     '/screenshot-retries': [screenshotRetries, 'screenshot'],
     '/lost-element-retries': [lostElementRetries, 'audit'],
+    '/partly-scaling-retries': [partlyScalingRetries, 'audit'],
   };
   const screens = new Set();
   const server = createServer((request, response) => {
@@ -482,6 +489,7 @@ export function startSettingsHelper(applySetting, { readSettings = async () => '
         auditRetries: () => [...auditRetries],
         screenshotRetries: () => [...screenshotRetries],
         lostElementRetries: () => [...lostElementRetries],
+        partlyScalingRetries: () => [...partlyScalingRetries],
       });
     });
   });
@@ -505,6 +513,23 @@ export function lostElementRetryLines(retries) {
   const audits = retries.length === 1 ? '1 audit' : `${retries.length} audits`;
   return [
     `  The journeys ran ${audits} again, because an issue had no element (the named flake "${lostElementFlake}"):`,
+    ...retries.map((audit) => `    ${audit}.`),
+  ];
+}
+
+/** The name of the flake that a journey meets by running an audit again for text called partially unsupported. */
+export const partlyScalingFlake = 'the Dynamic Type check calls text that scales partially unsupported';
+
+/**
+ * The lines after a run of the journeys, one for each audit that ran again because every issue that no exception
+ * allows was text that the Dynamic Type check called partially unsupported (`partlyScalingRetries()` of
+ * `startSettingsHelper`). None when no audit ran again for that.
+ */
+export function partlyScalingRetryLines(retries) {
+  if (retries.length === 0) return [];
+  const audits = retries.length === 1 ? '1 audit' : `${retries.length} audits`;
+  return [
+    `  The journeys ran ${audits} again, because the Dynamic Type check called text partially unsupported (the named flake "${partlyScalingFlake}"):`,
     ...retries.map((audit) => `    ${audit}.`),
   ];
 }
@@ -827,6 +852,7 @@ export async function runSimulatorTier({ root, directory, build = true, say = co
           for (const line of auditRetryLines(helper.auditRetries())) say(line);
           for (const line of screenshotRetryLines(helper.screenshotRetries())) say(line);
           for (const line of lostElementRetryLines(helper.lostElementRetries())) say(line);
+          for (const line of partlyScalingRetryLines(helper.partlyScalingRetries())) say(line);
         }
         return { passed, reading };
       };

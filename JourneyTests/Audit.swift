@@ -92,8 +92,12 @@ enum Audit {
     rowsToScrollTo: [String] = []
   ) async throws {
     guard let helper else {
-      // A run with no helper is at the simulator's own text size, as the double-length run is.
-      let shown = try await Screenshot.take(of: app, showing: "\(screen), in \(ownSetting)")
+      // A run with no helper is at the simulator's own text size, as the double-length run is. It too waits for a
+      // still screen: a journey calls the audit as soon as the screen's first element shows, often in the push or
+      // the sheet that brings the screen, and the Dynamic Type check reads text that is still moving as partly
+      // unsupported. On 2026-11-23, in CI run 45280072592 attempt 2, the double-length run audited Acknowledgements
+      // just after its push, and the check called eight of its texts partially unsupported.
+      let shown = try await stillScreen(of: app, screen, in: ownSetting)
       try await audit(
         app, screen, in: ownSetting, screenshot: shown.screenshot, rows: rowsThatLeaveTheScreen, test: test)
       return
@@ -203,28 +207,74 @@ enum Audit {
     let audited = "\(screen), in \(setting)"
     var issues: [String] = []
     var lostElements = 0
+    var partlyScaling = 0
     var lostRetries = 0
+    var partlyScalingRetries = 0
     while true {
       try await withRetriesAfterTimeOut(audited) {
-        (issues, lostElements) = try performAudit(
+        (issues, lostElements, partlyScaling) = try performAudit(
           app, setting: setting, types: types, rows: rows, contentTop: contentTop)
       }
       // Only an audit whose every issue has no element runs again. An issue with an element is real, and a retry
       // whose audit missed it would hide it, so an audit with one fails at once.
-      guard lostElements > 0, lostElements == issues.count, lostRetries < lostElementRetryLimit else { break }
-      lostRetries += 1
-      print(
-        "The audit of \(audited) named an element that was gone from the screen. It runs again "
-          + "(\(lostRetries) of \(lostElementRetryLimit)).")
-      await reportRetry(audited, at: "lost-element-retries")
-      try await Task.sleep(for: auditRetryPause)
+      if lostElements > 0, lostElements == issues.count, lostRetries < lostElementRetryLimit {
+        lostRetries += 1
+        print(
+          "The audit of \(audited) named an element that was gone from the screen. It runs again "
+            + "(\(lostRetries) of \(lostElementRetryLimit)).")
+        await reportRetry(audited, at: "lost-element-retries")
+        try await Task.sleep(for: auditRetryPause)
+        continue
+      }
+      // Only an audit whose every issue is text that the Dynamic Type check calls partially unsupported runs again,
+      // on the screen when it is still. Any other issue fails at once. See `partlyScalingRetryLimit`.
+      if partlyScaling > 0, partlyScaling == issues.count, partlyScalingRetries < partlyScalingRetryLimit {
+        partlyScalingRetries += 1
+        print(
+          "The audit of \(audited) called only text that scales partially unsupported. It runs again "
+            + "(\(partlyScalingRetries) of \(partlyScalingRetryLimit)).")
+        await reportRetry(audited, at: "partly-scaling-retries")
+        try await Task.sleep(for: auditRetryPause)
+        _ = try await stillScreen(of: app, screen, in: setting)
+        continue
+      }
+      break
     }
     if !issues.isEmpty {
       let lost =
         lostElements > 0 && lostRetries > 0
         ? " The audit named an element that wasn't on the screen \(lostRetries + 1) times in a row." : ""
-      XCTFail("\(audited): \(issues.joined(separator: "; "))\(lost)")
+      let partly =
+        partlyScaling > 0 && partlyScalingRetries > 0
+        ? " The audit called the text partially unsupported \(partlyScalingRetries + 1) times in a row." : ""
+      XCTFail("\(audited): \(issues.joined(separator: "; "))\(lost)\(partly)")
     }
+  }
+
+  /// XCTest's words for text whose font grows at some of the Dynamic Type check's sizes and not at others.
+  private static let partlyScalingWords = "Dynamic Type font sizes are partially unsupported"
+
+  /// How many times an audit runs again, after the first time, when every issue that no exception allows is text,
+  /// with its element, that the Dynamic Type check calls partially unsupported.
+  ///
+  /// This is the named flake "the Dynamic Type check calls text that scales partially unsupported" in
+  /// `docs/development.md`. The check changes the app's text size itself, during the audit, and measures each text
+  /// at each size. On a slow CI runner it has called text partially unsupported on a still screen whose text scales,
+  /// and the next run passed the same screen: on 2026-11-23, in CI run 45232630796 attempt 1, the add form's title
+  /// and notes fields, at the largest text size. Text that doesn't scale gives the issue in every audit, so it still
+  /// fails: each try is a whole audit, of the screen when it is still. An audit with any other issue fails at once,
+  /// so a retry never hides it. Each retry is reported to the settings helper, so the gate's line after the run
+  /// names it, and is in the log.
+  private static let partlyScalingRetryLimit = 2
+
+  /// Waits until two screenshots in a row are the same, in any appearance: the screen is still. `setting` is the
+  /// words of the setting, for a failure.
+  private static func stillScreen(
+    of app: XCUIApplication, _ screen: String, in setting: String
+  ) async throws -> (screenshot: XCUIScreenshot, pixels: Data) {
+    try await settledScreen(
+      of: app, screen, in: Setting(name: "", label: setting, isDark: false), where: { _ in true },
+      checksAppearance: false)
   }
 
   /// How many times an audit runs again, after the first time, when every issue that no exception allows has no
@@ -290,13 +340,15 @@ enum Audit {
     _ = try? await URLSession.shared.data(for: request)
   }
 
-  /// One run of the audit. Returns each issue that no exception allows, and how many of them have no element.
+  /// One run of the audit. Returns each issue that no exception allows, how many of them have no element, and how
+  /// many are text, with its element, that the Dynamic Type check calls partially unsupported.
   private static func performAudit(
     _ app: XCUIApplication, setting: String, types: XCUIAccessibilityAuditType, rows: [String],
     contentTop: CGFloat?
-  ) throws -> (issues: [String], lostElements: Int) {
+  ) throws -> (issues: [String], lostElements: Int, partlyScaling: Int) {
     var issues: [String] = []
     var lostElements = 0
+    var partlyScaling = 0
     let hasCutLink = contentTop.map { hasLinkCut(by: $0, in: app) } ?? false
     try app.performAccessibilityAudit(for: types) { issue in
       // Each read of an issue's element is a query of the app, so the closure reads it once.
@@ -397,12 +449,15 @@ enum Audit {
       // An issue with no element is one that XCUI can't place: its element went from the screen between the audit
       // and this read. The audit runs again. See `audit`.
       if element == nil { lostElements += 1 }
+      if element != nil, issue.auditType == .dynamicType, issue.compactDescription == partlyScalingWords {
+        partlyScaling += 1
+      }
       let described =
         element.map { "\($0.label), element type \($0.elementType.rawValue), at \($0.frame)" } ?? "no element"
       issues.append("\(issue.compactDescription): \(issue.detailedDescription) (\(described))")
       return true
     }
-    return (issues, lostElements)
+    return (issues, lostElements, partlyScaling)
   }
 
   /// Whether a link inside a line of text shows on the screen in part only: some of it is on the window, and some of
@@ -515,6 +570,9 @@ enum Audit {
   /// alone took it as the default. Increase Contrast was then audited on the screen in dark mode, and the fade to
   /// light came during the audit: the contrast check measured grey text on grey. So the appearance is checked too.
   ///
+  /// With `checksAppearance` false, a screenshot in any appearance counts: the wait is for a still screen only, as in
+  /// a run with no helper, whose appearance is the simulator's own.
+  ///
   /// `before` is the screen before a change. With `unchangedLimit`, it throws `Unchanged` when no screenshot
   /// showed the change for that long: each was exactly `before`, or not in the setting's appearance.
   ///
@@ -523,7 +581,7 @@ enum Audit {
   /// stall is not one of two in a row. What the screen showed before the stall still counts as shown.
   private static func settledScreen(
     of app: XCUIApplication, _ screen: String, in setting: Setting, where accept: (Data) -> Bool,
-    before: Data? = nil, unchangedLimit: Duration? = nil
+    before: Data? = nil, unchangedLimit: Duration? = nil, checksAppearance: Bool = true
   ) async throws -> (screenshot: XCUIScreenshot, pixels: Data) {
     var started = ContinuousClock.now
     var deadline = started + settleTimeout
@@ -539,7 +597,7 @@ enum Audit {
         last = nil
       }
       let pixels = screenshot.pngRepresentation
-      let shows = isInAppearance(screenshot, of: setting)
+      let shows = !checksAppearance || isInAppearance(screenshot, of: setting)
       if pixels == last, shows, accept(pixels) { return (screenshot, pixels) }
       last = pixels
       inAppearance = inAppearance || shows

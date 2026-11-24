@@ -12,6 +12,8 @@ import {
   auditTimeOutFlake,
   lostElementFlake,
   lostElementRetryLines,
+  partlyScalingFlake,
+  partlyScalingRetryLines,
   buildArguments,
   compiledFiles,
   gateSimulators,
@@ -742,9 +744,66 @@ test('a journey runs an audit again only when every issue has no element, so a r
   const audit = readFileSync(new URL('../../JourneyTests/Audit.swift', import.meta.url), 'utf8');
   // The one guard that decides a retry. An audit that reports an issue with an element, beside one with none, fails
   // at once: a second audit that missed the first issue would pass the screen and leave it only in the log.
-  const guards = audit.match(/guard [^\n]*lostRetries < lostElementRetryLimit[^\n]*/g) ?? [];
+  const guards = audit.match(/if [^\n]*lostRetries < lostElementRetryLimit[^\n]*/g) ?? [];
   assert.equal(guards.length, 1, 'Audit.swift has one guard for the retry of an issue with no element');
-  assert.match(guards[0], /lostElements > 0, lostElements == issues\.count, /);
+  assert.match(guards[0], /^if lostElements > 0, lostElements == issues\.count, lostRetries < lostElementRetryLimit \{$/);
+});
+
+test('the settings helper remembers each audit that ran again for text called partially unsupported, apart from the others', async (t) => {
+  const { applier, ran } = fakeSimulator();
+  const helper = await startSettingsHelper((setting, options) => applier.apply(setting, options));
+  t.after(() => helper.close());
+  const post = (body, method = 'POST') => fetch(`${helper.address}/partly-scaling-retries`, { method, body });
+  assert.deepEqual(helper.partlyScalingRetries(), []);
+  assert.equal((await post('the add form, in the largest text size')).status, 204);
+  assert.deepEqual(helper.partlyScalingRetries(), ['the add form, in the largest text size']);
+  // An audit with no name, or a request that isn't a POST, is not a retry.
+  assert.equal((await post('')).status, 400);
+  assert.equal((await post(undefined, 'GET')).status, 404);
+  assert.equal(helper.partlyScalingRetries().length, 1);
+  // It is not another flake's retry, changes no setting, and is not a screen.
+  assert.deepEqual(helper.auditRetries(), []);
+  assert.deepEqual(helper.lostElementRetries(), []);
+  assert.deepEqual(ran, []);
+  assert.deepEqual(helper.screens(), []);
+});
+
+test('the line after the journeys names each audit run again for text called partially unsupported, and the flake', () => {
+  assert.deepEqual(partlyScalingRetryLines([]), []);
+  assert.deepEqual(partlyScalingRetryLines(['the add form, in the largest text size']), [
+    `  The journeys ran 1 audit again, because the Dynamic Type check called text partially unsupported (the named flake "${partlyScalingFlake}"):`,
+    '    the add form, in the largest text size.',
+  ]);
+  assert.match(partlyScalingRetryLines(['a', 'b'])[0], /ran 2 audits again/);
+});
+
+test('a journey runs an audit again for text called partially unsupported a bounded number of times, on a still screen', () => {
+  const audit = readFileSync(new URL('../../JourneyTests/Audit.swift', import.meta.url), 'utf8');
+  const limit = Number(/static let partlyScalingRetryLimit = (\d+)/.exec(audit)[1]);
+  assert.ok(limit >= 1 && limit <= 2, `Audit.swift runs an audit again ${limit} times for text called partially unsupported`);
+  assert.match(audit, /reportRetry\(audited, at: "partly-scaling-retries"\)/);
+  // Each try waits for a still screen first.
+  assert.match(audit, /reportRetry\(audited, at: "partly-scaling-retries"\)\n.*Task\.sleep\(for: auditRetryPause\)\n.*stillScreen\(of: app, screen, in: setting\)/);
+});
+
+test('a journey runs an audit again for text called partially unsupported only when that is every issue, so a retry never hides another', () => {
+  const audit = readFileSync(new URL('../../JourneyTests/Audit.swift', import.meta.url), 'utf8');
+  const guards = audit.match(/if [^\n]*partlyScalingRetries < partlyScalingRetryLimit[^\n]*/g) ?? [];
+  assert.equal(guards.length, 1, 'Audit.swift has one guard for the retry of text called partially unsupported');
+  assert.match(guards[0], /^if partlyScaling > 0, partlyScaling == issues\.count, partlyScalingRetries < partlyScalingRetryLimit \{$/);
+  // Only a Dynamic Type issue with XCTest's exact words, and with its element, counts. An issue with no element is
+  // the other flake's, so a mix of the two fails at once.
+  assert.match(
+    audit,
+    /if element != nil, issue\.auditType == \.dynamicType, issue\.compactDescription == partlyScalingWords \{\n\s*partlyScaling \+= 1/,
+  );
+  assert.match(audit, /static let partlyScalingWords = "Dynamic Type font sizes are partially unsupported"/);
+});
+
+test('a journey with no settings helper audits a still screen, not one still on its way in', () => {
+  const audit = readFileSync(new URL('../../JourneyTests/Audit.swift', import.meta.url), 'utf8');
+  const noHelper = /guard let helper else \{([\s\S]*?)\n    \}/.exec(audit)[1];
+  assert.match(noHelper, /let shown = try await stillScreen\(of: app, screen, in: ownSetting\)\n\s*try await audit\(/);
 });
 
 test('the settings helper remembers each screenshot that was asked for again, apart from the audits', async (t) => {
