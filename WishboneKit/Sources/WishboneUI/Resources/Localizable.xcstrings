@@ -246,6 +246,9 @@
     "%lld of these" : {
 
     },
+    "%lld, can't go higher" : {
+      "comment" : "VoiceOver: how many of a gift, when the giver can't raise it"
+    },
     "1 week" : {
 
     },
@@ -332,6 +335,9 @@
 
     },
     "Can't reach %@. Nothing was claimed." : {
+
+    },
+    "Can't reach %@. The number didn't change." : {
 
     },
     "Can't reach %@. Your link is kept. Try again when you're connected." : {
@@ -475,6 +481,17 @@
     },
     "How many" : {
 
+    },
+    "How many of %@: %@" : {
+      "comment" : "A late refusal: the item's title, then why the change wasn't saved",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "How many of %1$@: %2$@"
+          }
+        }
+      }
     },
     "I don't have a link" : {
 
@@ -902,8 +919,30 @@
     "The camera is turned off on this device, so Wishbone can't scan. Paste a link." : {
 
     },
+    "The from label of %@: %@" : {
+      "comment" : "A late refusal: the item's title, then why the change wasn't saved",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The from label of %1$@: %2$@"
+          }
+        }
+      }
+    },
     "The item changed" : {
 
+    },
+    "The note on %@: %@" : {
+      "comment" : "A late refusal: the item's title, then why the change wasn't saved",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The note on %1$@: %2$@"
+          }
+        }
+      }
     },
     "The notes changed" : {
 
@@ -1047,6 +1086,9 @@
 
     },
     "You can be invited again. You'll see what's been claimed on this list, including gifts for you." : {
+
+    },
+    "You can only lower how many, because this list is now for you too." : {
 
     },
     "You can't claim on a list that is for you." : {

@@ -42,6 +42,9 @@ public enum ErrorWords {
       return someoneElseGotIt
     case .recipientCannotClaim:
       return String(localized: "You can't claim on a list that is for you.", bundle: #bundle)
+    case .quantityRaiseNotAllowed:
+      return String(
+        localized: "You can only lower how many, because this list is now for you too.", bundle: #bundle)
     case .occasionNotAllowed:
       return String(localized: "That occasion can't be used for this gift. Pick another.", bundle: #bundle)
     case .primaryList:

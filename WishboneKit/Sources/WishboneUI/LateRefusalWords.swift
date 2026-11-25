@@ -27,6 +27,18 @@ public enum LateRefusalWords {
       return String(
         localized: "Marking \(refusal.title) not bought: \(reason)", bundle: #bundle,
         comment: "A late refusal: the item's title, then why the change wasn't saved")
+    case .setFromLabel:
+      return String(
+        localized: "The from label of \(refusal.title): \(reason)", bundle: #bundle,
+        comment: "A late refusal: the item's title, then why the change wasn't saved")
+    case .setNote:
+      return String(
+        localized: "The note on \(refusal.title): \(reason)", bundle: #bundle,
+        comment: "A late refusal: the item's title, then why the change wasn't saved")
+    case .lowerQuantity:
+      return String(
+        localized: "How many of \(refusal.title): \(reason)", bundle: #bundle,
+        comment: "A late refusal: the item's title, then why the change wasn't saved")
     }
   }
 }

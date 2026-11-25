@@ -99,6 +99,8 @@ Decided, as the web app has them: "I won't get this", "I didn't get this", "Add 
 | I didn't get this, confirmation | "You didn't get {title}? It leaves your Received. If the giver still uses Wishbone, they see that, and can give it again.", with the button "I didn't get this" |
 | I didn't get this, for a child | "{name} didn't get {title}?", with the button "{name} didn't get this" |
 | Raise, can't reach | "Can't reach {address}. The number didn't change." |
+| How many, for VoiceOver, when it can't go higher | "{n}, can't go higher" |
+| A late refusal, in the alert "Some changes couldn't be saved" | "The from label of {title}: {reason}", "The note on {title}: {reason}", "How many of {title}: {reason}" |
 | I didn't get this, can't reach | "Can't reach {address}. Nothing changed." |
 
 ## Accessibility

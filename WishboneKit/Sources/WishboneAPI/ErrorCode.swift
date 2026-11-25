@@ -35,6 +35,7 @@ public enum ErrorCode: Sendable, Hashable {
   case alreadyBlocked
   case itemFullyClaimed
   case recipientCannotClaim
+  case quantityRaiseNotAllowed
   case occasionNotAllowed
   case imageFetchFailed
   case storeBlocked
@@ -74,6 +75,7 @@ public enum ErrorCode: Sendable, Hashable {
     "already_blocked": .alreadyBlocked,
     "item_fully_claimed": .itemFullyClaimed,
     "recipient_cannot_claim": .recipientCannotClaim,
+    "quantity_raise_not_allowed": .quantityRaiseNotAllowed,
     "occasion_not_allowed": .occasionNotAllowed,
     "image_fetch_failed": .imageFetchFailed,
     "store_blocked": .storeBlocked,

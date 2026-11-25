@@ -24,8 +24,14 @@ extension SessionModel {
   public func markBought(gift id: String, _ isBought: Bool) async {
     guard !hasEnded, let gift = gift(id: id), gift.state == .open, gift.canEdit, gift.isBought.value != isBought
     else { return }
+    await record(.markBought(giftID: id, isBought: isBought), title: gift.title)
+  }
+
+  /// Saves an unsent change in the journal, publishes it, so every window shows it at once, and starts a sync,
+  /// which sends it. It doesn't wait for the sync.
+  func record(_ action: UnsentChange.Action, title: String) async {
     do {
-      try await database.record(.markBought(giftID: id, isBought: isBought), title: gift.title)
+      try await database.record(action, title: title)
     } catch {
       Log.fault(.session, "The journal can't take an unsent change.", detail: "\(error)")
       return
@@ -127,7 +133,7 @@ extension SessionModel {
   /// Sends one unsent change, and gives the server's answer.
   private func send(_ change: UnsentChange) async throws(APIError) -> Versioned<Gift> {
     switch change.action {
-    case .markBought(let id, _):
+    case .markBought(let id, _), .setFromLabel(let id, _), .setNote(let id, _), .lowerQuantity(let id, _):
       try await client.updateGift(id, change.action.giftChanges, key: change.key)
     }
   }
