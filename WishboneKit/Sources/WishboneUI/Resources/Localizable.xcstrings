@@ -304,6 +304,9 @@
     "Add a photo" : {
 
     },
+    "Add it without the link" : {
+
+    },
     "Add item" : {
 
     },
@@ -775,6 +778,9 @@
     "Notes" : {
 
     },
+    "Nothing could be read from %@. Fill it in yourself." : {
+
+    },
     "Nothing from you yet" : {
 
     },
@@ -1091,6 +1097,9 @@
 
     },
     "This is gone, or it isn't shared with you." : {
+
+    },
+    "This link wasn't read: you've read 30 links and photos in the last hour. Fill it in yourself, or try again later." : {
 
     },
     "This list is no longer shared with you. You can still give this, or not." : {
