@@ -39,16 +39,14 @@ public enum RestoreOutcome: Sendable, Equatable {
 
 extension SessionModel {
   /// Whom I didn't get this speaks for on the gift's page, from its `can_restore`: the session's user when they
-  /// received it, or else the first of their children who did. Nil when the page doesn't offer it.
+  /// received it, or else the first of their children who did. Nil when the page doesn't offer it, and also when the
+  /// copy has no row for that child: the words for the session's user would not be true for a parent.
   func restorer(of gift: GiftRow) -> Restorer? {
     guard gift.state == .given, gift.canRestore else { return nil }
     let recipientIDs = gift.recipientIDs.value ?? []
     if recipientIDs.contains(session.userID) { return .sessionUser }
     let children = Set(user?.record?.childIDs ?? [])
-    guard let child = recipientIDs.first(where: children.contains).flatMap({ user(id: $0) }) else {
-      return .sessionUser
-    }
-    return .child(child)
+    return recipientIDs.first(where: children.contains).flatMap { user(id: $0) }.map { .child($0) }
   }
 
   /// I didn't get this: says that the given gift didn't arrive, with `POST /gifts/{id}/restore`. It waits for the
@@ -57,8 +55,11 @@ extension SessionModel {
   ///
   /// A 404 counts as success: the gift was restored already, from another device, or the giver unclaimed it.
   ///
+  /// `answered` runs once the server has taken the gift back, before the copy drops it, so that the page that asked
+  /// closes while it still shows the gift. It never runs when the restore doesn't happen.
+  ///
   /// Diagnostics: never here. A refusal is a 403 or a 404, which the client doesn't capture.
-  public func restore(gift id: String) async -> RestoreOutcome {
+  public func restore(gift id: String, answered: () -> Void = {}) async -> RestoreOutcome {
     guard !hasEnded, let gift = gift(id: id), gift.state == .given, gift.canRestore else { return .notOffered }
     do {
       do {
@@ -67,6 +68,8 @@ extension SessionModel {
         // Restored already, from another device.
       }
       guard !hasEnded else { return .failed }
+      // Nothing between the server's answer and this call suspends, and this restore hasn't changed the copy yet.
+      answered()
       try await database.removeRestoredGift(id)
       // A sync that runs now may have asked before the restore. Its pull doesn't put the gift back, and one more
       // sync asks after it.

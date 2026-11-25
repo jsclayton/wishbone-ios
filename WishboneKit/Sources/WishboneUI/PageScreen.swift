@@ -11,6 +11,10 @@ struct PageScreen: View {
   /// The window's pages on the tab, for a page that pushes another from a link in its text.
   @Binding var pages: [Page]
 
+  /// The given gift's page that this window shows while its own I didn't get this waits and the page closes, so the
+  /// copy dropping the gift never shows the "not found" page here.
+  @State private var restoring: GivenGiftPage?
+
   var body: some View {
     switch page.content(in: session) {
     case .list(let id):
@@ -34,8 +38,8 @@ struct PageScreen: View {
     case .gift(let id):
       if let gift = session.giftPage(id: id) {
         GiftPageScreen(page: gift, session: session, pages: $pages)
-      } else if let gift = session.givenGiftPage(id: id) {
-        GivenGiftPageScreen(page: gift, session: session, pages: $pages)
+      } else if let gift = session.givenGiftPage(id: id) ?? restoring {
+        GivenGiftPageScreen(page: gift, session: session, pages: $pages, restoring: $restoring)
       } else {
         NotFoundPage()
       }

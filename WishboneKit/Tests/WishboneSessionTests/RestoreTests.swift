@@ -67,7 +67,14 @@ final class RestoreTests {
     #expect(try #require(child.givenGiftPage(id: kite.id)).restorer == .sessionUser)
     #expect(!giver.giving.map(\.id).contains(kite.id))
 
-    #expect(await child.restore(gift: kite.id) == .restored)
+    // When the server has answered, the page that asked closes first: the published copy still holds the gift then,
+    // so the page never shows the "not found" page before it closes.
+    var heldAtClose: [Bool] = []
+    let outcome = await child.restore(gift: kite.id) {
+      heldAtClose.append(child.givenGiftPage(id: kite.id) != nil && received(child).contains(kite.id))
+    }
+    #expect(outcome == .restored)
+    #expect(heldAtClose == [true])
 
     // The gift left the copy before the restore returned, so every window shows it at once.
     #expect(!received(child).contains(kite.id))
@@ -105,19 +112,71 @@ final class RestoreTests {
     #expect(received(child).contains(kite.id))
 
     instance.conditioner.dropEverything()
-    #expect(await child.restore(gift: kite.id) == .unreachable)
+    var closes = 0
+    #expect(await child.restore(gift: kite.id) { closes += 1 } == .unreachable)
+    #expect(closes == 0)
     #expect(child.receivedGroups == before)
     #expect(child.unsentChangeCount == 0)
 
-    // Nothing waits to be sent: with the network back, a sync leaves the gift given, in Received.
+    // Nothing waits to be sent: with the network back, a sync sends no restore, and the gift stays given, in
+    // Received.
     instance.conditioner.passEverything()
+    let mark = instance.conditioner.requests.count
     #expect(await child.syncNow() == .succeeded)
     try await untilInStep(child, as: family.child)
+    #expect(!instance.conditioner.requests.dropFirst(mark).contains { $0.isOn(Self.restore) })
     #expect(received(child).contains(kite.id))
     let onServer = try await family.relative.signedIn().get("/gifts/\(kite.id)")
     #expect(onServer["state"].string == "given")
-    // The dropped restore never reached the instance, and the sync sent none.
-    #expect(!instance.conditioner.requests.contains { $0.isOn(Self.restore) })
+  }
+
+  // MARK: - A pull that asked before the restore
+
+  @Test("A pull whose answer the server gave before the restore doesn't bring the gift back")
+  func pullThatAskedBefore() async throws {
+    // A server of this test's own: the canned answer stands for every row of `GET /versions`.
+    let instance = try await Instance(server: try await TestServer.start())
+    let builder = instance.builder
+    let family = try await builder.standardFamily()
+    let kite = try await givenKite(in: family, builder: builder)
+    let child = try await signedIn(as: family.child, on: instance)
+    #expect(received(child).contains(kite.id))
+
+    // The next pull fetches the gift again, and the server answers that fetch before the restore. The answer
+    // arrives after it, with the gift as it was: given, for the child.
+    let version = "\"canned-\(UUID().uuidString)\""
+    var entries = try #require(try await family.child.signedIn().get("/versions")["data"].array)
+    entries = entries.map { entry in
+      guard entry["kind"] == "gift", entry["id"].string == kite.id else { return entry }
+      return ["kind": "gift", "id": entry["id"], "version": .string(version), "list_id": nil, "item_id": nil]
+    }
+    instance.conditioner.answer(
+      Route("GET", "/versions"),
+      with: .init(
+        status: 200, headers: ["Content-Type": "application/json", "ETag": "\"canned\""],
+        body: try JSON.object(["data": .array(entries)]).data))
+    let fetch = instance.conditioner.hold(Route("GET", "/gifts/\(kite.id)"))
+    let early = Task { await child.syncNow() }
+    await fetch.waitUntilHeld()
+    let history = CopyHistory(of: child)
+    defer { history.stop() }
+
+    #expect(await child.restore(gift: kite.id) == .restored)
+    #expect(child.gift(id: kite.id) == nil)
+    fetch.release()
+    _ = await early.value
+
+    // The restore's answer wins over the early pull's: after each change to the copy since the restore, the gift
+    // was not there.
+    #expect(history.count > 0)
+    for (index, gifts) in history.gifts.enumerated() where gifts.contains(where: { $0.id == kite.id }) {
+      Issue.record("The gift came back at change \(index)")
+    }
+    instance.conditioner.passEverything()
+    #expect(await child.syncNow() == .succeeded)
+    try await untilInStep(child, as: family.child)
+    #expect(child.gift(id: kite.id) == nil)
+    #expect(!received(child).contains(kite.id))
   }
 
   // MARK: - 3. A giver who is gone
