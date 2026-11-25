@@ -42,6 +42,13 @@ extension SessionModel {
   /// is the server's: the next date, then the name in lower case, then the ID.
   ///
   /// Empty for a list that is not in the copy, and when the user can see none of the other recipients.
+  ///
+  /// Two places where this rule can differ from the server's, though neither does today:
+  /// - **A kind that the app doesn't know** counts as a shared occasion does, by its membership. The server
+  ///   matches an occasion of any kind by its user, so a later kind that has a user and no membership would be
+  ///   missing here.
+  /// - **Names on the same date** are compared as Swift compares lower-case strings, where the server compares the
+  ///   bytes of Go's lower case. The two agree for ASCII, and can order some other names differently.
   public func pickableOccasions(onList id: String) -> [OccasionRow] {
     let givable = givableRecipients(onList: id)
     guard !givable.isEmpty else { return [] }

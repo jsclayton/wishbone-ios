@@ -69,8 +69,19 @@ struct GiftOccasionTests {
     _ = try await builder.customOccasion("Graduation", of: family.child, year: 2020, month: 6, day: 1)
     let garage = try await builder.list("Garage", of: family.relative)
     try await builder.accept(try await builder.invite(family.parent, to: garage, as: family.relative))
+    let jordans = try await builder.primaryList(of: family.relative)
+    // A shared occasion that reaches only some givable recipients: the household's, not the relative. Only its
+    // membership says to whom it applies.
+    let picnic = try await builder.sharedOccasion("Picnic", month: 7, day: 4, groups: [family.household])
+    // An active recipient whom some givers can't see: the outsider joins the parent's list through a group that
+    // they then leave.
+    let met = try await builder.group("Met", users: [family.parent, family.outsider])
+    try await builder.accept(try await builder.invite(family.outsider, to: family.parentList, as: family.parent))
+    try await builder.admin.signedIn().send("DELETE", "/groups/\(met.id)/users/\(family.outsider.id)")
+      .expecting(204)
 
-    var listsWithOccasions = 0
+    // The server's answer for each giver on each list they see, by "giver/list".
+    var answers: [String: [String]] = [:]
     for giver in [family.parent, family.child, family.relative, family.outsider] {
       let http = try giver.signedIn()
       // The device's zone, so that the sign-in changes nothing that the first sync brought.
@@ -92,11 +103,27 @@ struct GiftOccasionTests {
         let expected = try await http.all("/occasions?list_id=\(list.id)").compactMap { $0["id"].string }
         let fromCopy = session.pickableOccasions(onList: list.id).map(\.id)
         #expect(fromCopy == expected, "\(giver.name) on \(list.name)")
-        if !expected.isEmpty { listsWithOccasions += 1 }
+        answers["\(giver.id)/\(list.id)"] = expected
       }
     }
+
     // The proof proves something: several lists have occasions to pick, and some have none.
-    #expect(listsWithOccasions >= 4)
+    #expect(answers.values.count { !$0.isEmpty } >= 4)
+    #expect(answers.values.contains { $0.isEmpty })
+    // The shared occasion that reaches only some recipients is in some answers, and missing from others.
+    let withOccasions = answers.values.filter { !$0.isEmpty }
+    #expect(withOccasions.contains { $0.contains(picnic.id) })
+    #expect(withOccasions.contains { !$0.contains(picnic.id) })
+    // The child on Garage gives to the relative and the parent, whom the picnic reaches. The parent on Garage, and
+    // either of them on the relative's primary list, give only to the relative, whom it doesn't.
+    #expect(answers["\(family.child.id)/\(garage.id)"]?.contains(picnic.id) == true)
+    #expect(answers["\(family.parent.id)/\(garage.id)"]?.contains(picnic.id) == false)
+    #expect(answers["\(family.parent.id)/\(jordans.id)"]?.contains(picnic.id) == false)
+    #expect(answers["\(family.child.id)/\(jordans.id)"]?.contains(picnic.id) == false)
+    // The parent can't see the outsider, who is active and a recipient of the parent's list: nothing to pick. Nor
+    // can the outsider see the parent.
+    #expect(answers["\(family.parent.id)/\(family.parentList.id)"] == [])
+    #expect(answers["\(family.outsider.id)/\(family.parentList.id)"] == [])
   }
 
   // MARK: - 2. A pick
@@ -105,6 +132,10 @@ struct GiftOccasionTests {
   func pick() async throws {
     let seeded = try await seed()
     let builder = seeded.instance.builder
+    // A recipient ahead of UTC, so that the reveal is not the start of a day in UTC. Their birthday, June 15, and the
+    // recital, June 1, are both in New Zealand's winter: midnight there is noon of the day before in UTC.
+    try await seeded.recipient.signedIn().send("PATCH", "/users/me", json: ["timezone": "Pacific/Auckland"])
+      .expecting(200)
     let recital = try await builder.customOccasion("Recital", of: seeded.recipient, year: 2040, month: 6, day: 1)
     let gift = try await builder.claim(seeded.kite, as: seeded.giver, for: seeded.birthday)
     let session = try await signedIn(as: seeded.giver, in: seeded.instance, with: [gift])
@@ -119,8 +150,9 @@ struct GiftOccasionTests {
     #expect(picked.occasion?.id == recital.id)
     #expect(picked.occasionName == recital.name)
     #expect(picked.occasionDate == "2040-06-01")
-    // The recipient has no time zone: the reveal is midnight in UTC, at the start of the day after.
-    #expect(picked.revealAt == ISO8601DateFormatter().date(from: "2040-06-02T00:00:00Z"))
+    // Midnight at the start of June 2 in Auckland, which the copy holds no zone for: the gift's old reveal says how
+    // far it is from that day's start in UTC.
+    #expect(picked.revealAt == ISO8601DateFormatter().date(from: "2040-06-01T12:00:00Z"))
     #expect(session.giftPage(id: gift.id)?.occasion == .named(recital.name))
     #expect(session.giving.first { $0.id == gift.id }?.occasion?.id == recital.id)
     #expect(session.unsentChangeCount == 1)

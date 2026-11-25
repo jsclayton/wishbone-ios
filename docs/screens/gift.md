@@ -95,7 +95,7 @@ Decided, as the web app has them: "I won't get this", "I didn't get this", "Add 
 | Flag: no longer shared | "This list is no longer shared with you. You can still give this, or not." |
 | Flag: the occasion moved | "The occasion changed. It's now for {occasion}.", or "The occasion changed." when the giver can't see it |
 | Answers | "OK", "Keep it" |
-| Occasion, the menu | "{name}'s birthday", "{name}'s {occasion}", or a shared occasion's name, each with its date ("June 1") under it |
+| Occasion, the menu | "{name}'s birthday", "{name}'s {occasion}", or a shared occasion's name, each with its date ("June 1") under it. The row shows the same words for the gift's occasion when the giver can pick it, and the occasion's name otherwise. |
 | A second gift | "Get another for a different occasion" |
 | A second gift, can't reach | "Can't reach {address}. Nothing was claimed." |
 | I won't get this, confirmation | "You won't get {title}? Other people can then claim it.", with the button "I won't get this" |
