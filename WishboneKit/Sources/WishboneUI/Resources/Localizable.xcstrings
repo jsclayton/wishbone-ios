@@ -66,6 +66,17 @@
     "%@ was removed" : {
       "comment" : "A change of an item: the store link was removed"
     },
+    "%@ · %@" : {
+      "comment" : "A Given or Received heading: the occasion's name, then the date it fell on, with the year",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ · %2$@"
+          }
+        }
+      }
+    },
     "%@ · read %@" : {
       "localizations" : {
         "en" : {
@@ -432,6 +443,17 @@
     "From %@" : {
       "comment" : "Who a gift in Giving is from, as its giver set it"
     },
+    "From %@ · claimed by %@" : {
+      "comment" : "Who gave a gift: its from label, then the giver who claimed it, by name",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "From %1$@ · claimed by %2$@"
+          }
+        }
+      }
+    },
     "Getting a login link" : {
 
     },
@@ -466,6 +488,12 @@
     },
     "Give the item a title." : {
 
+    },
+    "Given" : {
+
+    },
+    "Given %@" : {
+      "comment" : "The day a gift was given, on a Given row"
     },
     "Giving" : {
 
@@ -724,6 +752,9 @@
     "Nothing from you yet" : {
 
     },
+    "Nothing given yet. A gift moves here the day after its occasion." : {
+
+    },
     "Nothing here yet. Tap Add item to start the list." : {
 
     },
@@ -731,6 +762,9 @@
 
     },
     "Nothing on this list yet." : {
+
+    },
+    "Nothing received yet. Gifts show here the day after an occasion." : {
 
     },
     "Nothing yet" : {
@@ -831,6 +865,9 @@
 
     },
     "Reading %@…" : {
+
+    },
+    "Received" : {
 
     },
     "Remind me early" : {

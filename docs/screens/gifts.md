@@ -88,6 +88,9 @@ Decided, as the web app has them: "Giving", "Given", "Received", "Hidden until D
 | Flag: the occasion moved | "Now for {occasion}", or "Moved to another occasion" when the giver can't see it |
 | Flag: no longer shared | "No longer shared with you" |
 | Giving is empty | "You aren't getting anything yet. Open someone on Home and tap I'll get this." |
+| A Given or Received heading | "Christmas · Dec 25, 2025", or only "Dec 25, 2025" when the user doesn't get the occasion's name |
+| Who a Given gift went to | "For Mom and Dad" |
+| The day a Given gift was given | "Given Dec 26, 2025" |
 | Given is empty | "Nothing given yet. A gift moves here the day after its occasion." |
 | Received is empty | "Nothing received yet. Gifts show here the day after an occasion." |
 | A child's Received, title | "What {name} received" |

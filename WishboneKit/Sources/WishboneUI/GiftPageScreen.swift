@@ -38,10 +38,10 @@ struct GiftPageScreen: View {
       Section {
         if page.linksItem {
           NavigationLink(value: Page.item(id: gift.itemID)) {
-            GiftHeader(page: page)
+            GiftHeader(gift: gift, tileUserID: page.recipients?.first?.id ?? gift.giverID ?? "")
           }
         } else {
-          GiftHeader(page: page)
+          GiftHeader(gift: gift, tileUserID: page.recipients?.first?.id ?? gift.giverID ?? "")
         }
         if page.linksList {
           NavigationLink(value: Page.list(id: gift.listID)) {
@@ -315,20 +315,22 @@ private struct GiftTextField: View {
   }
 }
 
-/// The header: the item's image, its title as large text, and its price, as they are now, or as they were when the
-/// item was removed. At the largest text sizes, the image moves above the text.
-private struct GiftHeader: View {
-  let page: GiftPage
+/// The header: the item's image, its title as large text, and its price, as they are now, as they were when the
+/// item was removed, or as they were at reveal. At the largest text sizes, the image moves above the text.
+struct GiftHeader: View {
+  let gift: GiftRow
+
+  /// The user whose color the tile takes.
+  let tileUserID: String
 
   @Environment(\.dynamicTypeSize) private var size
 
   var body: some View {
-    let gift = page.gift
     let layout =
       size.isAccessibilitySize
       ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) : AnyLayout(HStackLayout(alignment: .top, spacing: 12))
     layout {
-      ItemTile(image: gift.image, userID: page.recipients?.first?.id ?? gift.giverID ?? "")
+      ItemTile(image: gift.image, userID: tileUserID)
       VStack(alignment: .leading, spacing: 4) {
         Text(gift.title)
           .font(.title2.weight(.bold))
@@ -390,7 +392,7 @@ private struct FlagRow: View {
 
 /// A field: its label, and its value at the trailing edge. At the largest text sizes, the label sits above the
 /// value. The row is one element.
-private struct FieldRow<Value: View>: View {
+struct FieldRow<Value: View>: View {
   let label: String
   @ViewBuilder let value: Value
 
