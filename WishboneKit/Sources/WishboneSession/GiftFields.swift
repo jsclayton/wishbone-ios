@@ -106,7 +106,7 @@ extension SessionModel {
   /// Raise how many by one, with `PATCH /gifts/{id}`. A raise is a claim: it waits for the server's answer, and is
   /// never an unsent change. See "Claims are online only" in `docs/spec.md`.
   ///
-  /// A lower of the same gift that waits is sent first, so the raise lands after it. On success, the gift as the
+  /// A lower of the same gift that waits is sent first, by a sync, so the raise lands after it. On success, the gift as the
   /// server has it now and the item's new numbers go into the copy in one change, and the session model publishes
   /// them before it returns.
   ///
@@ -115,9 +115,11 @@ extension SessionModel {
     guard let gift = editableGift(id), gift.canRaiseQuantity else { return .notOffered }
     do {
       if try await database.hasUnsentQuantityChange(toGift: id) {
-        let end = await sendUnsentChanges()
+        // A sync sends it: the unsent changes go only as the first step of a sync. A sync that runs now may be past
+        // its sends, so this one runs after it.
+        let outcome = await syncNow()
         guard !(try await database.hasUnsentQuantityChange(toGift: id)) else {
-          return end == .unreachable ? .unreachable : .failed
+          return outcome == .unreachable ? .unreachable : .failed
         }
       }
       // The number as the server has it, now that no lower of it waits.
