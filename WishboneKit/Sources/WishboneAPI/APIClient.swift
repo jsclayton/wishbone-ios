@@ -311,6 +311,19 @@ public struct APIClient: Sendable {
     try await versioned(.updateGift(id, changes, key: key))
   }
 
+  /// `DELETE /gifts/{id}`: the giver unclaims their open gift, with no `If-Match`, and the quantity goes back to all
+  /// givers. `key` is the unsent change's own `Idempotency-Key`. A given gift is a 403 `gift_given`.
+  public func unclaimGift(_ id: String, key: String) async throws(APIError) {
+    _ = try await load(.unclaimGift(id, key: key))
+  }
+
+  /// `POST /gifts/{id}/acknowledge`: the giver answers the flags with the codes, such as `removed` for Keep it.
+  /// `key` is the unsent change's own `Idempotency-Key`. Gives back the gift, with the version that the answer
+  /// carried.
+  public func acknowledgeGift(_ id: String, codes: [String], key: String) async throws(APIError) -> Versioned<Gift> {
+    try await versioned(.acknowledgeGift(id, codes: codes, key: key))
+  }
+
   /// `GET /blocked-stores`: every blocked store, each with its version. Only the admin can read it.
   public func blockedStores() async throws(APIError) -> FetchedCollection<Versioned<BlockedStore>> {
     try await rows { cursor in .page(of: .blockedStores, cursor: cursor) }

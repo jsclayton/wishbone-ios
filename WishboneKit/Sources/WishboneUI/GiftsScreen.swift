@@ -18,6 +18,9 @@ struct GiftsScreen: View {
   /// The window's part.
   @Binding var part: GiftsPart
 
+  /// The gift that I won't get this asks about.
+  @State private var confirmingUnclaim: GiftRow?
+
   /// The width of the window, for the list's column of readable width.
   @State private var width: CGFloat = 0
   @ScaledMetric(relativeTo: .body) private var readableWidth: CGFloat = 640
@@ -29,7 +32,8 @@ struct GiftsScreen: View {
         Section {
           ForEach(group.gifts) { gift in
             GivingRow(
-              gift: gift, tileUserID: group.recipients?.first?.id ?? session.session.userID, session: session)
+              gift: gift, tileUserID: group.recipients?.first?.id ?? session.session.userID, session: session,
+              wontGetThis: { confirmingUnclaim = gift.gift })
           }
         } header: {
           GivingHeading(group: group)
@@ -41,6 +45,9 @@ struct GiftsScreen: View {
       $0.size.width
     } action: {
       width = $0
+    }
+    .wontGetThisConfirmation(of: $confirmingUnclaim) { gift in
+      Task { await session.unclaim(gift: gift.id) }
     }
     .sharedStates(of: session, hasRows: !groups.isEmpty) {
       GivingIsEmpty()
@@ -97,16 +104,20 @@ private struct GivingHeading: View {
 
 /// A Giving row: the gift, which opens the gift's page, and the bought toggle, from `can_edit`. The toggle is an
 /// unsent change, so it works offline, and the row shows it at once. At the largest text sizes, the toggle gets its
-/// own line, with its label.
+/// own line, with its label. From `can_delete`, I won't get this is in the row's context menu and its swipe action,
+/// after a confirmation.
 ///
-/// The gift is one element. Its actions are Open, and Mark bought or Mark not bought. The toggle reads "Bought" and
-/// its state.
+/// The gift is one element. Its actions are Open, Mark bought or Mark not bought, and I won't get this. The toggle
+/// reads "Bought" and its state.
 private struct GivingRow: View {
   let gift: GivingGift
 
   /// The user whose color the tile takes: the gift's first recipient.
   let tileUserID: String
   let session: SessionModel
+
+  /// Asks to confirm I won't get this.
+  let wontGetThis: () -> Void
 
   @Environment(\.dynamicTypeSize) private var size
 
@@ -129,11 +140,53 @@ private struct GivingRow: View {
             Text(GiftWords.markBought(!isBought))
           }
         }
+        if row.canDelete {
+          Button(GiftWords.wontGetThis, action: wontGetThis)
+        }
       }
       if row.canEdit {
         BoughtToggle(gift: row, session: session)
           .labelsHidden(!size.isAccessibilitySize)
       }
+    }
+    .contextMenu {
+      if row.canDelete {
+        Button(role: .destructive, action: wontGetThis) {
+          Label(GiftWords.wontGetThis, systemImage: "xmark.circle")
+        }
+      }
+    }
+    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+      if row.canDelete {
+        // The words say what it does, not the color alone. The row stays until the giver confirms.
+        Button(action: wontGetThis) {
+          Label(GiftWords.wontGetThis, systemImage: "xmark.circle")
+        }
+        .tint(.red)
+      }
+    }
+  }
+}
+
+extension View {
+  /// The confirmation of I won't get this: "You won't get {title}?", "Other people can then claim it.", and the
+  /// button "I won't get this". Its words never say who else can see anything. `confirm` runs on the button.
+  func wontGetThisConfirmation(of gift: Binding<GiftRow?>, confirm: @escaping (GiftRow) -> Void) -> some View {
+    confirmationDialog(
+      gift.wrappedValue.map { GiftWords.wontGetThisQuestion($0.title) } ?? "",
+      isPresented: Binding {
+        gift.wrappedValue != nil
+      } set: {
+        if !$0 { gift.wrappedValue = nil }
+      },
+      titleVisibility: .visible,
+      presenting: gift.wrappedValue
+    ) { shown in
+      Button(GiftWords.wontGetThis, role: .destructive) {
+        confirm(shown)
+      }
+    } message: { _ in
+      Text(GiftWords.wontGetThisMessage)
     }
   }
 }

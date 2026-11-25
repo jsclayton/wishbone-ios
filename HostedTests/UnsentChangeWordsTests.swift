@@ -59,4 +59,19 @@ struct UnsentChangeWordsTests {
     #expect(LateRefusalWords.line(note) == "The note on Kite: You can't do this any more.")
     #expect(LateRefusalWords.line(quantity) == "How many of Kite: You can't do this any more.")
   }
+
+  @Test("A late refusal of I won't get this, Keep it, or OK names the item, with the words for gift_given")
+  func lateRefusalsOfAnswers() {
+    let given = APIError.Refusal(route: .unclaimGift, status: 403, code: .giftGiven, detail: "The server's words")
+    let forbidden = APIError.Refusal(
+      route: .acknowledgeGift, status: 403, code: .forbidden, detail: "The server's words")
+    let unclaim = LateRefusal(id: 1, action: .unclaim(giftID: "15"), title: "Kite", refusal: given)
+    let keep = LateRefusal(
+      id: 2, action: .acknowledge(giftID: "15", flag: "removed"), title: "Kite", refusal: forbidden)
+    let ok = LateRefusal(
+      id: 3, action: .acknowledge(giftID: "15", flag: "changed"), title: "Kite", refusal: forbidden)
+    #expect(LateRefusalWords.line(unclaim) == "I won't get Kite: This gift was already given.")
+    #expect(LateRefusalWords.line(keep) == "Keeping Kite: You can't do this any more.")
+    #expect(LateRefusalWords.line(ok) == "The change to Kite: You can't do this any more.")
+  }
 }

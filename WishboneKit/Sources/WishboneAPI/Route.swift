@@ -28,6 +28,8 @@ public enum Route: String, Sendable, CaseIterable {
   case gifts
   case gift
   case updateGift
+  case unclaimGift
+  case acknowledgeGift
   case claim
   case blockedStores
   case blockStore
@@ -44,9 +46,10 @@ public enum Route: String, Sendable, CaseIterable {
       .occasion, .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation,
       .gifts, .gift, .blockedStores:
       "GET"
-    case .redeemLoginLink, .confirmProfile, .uploadImage, .blockStore, .claim, .search, .createItem: "POST"
+    case .redeemLoginLink, .confirmProfile, .uploadImage, .blockStore, .claim, .search, .createItem, .acknowledgeGift:
+      "POST"
     case .updateMe, .updateGift: "PATCH"
-    case .revokeCurrentSession, .unblockStore, .leaveList: "DELETE"
+    case .revokeCurrentSession, .unblockStore, .leaveList, .unclaimGift: "DELETE"
     }
   }
 
@@ -80,7 +83,8 @@ public enum Route: String, Sendable, CaseIterable {
     case .invitations: "/invitations"
     case .invitation: "/invitations/{id}"
     case .gifts: "/gifts"
-    case .gift, .updateGift: "/gifts/{id}"
+    case .gift, .updateGift, .unclaimGift: "/gifts/{id}"
+    case .acknowledgeGift: "/gifts/{id}/acknowledge"
     case .claim: "/items/{id}/gifts"
     case .blockedStores, .blockStore: "/blocked-stores"
     case .unblockStore: "/blocked-stores/{id}"
@@ -98,8 +102,8 @@ public enum Route: String, Sendable, CaseIterable {
     case .health, .redeemLoginLink: true
     case .versions, .updateMe, .users, .user, .groups, .group, .groupUsers, .groupGroups, .occasions, .occasion,
       .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation, .gifts, .gift,
-      .updateGift, .claim, .blockedStores, .blockStore, .unblockStore, .leaveList, .revokeCurrentSession,
-      .confirmProfile,
+      .updateGift, .unclaimGift, .acknowledgeGift, .claim, .blockedStores, .blockStore, .unblockStore, .leaveList,
+      .revokeCurrentSession, .confirmProfile,
       .uploadImage, .me, .search, .createItem:
       false
     }
@@ -119,8 +123,9 @@ public enum Route: String, Sendable, CaseIterable {
       .invitations, .blockedStores:
       Self.paging
     case .health, .redeemLoginLink, .versions, .updateMe, .user, .group, .occasion, .list, .item, .invitation, .gift,
-      .updateGift, .claim, .blockStore, .unblockStore, .leaveList, .revokeCurrentSession, .confirmProfile, .uploadImage,
-      .me,
+      .updateGift, .unclaimGift, .acknowledgeGift, .claim, .blockStore, .unblockStore, .leaveList,
+      .revokeCurrentSession,
+      .confirmProfile, .uploadImage, .me,
       .search, .createItem:
       []
     }
@@ -146,7 +151,7 @@ public enum Route: String, Sendable, CaseIterable {
     // so a second Add after a lost answer adds the item once.
     case .search, .createItem: ["Idempotency-Key"]
     // An unsent change keeps its key, so a resend after a lost connection, or in a later sync, is the same write.
-    case .updateGift: ["Idempotency-Key"]
+    case .updateGift, .unclaimGift, .acknowledgeGift: ["Idempotency-Key"]
     case .health, .redeemLoginLink, .users, .user, .groups, .group, .groupUsers, .groupGroups, .occasions, .occasion,
       .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation, .gifts, .gift,
       .blockedStores, .unblockStore, .leaveList, .revokeCurrentSession, .confirmProfile, .uploadImage, .me:
@@ -162,6 +167,7 @@ public enum Route: String, Sendable, CaseIterable {
     case .blockStore: fields(of: BlockStoreBody.CodingKeys.self)
     case .claim: fields(of: ClaimBody.CodingKeys.self)
     case .updateGift: fields(of: GiftChanges.CodingKeys.self)
+    case .acknowledgeGift: fields(of: AcknowledgeBody.CodingKeys.self)
     // A search sends a form, not JSON: its one field is the text.
     case .search: ["text"]
     case .createItem:
@@ -170,7 +176,7 @@ public enum Route: String, Sendable, CaseIterable {
     case .uploadImage: fields(of: DownloadBody.CodingKeys.self)
     case .health, .versions, .users, .user, .groups, .group, .groupUsers, .groupGroups, .occasions, .occasion,
       .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation, .gifts, .gift,
-      .blockedStores, .unblockStore, .leaveList, .revokeCurrentSession, .confirmProfile, .me:
+      .blockedStores, .unblockStore, .leaveList, .revokeCurrentSession, .confirmProfile, .me, .unclaimGift:
       []
     }
   }
@@ -200,10 +206,10 @@ public enum Route: String, Sendable, CaseIterable {
     case .invitations: Page<VersionedRow<Invitation>>.fields
     case .invitation: Invitation.fields
     case .gifts: Page<VersionedRow<Gift>>.fields
-    case .gift, .updateGift, .claim: Gift.fields
+    case .gift, .updateGift, .acknowledgeGift, .claim: Gift.fields
     case .blockedStores: Page<VersionedRow<BlockedStore>>.fields
     case .blockStore: BlockedStore.fields
-    case .revokeCurrentSession, .unblockStore, .leaveList: NoContent.fields
+    case .revokeCurrentSession, .unblockStore, .leaveList, .unclaimGift: NoContent.fields
     }
   }
 }
@@ -406,6 +412,16 @@ extension Endpoint where Response == Gift {
   }
 }
 
+/// The body of `POST /gifts/{id}/acknowledge`: the codes of the flags to clear. The app always names them, so an
+/// answer clears only its own flag.
+struct AcknowledgeBody: Encodable, Sendable {
+  let codes: [String]
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case codes
+  }
+}
+
 /// The body of `POST /items/{id}/gifts`: one, with the server's own pick of the occasion. See "Claims are online
 /// only" in `docs/spec.md`.
 struct ClaimBody: Encodable, Sendable {
@@ -463,6 +479,13 @@ extension Endpoint where Response == Gift {
     Endpoint(route: .updateGift, parameters: ["id": id], body: changes, idempotencyKey: key)
   }
 
+  /// Answers the flags with the codes on the giver's open gift, with the unsent change's own key. Keep it is the
+  /// answer `removed`.
+  static func acknowledgeGift(_ id: String, codes: [String], key: String) -> Endpoint {
+    Endpoint(
+      route: .acknowledgeGift, parameters: ["id": id], body: AcknowledgeBody(codes: codes), idempotencyKey: key)
+  }
+
   /// Claims one of the item, for the soonest occasion that the giver may pick, with a key of its own, so that a
   /// resend after a lost connection makes one gift.
   static func claim(_ itemID: String) -> Endpoint {
@@ -481,6 +504,12 @@ extension Endpoint where Response == NoContent {
   /// `docs/spec.md`).
   static func unblockStore(_ id: String) -> Endpoint {
     Endpoint(route: .unblockStore, parameters: ["id": id])
+  }
+
+  /// The giver unclaims their open gift, with the unsent change's own key. It sends no `If-Match` (see "No
+  /// If-Match" in `docs/spec.md`).
+  static func unclaimGift(_ id: String, key: String) -> Endpoint {
+    Endpoint(route: .unclaimGift, parameters: ["id": id], idempotencyKey: key)
   }
 
   /// The recipient leaves the extra list, or their parent makes them leave. It sends no `If-Match` (see "No

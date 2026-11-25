@@ -39,6 +39,18 @@ public enum LateRefusalWords {
       return String(
         localized: "How many of \(refusal.title): \(reason)", bundle: #bundle,
         comment: "A late refusal: the item's title, then why the change wasn't saved")
+    case .unclaim:
+      return String(
+        localized: "I won't get \(refusal.title): \(reason)", bundle: #bundle,
+        comment: "A late refusal of I won't get this: the item's title, then why the change wasn't saved")
+    case .acknowledge(_, "removed"):
+      return String(
+        localized: "Keeping \(refusal.title): \(reason)", bundle: #bundle,
+        comment: "A late refusal of Keep it: the item's title, then why the change wasn't saved")
+    case .acknowledge:
+      return String(
+        localized: "The change to \(refusal.title): \(reason)", bundle: #bundle,
+        comment: "A late refusal of OK on a gift's flag: the item's title, then why the change wasn't saved")
     }
   }
 }

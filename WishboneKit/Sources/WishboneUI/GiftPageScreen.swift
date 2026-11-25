@@ -7,7 +7,11 @@ import WishboneSession
 ///
 /// From `can_edit`: Bought is a toggle, How many a stepper, and From and Note are text fields that save when they lose
 /// focus. Each is an unsent change, except a raise of how many, which waits for the server. Occasion is read here.
-/// It becomes a control, and each flag gets its answer, in a later step.
+/// It becomes a control in a later step.
+///
+/// From `can_acknowledge`, each flag has its answer: Keep it for an item that was removed, and OK for the rest. From
+/// `can_delete`, I won't get this sits at the foot, after a confirmation. Each is an unsent change. After I won't get
+/// this, the page closes in this window, which shows what was under it.
 ///
 /// **Only its giver sees an open gift,** and the page never says who else claimed the item. Nothing on it goes to a
 /// system surface or into the shared container.
@@ -17,6 +21,12 @@ import WishboneSession
 struct GiftPageScreen: View {
   let page: GiftPage
   let session: SessionModel
+
+  /// The window's pages on the tab, so that I won't get this closes this page.
+  @Binding var pages: [Page]
+
+  /// The gift that I won't get this asks about.
+  @State private var confirmingUnclaim: GiftRow?
 
   /// The width of the window, for the list's column of readable width.
   @State private var width: CGFloat = 0
@@ -47,7 +57,9 @@ struct GiftPageScreen: View {
       if !page.flags.isEmpty {
         Section {
           ForEach(Array(page.flags.enumerated()), id: \.offset) { _, flag in
-            FlagRow(flag: flag, changes: page.changes)
+            FlagRow(flag: flag, changes: page.changes, canAnswer: gift.canAcknowledge) {
+              Task { await session.answer(flag, ofGift: gift.id) }
+            }
           }
         }
       }
@@ -105,6 +117,19 @@ struct GiftPageScreen: View {
       } footer: {
         Text("Only you see this note.", bundle: #bundle)
       }
+      if gift.canDelete {
+        Section {
+          Button(role: .destructive) {
+            confirmingUnclaim = gift
+          } label: {
+            Text(GiftWords.wontGetThis)
+              .frame(maxWidth: .infinity)
+          }
+        }
+      }
+    }
+    .wontGetThisConfirmation(of: $confirmingUnclaim) { gift in
+      unclaim(gift)
     }
     .contentMargins(.horizontal, max(0, (width - readableWidth) / 2), for: .scrollContent)
     .onGeometryChange(for: CGFloat.self) {
@@ -117,6 +142,15 @@ struct GiftPageScreen: View {
     #if os(iOS)
       .navigationBarTitleDisplayMode(.inline)
     #endif
+  }
+
+  /// I won't get this: the page closes in this window first, so it never shows the "not found" page here. Then the
+  /// unclaim is saved as an unsent change, and every other window that shows the page shows the "not found" page.
+  private func unclaim(_ gift: GiftRow) {
+    if let index = pages.lastIndex(of: .gift(id: gift.id)) {
+      pages.removeSubrange(index...)
+    }
+    Task { await session.unclaim(gift: gift.id) }
   }
 }
 
@@ -313,28 +347,44 @@ private struct GiftHeader: View {
   }
 }
 
-/// A flag, in words. A changed item lists each change under it, old to new. The flag and its changes are one
-/// element.
+/// A flag, in words, with its answer, from `can_acknowledge`: Keep it for an item that was removed, and OK for the
+/// rest. A changed item lists each change under it, old to new. The flag and its changes are one element, and its
+/// answer is that element's action. The button is also on screen.
 private struct FlagRow: View {
   let flag: GivingGift.Flag
   let changes: [GiftPage.Change]
+  let canAnswer: Bool
+  let answer: () -> Void
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 4) {
-      Label {
-        Text(GiftWords.pageFlag(flag))
-          .font(.body.weight(.semibold))
-      } icon: {
-        Image(systemName: "exclamationmark.circle")
-      }
-      if flag == .changed {
-        ForEach(Array(changes.enumerated()), id: \.offset) { _, change in
-          Text(GiftWords.change(change))
+    VStack(alignment: .leading, spacing: 8) {
+      VStack(alignment: .leading, spacing: 4) {
+        Label {
+          Text(GiftWords.pageFlag(flag))
+            .font(.body.weight(.semibold))
+        } icon: {
+          Image(systemName: "exclamationmark.circle")
         }
+        if flag == .changed {
+          ForEach(Array(changes.enumerated()), id: \.offset) { _, change in
+            Text(GiftWords.change(change))
+          }
+        }
+      }
+      .accessibilityElement(children: .combine)
+      .accessibilityActions {
+        if canAnswer {
+          Button(GiftWords.answer(to: flag), action: answer)
+        }
+      }
+      if canAnswer {
+        // Bordered, so that only the button takes a tap, and not the whole row.
+        Button(GiftWords.answer(to: flag), action: answer)
+          .buttonStyle(.bordered)
+          .accessibilityHidden(true)
       }
     }
     .fixedSize(horizontal: false, vertical: true)
-    .accessibilityElement(children: .combine)
   }
 }
 

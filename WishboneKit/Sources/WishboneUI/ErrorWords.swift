@@ -47,6 +47,8 @@ public enum ErrorWords {
         localized: "You can only lower how many, because this list is now for you too.", bundle: #bundle)
     case .occasionNotAllowed:
       return String(localized: "That occasion can't be used for this gift. Pick another.", bundle: #bundle)
+    case .giftGiven:
+      return String(localized: "This gift was already given.", bundle: #bundle)
     case .primaryList:
       return String(localized: "You can't do this to a primary list.", bundle: #bundle)
     case .unknownFilter, .unknownSort, .cursorMismatch, .imageAttached, .resourceChanged:
