@@ -37,6 +37,10 @@ struct AddScreen: View {
           NavigationLink(value: Page.item(id: added.id)) {
             Text("Added \(added.title) to \(added.listName)", bundle: #bundle)
           }
+        } footer: {
+          if added.imageWasLeftOut {
+            Text(ErrorWords.imageLeftOut)
+          }
         }
       }
       line
@@ -76,7 +80,8 @@ struct AddScreen: View {
     }
     .onChange(of: state.added) { _, added in
       guard let added else { return }
-      announce(String(localized: "Added \(added.title) to \(added.listName)", bundle: #bundle))
+      let words = String(localized: "Added \(added.title) to \(added.listName)", bundle: #bundle)
+      announce(added.imageWasLeftOut ? "\(words). \(ErrorWords.imageLeftOut)" : words)
     }
     .onChange(of: state.phase) { _, phase in
       if let words = words(for: phase) { announce(words) }
@@ -110,6 +115,17 @@ struct AddScreen: View {
         }
         fillItInMyself
       }
+    case .blocked:
+      Section {
+        if let words = words(for: state.phase) {
+          Text(words)
+        }
+        Button {
+          form = state.addWithoutTheLink()
+        } label: {
+          Text("Add it without the link", bundle: #bundle)
+        }
+      }
     case .refused:
       Section {
         if let words = words(for: state.phase) {
@@ -141,8 +157,8 @@ struct AddScreen: View {
       return nil
     case .cantReach:
       return CantReach.words(for: session.session.instance)
-    case .refused(.link(_, let store), let refusal) where refusal.code == .storeBlocked:
-      return String(localized: "Links from \(store) are blocked on this Wishbone.", bundle: #bundle)
+    case .blocked(_, let store):
+      return ErrorWords.blocked(store)
     case .refused(_, let refusal):
       return ErrorWords.words(for: refusal)
     }

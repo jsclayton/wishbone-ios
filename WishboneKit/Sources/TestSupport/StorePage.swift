@@ -36,8 +36,11 @@ public final class StorePage: Sendable {
   private let conditioner: NetworkConditioner
   private let route: NetworkConditioner.Route
 
-  /// A page with `images` images, each a PNG of one pixel at an address of its own.
-  public init(title: String, priceMinor: Int, images: Int = 2, options: [Option] = []) async throws {
+  /// A page with `images` images, each a PNG of one pixel at an address of its own. With `isProduct` false, the
+  /// page is a plain one with no title, no product, and no images, so a search reads nothing from it.
+  public init(
+    title: String, priceMinor: Int, images: Int = 2, options: [Option] = [], isProduct: Bool = true
+  ) async throws {
     // Every request has a canned answer at the store, so the address behind it is never asked.
     let server = try await TestServer.shared()
     store = try await NetworkConditioner(to: server.address)
@@ -48,14 +51,17 @@ public final class StorePage: Sendable {
     route = .init("GET", page)
     let front = conditioner
     url = front.url(page)
+    let images = isProduct ? images : 0
     imageURLs = (0..<images).map { front.url("\(page)-image-\($0).png") }
     for index in 0..<images {
       store.answer(
         .init("GET", "\(page)-image-\(index).png"),
         with: .init(status: 200, headers: ["Content-Type": "image/png"], body: FixtureBuilder.onePixelPNG))
     }
-    let html = Self.html(
-      title: title, priceMinor: priceMinor, images: imageURLs.map(\.absoluteString), options: options)
+    let html =
+      isProduct
+      ? Self.html(title: title, priceMinor: priceMinor, images: imageURLs.map(\.absoluteString), options: options)
+      : "<!doctype html>\n<html><body><p>Nothing to buy here.</p></body></html>"
     store.answer(
       route, with: .init(status: 200, headers: ["Content-Type": "text/html; charset=utf-8"], body: Data(html.utf8)))
   }

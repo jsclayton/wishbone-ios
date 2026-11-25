@@ -19,7 +19,7 @@ public enum ErrorWords {
     case .rateLimited:
       return String(localized: "Too many tries. Wait a minute, then try again.", bundle: #bundle)
     case .imageFetchFailed:
-      return String(localized: "One picture couldn't be saved, so the item was added without it.", bundle: #bundle)
+      return imageLeftOut
     case .tooManyImages:
       return String(localized: "An item can have 5 photos.", bundle: #bundle)
     case .tooManyStoreLinks:
@@ -65,6 +65,16 @@ public enum ErrorWords {
       // These count as success: see above.
       return nil
     }
+  }
+
+  /// The words for an item added without a picture that the server couldn't save: `image_fetch_failed`.
+  public static var imageLeftOut: String {
+    String(localized: "One picture couldn't be saved, so the item was added without it.", bundle: #bundle)
+  }
+
+  /// The words for a link from a blocked store: `store_blocked`.
+  public static func blocked(_ store: String) -> String {
+    String(localized: "Links from \(store) are blocked on this Wishbone.", bundle: #bundle)
   }
 
   /// The words for a claim that came after the last one: `item_fully_claimed`. The words never say who got it.
