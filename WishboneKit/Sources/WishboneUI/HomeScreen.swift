@@ -40,7 +40,7 @@ struct HomeScreen: View {
     let hasRows = !people.isEmpty || !occasions.comingUp.isEmpty
     let state = session.screenState(hasRows: hasRows)
     // The headings show over their parts, and over their empty lines. While nothing is known, the state shows alone.
-    let showsParts = state != .loading && state != .cantReach
+    let showsParts = state != .loading && state != .cantReach && state != .firstSyncFailed
     return List {
       if showsParts {
         countdown(occasions.countdown)

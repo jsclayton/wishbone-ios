@@ -141,12 +141,13 @@ These rules hold on every screen. A screen's spec repeats none of them, and says
 - **Loading.** A screen shows what the local copy has at once, with no spinner over saved data (see [Screens read a local copy](../spec.md#screens-read-a-local-copy)). During the first sync after sign-in, a screen with no rows yet shows the system's progress indicator, and fills as rows arrive.
 - **Empty.** An empty state shows only after a successful sync found nothing. It says what is missing and what to do next.
 - **Can't reach.** When the instance can't be reached, the screen shows what is saved, under the line "Can't reach {address}". The line blocks nothing. A screen with no rows yet shows the unreachable state with Try again, never an empty state. While unsent changes wait, the line adds how many (see [Unsent changes, sign-out, and late refusals](../spec.md#unsent-changes-sign-out-and-late-refusals)).
+- **First sync failed.** When the first sync reaches the instance but can't finish, a screen with no rows yet shows the error state, "Couldn't load your lists from {address}", with Try again, never Loading forever and never an empty state. Try again syncs at once, and the screen shows the progress indicator again while it runs. The app keeps syncing on its schedule, and the screen fills when a sync succeeds (see [Screens read a local copy](../spec.md#screens-read-a-local-copy)).
 - **Gone.** A page whose thing is missing or hidden shows the [not-found](not-found.md) page in its place.
 - **Signed out.** Signing out, or the API's own 401, replaces every window with the [signed-out](signed-out.md) screen.
 - **A late refusal** shows once, as [Late refusals](../spec.md#late-refusals) says.
 - **Pull to refresh** works on every screen that scrolls, and syncs everything.
 
-**Provisional.** Plain default: the "Can't reach" line is a row pinned under the navigation bar, the unreachable state and each empty state use the system's unavailable-content view, and Try again is its button.
+**Provisional.** Plain default: the "Can't reach" line is a row pinned under the navigation bar, the unreachable state, the first sync's error state, and each empty state use the system's unavailable-content view, and Try again is its button. The error state's words.
 
 ### Buttons come from the server
 
