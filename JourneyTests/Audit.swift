@@ -108,13 +108,16 @@ enum Audit {
     // still. Between two settings, the simulator goes back to the default. So the audit never reads a screen that
     // is still on its way from one setting to the next, and each change is of one setting only.
     try await apply(settings[0], helper: helper)
-    var current = try await settledScreen(of: app, screen, in: settings[0], where: { _ in true })
+    var current = try await screenAfterReadingElements(
+      of: app, screen, in: settings[0],
+      shown: try await settledScreen(of: app, screen, in: settings[0], where: { _ in true }))
     try await audit(
       app, screen, in: settings[0].label, screenshot: current.screenshot, rows: rowsThatLeaveTheScreen, test: test)
     for setting in settings.dropFirst() {
       try await apply(setting, helper: helper)
       let toSetting = Change(from: settings[0], before: current.pixels, helper: helper)
-      var shown = try await settledScreen(of: app, screen, in: setting, after: toSetting)
+      var shown = try await screenAfterReadingElements(
+        of: app, screen, in: setting, shown: try await settledScreen(of: app, screen, in: setting, after: toSetting))
       // The largest text size gets no rows, so it checks Dynamic Type on every row that shows. See above.
       let rows = setting.name == largestText.name ? [] : rowsThatLeaveTheScreen
       try await audit(app, screen, in: setting.label, screenshot: shown.screenshot, rows: rows, test: test)
@@ -135,6 +138,28 @@ enum Audit {
       let toDefault = Change(from: setting, before: shown.pixels, helper: helper)
       current = try await settledScreen(of: app, screen, in: settings[0], after: toDefault)
     }
+  }
+
+  /// Reads the app's whole accessibility tree, and returns the screen when it is still again, in the setting.
+  ///
+  /// This is the cure for the named flake "an audit's issue has no element" in `docs/development.md`. On 2026-11-25,
+  /// in two gate runs in a row, the first audit at the largest text size of Giving, Gifts, and the unreachable view
+  /// gave two issues of the element detection check, "Potentially inaccessible text", with no element: text that
+  /// the check found on the screen and couldn't match to an element. Each screen passed when the audit ran again a
+  /// few seconds later, after the journey's reads of the first audit's issues. With this read before each audit, the
+  /// next run gave none. A read changed no pixel of those screens, so it is the tree, not the screen, that wasn't
+  /// up to date after the change of text size. When the screen does move here, the log says so, and the journey
+  /// audits the screen as it is then.
+  private static func screenAfterReadingElements(
+    of app: XCUIApplication, _ screen: String, in setting: Setting,
+    shown: (screenshot: XCUIScreenshot, pixels: Data)
+  ) async throws -> (screenshot: XCUIScreenshot, pixels: Data) {
+    _ = try app.snapshot()
+    let now = try await settledScreen(of: app, screen, in: setting, where: { _ in true })
+    if now.pixels != shown.pixels {
+      print("The screen of \(screen), in \(setting.label) moved when the journey read its elements.")
+    }
+    return now
   }
 
   /// How many drags may bring a row on the screen.
@@ -232,10 +257,22 @@ enum Audit {
     // of tries in a row. An issue is never of both kinds, so at most one of the two is above zero.
     var onlyLostInARow = 0
     var onlyPartlyScalingInARow = 0
+    var tries = 0
     while true {
       try await withRetriesAfterTimeOut(audited) {
         (issues, lostElements, partlyScaling) = try performAudit(
           app, setting: setting, types: types, rows: rows, contentTop: contentTop)
+      }
+      tries += 1
+      // An issue with no element has no place, so a screenshot just after the audit shows what was on the screen
+      // when the journey read it: on 2026-11-23, the Family heading under the tab bar. Its name doesn't end with
+      // the setting, so it is not one of the screen's four in the gate's count.
+      if lostElements > 0 {
+        let shown = "\(audited), at an issue with no element (try \(tries))"
+        let attachment = XCTAttachment(screenshot: try await Screenshot.take(of: app, showing: shown).screenshot)
+        attachment.name = shown
+        attachment.lifetime = .keepAlways
+        test.add(attachment)
       }
       onlyLostInARow = lostElements > 0 && lostElements == issues.count ? onlyLostInARow + 1 : 0
       onlyPartlyScalingInARow = partlyScaling > 0 && partlyScaling == issues.count ? onlyPartlyScalingInARow + 1 : 0
@@ -480,10 +517,23 @@ enum Audit {
       }
       let described =
         element.map { "\($0.label), element type \($0.elementType.rawValue), at \($0.frame)" } ?? "no element"
-      issues.append("\(issue.compactDescription): \(issue.detailedDescription) (\(described))")
+      issues.append(
+        "\(issue.compactDescription): \(issue.detailedDescription) (\(described), check \(name(of: issue.auditType)))")
       return true
     }
     return (issues, lostElements, partlyScaling)
+  }
+
+  /// The name of an audit's check, such as `contrast`, so a failure or a retry says which check gave the issue. The
+  /// named flake "an audit's issue has no element" in `docs/development.md` has come from more than one check.
+  private static func name(of type: XCUIAccessibilityAuditType) -> String {
+    let names: [(XCUIAccessibilityAuditType, String)] = [
+      (.contrast, "contrast"), (.elementDetection, "element detection"), (.hitRegion, "hit region"),
+      (.sufficientElementDescription, "element description"), (.dynamicType, "Dynamic Type"),
+      (.textClipped, "clipped text"), (.trait, "trait"),
+    ]
+    let named = names.filter { type.contains($0.0) }.map(\.1)
+    return named.isEmpty ? "unknown (\(type.rawValue))" : named.joined(separator: ", ")
   }
 
   /// Whether a link inside a line of text shows on the screen in part only: some of it is on the window, and some of
