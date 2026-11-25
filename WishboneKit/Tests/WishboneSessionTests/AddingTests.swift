@@ -67,7 +67,7 @@ final class AddingTests {
 
     #expect(draft.title == page.title)
     let link = try #require(draft.storeLink)
-    #expect(link.store == "localhost")
+    #expect(link.store == "127.0.0.1")
     #expect(link.url.contains(page.url.path()))
     #expect(link.priceMinor == 2499)
     #expect(link.currency == "USD")
@@ -106,7 +106,7 @@ final class AddingTests {
     #expect(row.listID == list.id)
     #expect(row.images.count == 2)
     #expect(row.primaryImage == row.images.first)
-    #expect(session.storeLinks(ofItem: item.id).map(\.store) == ["localhost"])
+    #expect(session.storeLinks(ofItem: item.id).map(\.store) == ["127.0.0.1"])
     #expect(row.priceMinor == 1800)
 
     // The server has it as the copy does: two images uploaded from the store's addresses, in the order ticked.
@@ -203,13 +203,13 @@ final class AddingTests {
 
     let start = state.startSearch()
     let started = try #require(start)
-    #expect(state.phase == .reading(.link(page.url.absoluteString, store: "localhost")))
+    #expect(state.phase == .reading(.link(page.url.absoluteString, store: "127.0.0.1")))
     let reading = Task { await session.search(started.input) }
     await hold.waitUntilHeld()
 
     let filled = state.fillItInMyself()
     let draft = try #require(filled)
-    #expect(draft.storeLink == SearchStoreLink(url: page.url.absoluteString, store: "localhost"))
+    #expect(draft.storeLink == SearchStoreLink(url: page.url.absoluteString, store: "127.0.0.1"))
     #expect(draft.title.isEmpty)
     #expect(!draft.hasTitle)
     #expect(draft.images.isEmpty)

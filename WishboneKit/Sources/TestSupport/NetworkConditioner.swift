@@ -19,7 +19,7 @@ import Synchronization
 /// - Response headers with one name come back as one header, joined with commas. An answer has no
 ///   `Content-Encoding`: its body comes back as it is after the coding.
 public final class NetworkConditioner: Sendable {
-  /// The conditioner's address, such as `http://localhost:50124`. Use it in place of the server's address.
+  /// The conditioner's address, such as `http://127.0.0.1:50124`. Use it in place of the server's address.
   public let address: URL
 
   /// The address of the real server behind it.
@@ -38,55 +38,24 @@ public final class NetworkConditioner: Sendable {
     case untrustedCertificate
   }
 
-  /// Starts a conditioner in front of the server at `server`, on a free port. Its address is `https` with `tls`.
-  ///
-  /// The port is free for this listener, and no other process's socket takes a connection to it. The kernel can
-  /// give the listener, which listens at every address, a port that another process listens on at `127.0.0.1`
-  /// only. A connection to `127.0.0.1` at that port then goes to the other process, and never reaches the
-  /// conditioner. So the start connects to its own port at `127.0.0.1` and at `::1`, and when another socket takes
-  /// the connection, it listens again on another port. Seen in `NetworkConditionerTests.stopDuringForwards()` on
-  /// 2026-11-25: a Mac had about ten such sockets, the processes of other apps, and every request of a round
-  /// was answered 404 by one of them.
+  /// Starts a conditioner in front of the server at `server`, on a free port of `127.0.0.1`. Its address is `https`
+  /// with `tls`.
   public init(to server: URL, tls: TLS = .none) async throws {
     core = Core(server: server)
-    var taken: [Int] = []
-    var port: Int?
-    while port == nil {
-      let started = try await core.start(with: try Self.parameters(tls))
-      if await core.ownsPort(started) {
-        port = started
-      } else {
-        core.closeListener()
-        taken.append(started)
-        guard taken.count < 5 else { throw PortTaken(ports: taken) }
-      }
-    }
-    let scheme = tls == .none ? "http" : "https"
-    guard let port, let address = URL(string: "\(scheme)://localhost:\(port)") else { throw URLError(.badURL) }
-    self.address = address
-    self.server = server
-  }
-
-  /// The conditioner found another process's socket on each port that it listened on.
-  public struct PortTaken: Error, CustomStringConvertible {
-    public let ports: [Int]
-
-    public var description: String {
-      let ports = ports.map(String.init).joined(separator: ", ")
-      return
-        "The network conditioner did not start: another process took the connections to each of its ports (\(ports))"
-    }
-  }
-
-  private static func parameters(_ tls: TLS) throws -> NWParameters {
+    let parameters: NWParameters
     switch tls {
     case .none:
-      return .tcp
+      parameters = .tcp
     case .untrustedCertificate:
       let options = NWProtocolTLS.Options()
       sec_protocol_options_set_local_identity(options.securityProtocolOptions, try UntrustedCertificate.identity())
-      return NWParameters(tls: options, tcp: NWProtocolTCP.Options())
+      parameters = NWParameters(tls: options, tcp: NWProtocolTCP.Options())
     }
+    let port = try await core.start(with: parameters)
+    let scheme = tls == .none ? "http" : "https"
+    guard let address = URL(string: "\(scheme)://127.0.0.1:\(port)") else { throw URLError(.badURL) }
+    self.address = address
+    self.server = server
   }
 
   deinit {
@@ -380,17 +349,6 @@ extension NetworkConditioner {
       /// The call of each request that is on its way to the server, or back, by its session. A stop cancels them.
       var forwards: [ObjectIdentifier: Task<(Data, URLResponse), any Error>] = [:]
       var isStopped = false
-      /// The connections of the start's check of its port, by the local port that each connects from.
-      var probes: [UInt16: Probe] = [:]
-    }
-
-    private enum Probe {
-      /// The check has connected, and the listener hasn't taken the connection yet.
-      case expected
-      /// The check waits for the listener to take the connection.
-      case waiting(CheckedContinuation<Bool, Never>)
-      /// The listener took the connection before the check waited for it.
-      case arrived
     }
 
     var requests: [SeenRequest] {
@@ -412,6 +370,14 @@ extension NetworkConditioner {
       // its own process, after the client connected: `URLSession` there reports `networkConnectionLost`. A journey
       // runs the conditioner in the simulator.
       parameters.requiredInterfaceType = .loopback
+      // The listener binds `127.0.0.1` exactly, not every address. The kernel can give a listener at every address
+      // a port that another process listens on at `127.0.0.1` only, and that process then gets every connection to
+      // `127.0.0.1` at the port: a socket at the exact address always wins. Seen in
+      // `NetworkConditionerTests.stopDuringForwards()` on 2026-11-25: a Mac had about ten such sockets, the
+      // processes of other apps, and every request of a round got a 404 from one of them. Bound exactly, the
+      // listener is that socket. Another socket can bind the same address and port only when both set
+      // `SO_REUSEPORT`, and the listener doesn't.
+      parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
       let listener = try NWListener(using: parameters, on: .any)
       listener.newConnectionHandler = { [self] connection in accept(connection) }
       state.withLock { $0.listener = listener }
@@ -434,98 +400,6 @@ extension NetworkConditioner {
         }
         listener.start(queue: queue)
       }
-    }
-
-    /// Whether the connections to the port come to this listener: at `127.0.0.1`, and at `::1` unless nothing
-    /// listens there. `localhost` is either, and a client that finds nothing at `::1` tries `127.0.0.1`.
-    func ownsPort(_ port: Int) async -> Bool {
-      guard let port = UInt16(exactly: port) else { return false }
-      let ipv4 = await probe(port, ipv6: false)
-      let ipv6 = await probe(port, ipv6: true)
-      return ipv4 == .listener && ipv6 != .another
-    }
-
-    /// Stops listening, before the start has returned the port, because another socket takes its connections.
-    func closeListener() {
-      let listener = state.withLock { state in
-        defer { state.listener = nil }
-        return state.listener
-      }
-      listener?.newConnectionHandler = nil
-      listener?.cancel()
-    }
-
-    private enum ProbeResult {
-      /// The listener took the connection.
-      case listener
-      /// No socket took it.
-      case nothing
-      /// The connection opened, and the listener didn't take it within the limit: another socket did.
-      case another
-    }
-
-    /// Connects to the port at the loopback address, and sees which socket takes the connection. The probe's
-    /// connection is the only one that the listener can get now: no one else knows its port yet. The listener
-    /// knows it by the port that it comes from. A probe that can't open a socket of its own finds nothing.
-    private func probe(_ port: UInt16, ipv6: Bool) async -> ProbeResult {
-      let socket = Darwin.socket(ipv6 ? AF_INET6 : AF_INET, SOCK_STREAM, 0)
-      guard socket >= 0 else { return .nothing }
-      defer { close(socket) }
-      var local = Loopback(ipv6: ipv6, port: 0)
-      guard local.bind(socket), let from = local.port else { return .nothing }
-      state.withLock { $0.probes[from] = .expected }
-      var to = Loopback(ipv6: ipv6, port: port)
-      guard to.connect(socket) else {
-        state.withLock { _ = $0.probes.removeValue(forKey: from) }
-        return .nothing
-      }
-      var limit: Task<Void, Never>?
-      defer { limit?.cancel() }
-      let isTaken = await withCheckedContinuation { continuation in
-        let hasArrived = state.withLock { state in
-          guard case .arrived = state.probes[from] else {
-            state.probes[from] = .waiting(continuation)
-            return false
-          }
-          state.probes[from] = nil
-          return true
-        }
-        guard !hasArrived else {
-          continuation.resume(returning: true)
-          return
-        }
-        // The listener takes a connection within a moment, also on a busy machine. It never gets one that another
-        // process's socket took, so the limit is only what the check costs when it finds one.
-        limit = Task { [self] in
-          try? await Task.sleep(for: .seconds(5))
-          let waiting = state.withLock { state -> CheckedContinuation<Bool, Never>? in
-            guard case .waiting(let continuation) = state.probes[from] else { return nil }
-            state.probes[from] = nil
-            return continuation
-          }
-          waiting?.resume(returning: false)
-        }
-      }
-      return isTaken ? .listener : .another
-    }
-
-    /// Whether the connection is a probe's, from `probe(_:ipv6:)`. The check then has it.
-    private func takeProbe(_ connection: NWConnection) -> Bool {
-      guard case .hostPort(_, let port) = connection.endpoint else { return false }
-      let (isProbe, waiting) = state.withLock { state -> (Bool, CheckedContinuation<Bool, Never>?) in
-        switch state.probes[port.rawValue] {
-        case .expected:
-          state.probes[port.rawValue] = .arrived
-          return (true, nil)
-        case .waiting(let continuation):
-          state.probes[port.rawValue] = nil
-          return (true, continuation)
-        case .arrived, nil:
-          return (false, nil)
-        }
-      }
-      waiting?.resume(returning: true)
-      return isProbe
     }
 
     func stop() {
@@ -573,10 +447,6 @@ extension NetworkConditioner {
     }
 
     private func accept(_ connection: NWConnection) {
-      guard !takeProbe(connection) else {
-        connection.cancel()
-        return
-      }
       let isDropping = state.withLock { state in
         if !state.isDropping { state.connections[ObjectIdentifier(connection)] = connection }
         return state.isDropping
@@ -824,53 +694,5 @@ private struct HTTPReader {
     guard let more else { return false }
     buffer.append(more)
     return true
-  }
-}
-
-/// The loopback address, `127.0.0.1` or `::1`, with a port, for a plain socket.
-private struct Loopback {
-  private var storage = sockaddr_storage()
-
-  init(ipv6: Bool, port: UInt16) {
-    if ipv6 {
-      var address = sockaddr_in6()
-      address.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)
-      address.sin6_family = sa_family_t(AF_INET6)
-      address.sin6_addr = in6addr_loopback
-      address.sin6_port = port.bigEndian
-      withUnsafeMutableBytes(of: &storage) { $0.storeBytes(of: address, as: sockaddr_in6.self) }
-    } else {
-      var address = sockaddr_in()
-      address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
-      address.sin_family = sa_family_t(AF_INET)
-      address.sin_addr.s_addr = in_addr_t(INADDR_LOOPBACK).bigEndian
-      address.sin_port = port.bigEndian
-      withUnsafeMutableBytes(of: &storage) { $0.storeBytes(of: address, as: sockaddr_in.self) }
-    }
-  }
-
-  /// The port, after `bind(_:)` has bound the socket to this address.
-  private(set) var port: UInt16?
-
-  /// Binds the socket to the address, and reads back the port that it got.
-  mutating func bind(_ socket: Int32) -> Bool {
-    var length = socklen_t(storage.ss_len)
-    let isBound = withUnsafeMutablePointer(to: &storage) { pointer in
-      pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { address in
-        Darwin.bind(socket, address, length) == 0 && getsockname(socket, address, &length) == 0
-      }
-    }
-    // Both families keep the port at the same place.
-    port =
-      isBound ? UInt16(bigEndian: withUnsafeBytes(of: storage) { $0.load(fromByteOffset: 2, as: UInt16.self) }) : nil
-    return isBound
-  }
-
-  /// Connects the socket to the address. On the loopback interface, the connection opens, or is refused, at once.
-  mutating func connect(_ socket: Int32) -> Bool {
-    let length = socklen_t(storage.ss_len)
-    return withUnsafeMutablePointer(to: &storage) { pointer in
-      pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.connect(socket, $0, length) == 0 }
-    }
   }
 }

@@ -2,7 +2,7 @@ import Foundation
 
 /// A store's product page on this machine, for a search to read: a title, a price, images, and options. The test
 /// server reads pages and downloads images on this machine (`WISHBONE_EXTRACT_ALLOW_PRIVATE`), so a link to the
-/// page reads as a real store's does. Its store is `localhost`.
+/// page reads as a real store's does. Its store is `127.0.0.1`.
 ///
 /// It is two network conditioners: the store, which answers every request itself, and one in front of it, which
 /// a test can hold the page at, as at a slow store. A conditioner's hold sends the request on after its release,

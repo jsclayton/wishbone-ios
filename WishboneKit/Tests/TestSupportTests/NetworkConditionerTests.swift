@@ -234,8 +234,8 @@ struct NetworkConditionerTests {
   /// Each wait of a round has a limit of its own. A round that runs out of it fails by its number, with what each
   /// request got, and stops its conditioner. The test ran out of its minute on 2026-11-24 and 2026-11-25, and the
   /// limits found why: the round's conditioner had a port that another process listened on at `127.0.0.1`, so all
-  /// 8 requests got that process's 404, and none reached the hold. The conditioner now checks its port when it
-  /// starts.
+  /// 8 requests got that process's 404, and none reached the hold. The conditioner now listens at `127.0.0.1`
+  /// exactly, where no other socket takes its connections.
   @Test("A stop while requests are on their way to the server ends them, and the test process goes on")
   func stopDuringForwards() async throws {
     let requests = 8
@@ -245,7 +245,7 @@ struct NetworkConditionerTests {
       // A round that ends early, at its limit or at the test's, stops its conditioner, which releases the hold.
       defer { conditioner.stop() }
       let hold = conditioner.hold(Route("GET", "/health"), at: .request)
-      let url = Self.alone(conditioner.url("/health"))
+      let url = conditioner.url("/health")
       let ends = Ends(requests)
       let sent = (0..<requests).map { number in
         Task { await ends.record(number) { try await Self.status(of: url) } }
@@ -334,13 +334,6 @@ struct NetworkConditionerTests {
       group.cancelAll()
       return first
     }
-  }
-
-  /// The URL at `127.0.0.1`, where the conditioner listens, so that a new session doesn't look up `localhost`.
-  private static func alone(_ url: URL) -> URL {
-    var parts = URLComponents(url: url, resolvingAgainstBaseURL: false)
-    parts?.host = "127.0.0.1"
-    return parts?.url ?? url
   }
 
   /// The status of a GET, on a session of its own. A session opens at most 6 connections to a host at once, so
