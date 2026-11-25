@@ -38,6 +38,7 @@ extension DiagnosticsTests {
     switch kind {
     case .databaseWillNotOpen: .databaseWillNotOpen(ErrorCause(domain: .sqlite, code: 14))
     case .copyDropped: .copyDropped(from: 4, to: 5)
+    case .copyFailed: .copyFailed(ErrorCause(domain: .sqlite, code: 13))
     case .undecodableAnswer: .undecodableAnswer(.listItems, keyPath: "data[].title")
     case .refusedWrite: .refusedWrite(.updateMe, code: "invalid_input")
     case .unknownErrorCode: .unknownErrorCode("brand_new_code")

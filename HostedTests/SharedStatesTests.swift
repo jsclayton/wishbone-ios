@@ -105,8 +105,7 @@ struct SharedStatesTests {
     #expect(session.screenState(hasRows: false) == .empty)
     for (tab, title) in Self.tabs {
       if window.place.tab != tab { window.place.select(tab) }
-      await until { window.tabs?.selectedTab?.title == title }
-      #expect(!window.showsProgress, "\(title)")
+      await until { window.tabs?.selectedTab?.title == title && !window.showsProgress }
     }
   }
 }

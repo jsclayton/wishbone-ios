@@ -147,7 +147,7 @@ These rules hold on every screen. A screen's spec repeats none of them, and says
 - **A late refusal** shows once, as [Late refusals](../spec.md#late-refusals) says.
 - **Pull to refresh** works on every screen that scrolls, and syncs everything.
 
-**Provisional.** Plain default: the "Can't reach" line is a row pinned under the navigation bar, the unreachable state, the first sync's error state, and each empty state use the system's unavailable-content view, and Try again is its button. The error state's words.
+**Provisional.** Plain default: the "Can't reach" line is a row pinned under the navigation bar, the unreachable state, the first sync's error state, and each empty state use the system's unavailable-content view, and Try again is its button. The error state's words are provisional too.
 
 ### Buttons come from the server
 

@@ -96,10 +96,11 @@ public final class SessionModel {
   public private(set) var hasSynced = false
 
   /// Whether the first sync failed: no sync has succeeded since this session model began, and the last sync reached
-  /// the instance and was refused, such as with a 404 or an answer that can't be decoded. A screen with no rows then
-  /// shows the error state with Try again, never Loading forever. The timer keeps its schedule, and the next sync
-  /// that succeeds clears it. A sync that can't reach the instance clears it too: the unreachable state shows. See
-  /// `screenState(hasRows:)`, and "Screens read a local copy" in `docs/spec.md`.
+  /// the instance and was refused, such as with a 404 or an answer that can't be decoded, or couldn't write the
+  /// copy. A screen with no rows then shows the error state with Try again, never Loading forever. The timer keeps
+  /// its schedule, and the next sync that succeeds clears it. A sync that can't reach the instance clears it too: the
+  /// unreachable state shows. A cancelled sync changes nothing. See `screenState(hasRows:)`, and "Screens read a
+  /// local copy" in `docs/spec.md`.
   public private(set) var firstSyncFailed = false
 
   /// How many Try again taps wait for their sync. While one waits, a screen whose first sync failed shows Loading
@@ -500,7 +501,7 @@ public final class SessionModel {
       switch end {
       case .succeeded: .succeeded
       case .unreachable: .unreachable
-      case .refused, .faulted, .endedByServer: .stopped
+      case .refused, .faulted, .cancelled, .endedByServer: .stopped
       }
     guard !hasEnded else { return outcome }
     switch end {
@@ -510,18 +511,24 @@ public final class SessionModel {
       firstSyncFailed = false
     case .refused:
       isInstanceUnreachable = false
-      // Before any sync has succeeded, a refusal leaves nothing to show. After one, the saved rows show, as they
-      // were. A version block shows in place of every screen, so it is not this state.
-      firstSyncFailed = !hasSynced && versionBlock == nil
+      firstSyncFailed = isFirstSyncFailure
     case .unreachable:
       isInstanceUnreachable = true
       firstSyncFailed = false
-    // A fault of the copy says nothing of the instance. So the line about it stays as it was.
-    case .faulted, .endedByServer: break
+    case .faulted:
+      // A fault of the copy says nothing of the instance. So the line about it stays as it was.
+      firstSyncFailed = isFirstSyncFailure
+    // A cancel is no failure: a sign-out, or iOS ending a background run early. The next sync goes on from there.
+    case .cancelled, .endedByServer: break
     }
     updateTimer()
     return outcome
   }
+
+  /// Whether a sync that failed now is a failed first sync. Before any sync has succeeded, a failed sync leaves
+  /// nothing to show. After one, the saved rows show, as they were. A version block shows in place of every screen,
+  /// so it is not this state.
+  private var isFirstSyncFailure: Bool { !hasSynced && versionBlock == nil }
 
   /// How a pull, or a send of the unsent changes, ended.
   enum PullEnd {
@@ -532,8 +539,11 @@ public final class SessionModel {
     /// The instance answered, and the pull stopped on its answer: a refusal, a version block, or an answer that
     /// can't be decoded. The session goes on.
     case refused
-    /// The pull stopped on the copy, which can't be read or written, or on a cancel. The session goes on.
+    /// The pull stopped on the copy, which can't be read or written. The session goes on.
     case faulted
+    /// The pull stopped on a cancel: a sign-out, or iOS ending a background run early. Nothing failed, and the
+    /// instance said nothing. The session goes on, unless it was a sign-out.
+    case cancelled
     /// The instance answered with the API's own 401: the session is over.
     case endedByServer
   }
@@ -544,8 +554,7 @@ public final class SessionModel {
   /// - An unreachable instance, a cancelled request, a 404, and the API's own 401: never.
   /// - An answer that can't be decoded: captured by the client, as the path template and the key path, never a
   ///   value.
-  /// - A copy that can't be read or written: never. The spec's captured faults of the database are one that will
-  ///   not open, and a migration that drops the copy, which the database captures when it opens.
+  /// - A copy that can't be read or written: captured, as the error's domain and code. A cancel: never.
   private func pull() async -> PullEnd {
     do {
       let user = try await Pull(client: client, database: database, userID: session.userID).run()
@@ -572,7 +581,7 @@ public final class SessionModel {
       return .refused
     } catch APIError.cancelled {
       // A sign-out cancels the pull's request. The instance said nothing.
-      return .faulted
+      return .cancelled
     } catch let error as APIError {
       // The instance answered. Another refusal, a 401 with another code included, keeps the session. The copy
       // keeps what the pull wrote before it stopped.
@@ -585,11 +594,20 @@ public final class SessionModel {
     } catch is CancellationError {
       // A sign-out cancels the pull, and the database can throw this from a write that sees it. It is no fault of
       // the copy, so it is not logged as one.
-      return .faulted
+      return .cancelled
     } catch {
-      Log.fault(.session, "The copy can't be read or written.", detail: "\(error)")
-      return .faulted
+      return copyFailed(error, "The copy can't be read or written.")
     }
+  }
+
+  /// Ends a sync on an error of the copy, or of the journal of unsent changes: a fault, which is logged and
+  /// captured. After a cancel or the end of the session, the error is theirs, and the sync was cancelled: a sign-out
+  /// closes the database under a sync.
+  func copyFailed(_ error: any Error, _ message: StaticString) -> PullEnd {
+    guard !hasEnded, !Task.isCancelled else { return .cancelled }
+    Log.fault(.session, message, detail: "\(error)")
+    diagnostics.capture(.copyFailed(LocalDatabase.cause(of: error)))
+    return .faulted
   }
 
   // MARK: - The timer
@@ -734,6 +752,7 @@ public final class SessionModel {
     lateRefusalAlert = nil
     isInstanceUnreachable = false
     hasSynced = false
+    firstSyncFailed = false
     versionBlock = nil
     database.close()
   }

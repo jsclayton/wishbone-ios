@@ -19,8 +19,8 @@ extension View {
       unsentChanges: session.unsentChangeCount, tryAgain: { await session.tryAgain() }, empty: empty)
   }
 
-  /// Shows the state over the screen. Try again runs `tryAgain`, which is the session's Try again. While unsent changes wait, the
-  /// line "Can't reach {address}" says how many.
+  /// Shows the state over the screen. Try again runs `tryAgain`, which is the session's Try again. While unsent
+  /// changes wait, the line "Can't reach {address}" says how many.
   public func sharedStates(
     _ state: ScreenState, address: InstanceAddress, unsentChanges: Int = 0,
     tryAgain: @escaping @MainActor () async -> Void, @ViewBuilder empty: () -> some View

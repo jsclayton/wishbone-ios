@@ -42,14 +42,14 @@ extension SessionModel {
   ///
   /// It ends as a pull does: `succeeded` when it left no change that it could send, `unreachable` when the instance
   /// can't be reached, `refused` when the instance answered and the change must wait (a version block, too many
-  /// requests), `faulted` on a cancel or a journal that can't be read or written, and `endedByServer` on the API's
-  /// own 401.
+  /// requests), `faulted` on a journal or a copy that can't be read or written, `cancelled` on a cancel or the end
+  /// of the session, and `endedByServer` on the API's own 401.
   func sendUnsentChanges() async -> PullEnd {
     while let earlier = sending {
       _ = await earlier.value
       if sending == earlier { sending = nil }
     }
-    guard !hasEnded else { return .faulted }
+    guard !hasEnded else { return .cancelled }
     let task = Task { await sendEach() }
     sending = task
     let end = await withTaskCancellationHandler {
@@ -71,18 +71,18 @@ extension SessionModel {
   /// The send: each unsent change in turn, the oldest first.
   ///
   /// Diagnostics: a refusal is captured by its method, its path template and the server's code, except a 404, for
-  /// something deleted elsewhere, and a 400 or a 422, which the client has captured already. An unreachable
-  /// instance, a cancel, and the API's own 401 never are.
+  /// something deleted elsewhere, and a 400 or a 422, which the client has captured already. A journal or a copy
+  /// that can't be read or written is captured by the error's domain and code. An unreachable instance, a cancel,
+  /// and the API's own 401 never are.
   private func sendEach() async -> PullEnd {
     while true {
-      guard !hasEnded, !Task.isCancelled else { return .faulted }
+      guard !hasEnded, !Task.isCancelled else { return .cancelled }
       let change: UnsentChange
       do {
         guard let next = try await database.firstUnsentChange() else { return .succeeded }
         change = next
       } catch {
-        Log.fault(.session, "The journal can't be read.", detail: "\(error)")
-        return .faulted
+        return copyFailed(error, "The journal can't be read.")
       }
       do {
         let answer: Versioned<Gift>?
@@ -94,12 +94,12 @@ extension SessionModel {
           answer = nil
         }
         // The session ended while the answer was on its way. The database is gone, and stays gone.
-        guard !hasEnded, !Task.isCancelled else { return .faulted }
+        guard !hasEnded, !Task.isCancelled else { return .cancelled }
         try await database.accept(change, answer: answer)
       } catch APIError.unreachable {
         return .unreachable
       } catch APIError.cancelled {
-        return .faulted
+        return .cancelled
       } catch APIError.unauthorized {
         return .endedByServer
       } catch APIError.appTooOld {
@@ -109,19 +109,17 @@ extension SessionModel {
         // The instance didn't decide the change. It waits for the next sync.
         return .refused
       } catch APIError.refused(let refusal) {
-        guard !hasEnded, !Task.isCancelled else { return .faulted }
+        guard !hasEnded, !Task.isCancelled else { return .cancelled }
         do {
           try await database.refuse(change, refusal: refusal)
         } catch {
-          Log.fault(.session, "The journal can't take a late refusal.", detail: "\(error)")
-          return .faulted
+          return copyFailed(error, "The journal can't take a late refusal.")
         }
         if Self.isCaptured(refusal) { diagnostics.capture(.refused(refusal.route, code: refusal.code)) }
       } catch is CancellationError {
-        return .faulted
+        return .cancelled
       } catch {
-        Log.fault(.session, "The copy can't take the answer of an unsent change.", detail: "\(error)")
-        return .faulted
+        return copyFailed(error, "The copy can't take the answer of an unsent change.")
       }
     }
   }
