@@ -4,15 +4,19 @@ import Testing
 import WishboneAPI
 import WishboneSession
 
-/// A first sync after sign-in that reaches the instance and is refused: a screen with no rows shows the error state
-/// with Try again, never Loading forever, and the app goes on syncing on its schedule. See "Screens read a local
-/// copy" and "What the copy holds" in `docs/spec.md`, and "What every screen shares" in `docs/screens/README.md`.
+/// A first sync after sign-in that reaches the instance and is refused, or can't write the copy: a screen with no rows
+/// shows the error state with Try again, never Loading forever, and the app goes on syncing on its schedule. A
+/// cancelled first sync is no failure. See "Screens read a local copy" and "What the copy holds" in `docs/spec.md`,
+/// and "What every screen shares" in `docs/screens/README.md`.
 @Suite("A first sync that fails", .timeLimit(.minutes(1)))
 @MainActor
 struct FirstSyncFailedTests {
   typealias Route = NetworkConditioner.Route
 
   static let versions = Route("GET", "/versions")
+  static let health = Route("GET", "/health")
+  /// The fetch of one item: a pull asks for one new item at its own address.
+  static let item = Route("GET", "/items/{id}")
 
   let instance: Instance
 
@@ -232,11 +236,151 @@ struct FirstSyncFailedTests {
     #expect(session.screenState(hasRows: false) == .cantReach)
   }
 
-  @Test("A first sync that meets a version block shows the block, not the error state")
-  func versionBlock() async throws {
+  /// The version blocks that a first sync can meet.
+  enum Block: CaseIterable, Sendable, CustomTestStringConvertible {
+    case appTooOld
+    case instanceTooOld
+
+    var testDescription: String {
+      switch self {
+      case .appTooOld: "The API's own 410: the app is too old"
+      case .instanceTooOld: "A 404 for the versions, and a /health below the minimum: the instance is too old"
+      }
+    }
+  }
+
+  @Test("A first sync that meets a version block shows the block, not the error state", arguments: Block.allCases)
+  func versionBlock(_ block: Block) async throws {
     let robin = try await instance.person(items: ["Kite"])
-    let session = try await signedIn(as: robin, answering: try .problem(410, code: "api_version_removed"))
-    #expect(session.versionBlock == .appTooOld)
+    let session: SessionModel
+    switch block {
+    case .appTooOld:
+      session = try await signedIn(as: robin, answering: try .problem(410, code: "api_version_removed"))
+      #expect(session.versionBlock == .appTooOld)
+    case .instanceTooOld:
+      // The sign-in's own check of /health passes. Then the instance has no GET /versions, and the check that the
+      // 404 runs finds it below the minimum.
+      instance.conditioner.answer(Self.versions, with: try .problem(404, code: "not_found"))
+      let device = instance.device(timerClock: timer, diagnostics: diagnostics)
+      let check = instance.conditioner.hold(Self.health, at: .answer)
+      let signingIn = Task { await device.signIn(pasting: try await instance.loginLink(for: robin)) }
+      await check.waitUntilHeld()
+      instance.conditioner.answer(
+        Self.health, with: try .json(200, ["status": "ok", "version": "2.1.9", "commit": "0ld0ld0"]))
+      check.release()
+      try await signingIn.value
+      session = try #require(device.session)
+      #expect(session.versionBlock == .instanceTooOld(version: "2.1.9", minimum: minimumServerVersion))
+    }
     #expect(!session.firstSyncFailed)
+  }
+
+  // MARK: - A fault of the copy, and a cancel
+
+  @Test(
+    """
+    A first sync that can't write the copy shows the error state, and is captured by its code. A sync that \
+    succeeds clears it, and fills the screen
+    """
+  )
+  func faultedFirstSync() async throws {
+    let robin = try await instance.person(items: ["Kite"])
+    let folder = try ScratchDirectory("device")
+    let device = instance.device(storage: .folder(folder.url), timerClock: timer, diagnostics: diagnostics)
+    let link = try await instance.loginLink(for: robin)
+
+    // The first sync asks for the versions. The instance answers, and the copy can't take what the pull brings.
+    let hold = instance.conditioner.hold(Self.versions, at: .request)
+    let signingIn = Task { await device.signIn(pasting: link) }
+    await hold.waitUntilHeld()
+    let session = try #require(device.session)
+    try await DatabaseFile(under: folder.url).lockingWrites {
+      hold.release()
+      await signingIn.value
+    }
+
+    #expect(!session.hasSynced)
+    #expect(session.firstSyncFailed)
+    #expect(!session.isInstanceUnreachable)
+    #expect(session.versionBlock == nil)
+    #expect(session.primaryListItems.isEmpty)
+    #expect(session.screenState(hasRows: !session.primaryListItems.isEmpty) == .firstSyncFailed)
+    #expect(session.screenState(hasRows: !session.giving.isEmpty) == .firstSyncFailed)
+    // Captured once, as SQLite's code for a database that another connection holds: never a message.
+    let faults = diagnostics.faults
+    #expect(faults.count == 1, "\(faults)")
+    guard case .copyFailed(let cause) = faults.first else {
+      Issue.record("\(faults)")
+      return
+    }
+    #expect(cause.domain == .sqlite)
+    #expect(cause.code & 0xff == 5, "SQLITE_BUSY, or one of its extended codes: \(cause.code)")
+
+    // The copy takes writes again. Try again syncs, and the sync that succeeds clears the state.
+    #expect(await session.tryAgain() == .succeeded)
+    await until { session.primaryListItems.map(\.title) == ["Kite"] }
+    #expect(session.hasSynced)
+    #expect(!session.firstSyncFailed)
+    #expect(session.screenState(hasRows: !session.primaryListItems.isEmpty) == .saved(cantReach: false))
+    #expect(session.screenState(hasRows: !session.giving.isEmpty) == .empty)
+    #expect(diagnostics.faults.count == 1)
+  }
+
+  @Test("A first sync that iOS cuts short is no failure: no error state, nothing captured, and the next sync fills")
+  func cancelledFirstSync() async throws {
+    let robin = try await instance.person(items: ["Kite"])
+    let device = instance.device(timerClock: timer, diagnostics: diagnostics)
+    let link = try await instance.loginLink(for: robin)
+
+    // The sign-in passes, and its sync can't reach the instance. So no sync has succeeded yet.
+    let hold = instance.conditioner.hold(Self.versions, at: .request)
+    let signingIn = Task { await device.signIn(pasting: link) }
+    await hold.waitUntilHeld()
+    instance.conditioner.dropEverything()
+    hold.release()
+    await signingIn.value
+    let session = try #require(device.session)
+    #expect(!session.hasSynced)
+    #expect(session.screenState(hasRows: false) == .cantReach)
+
+    // The instance answers again. A background run syncs, and iOS ends the run while the pull waits for the item.
+    instance.conditioner.passEverything()
+    let item = instance.conditioner.hold(Self.item, at: .request)
+    let run = Task { await device.refreshInBackground() }
+    await item.waitUntilHeld()
+    run.cancel()
+    #expect(await run.value == .stopped)
+    item.release()
+
+    #expect(!session.hasSynced)
+    #expect(!session.firstSyncFailed)
+    #expect(session.screenState(hasRows: false) == .cantReach)
+    #expect(diagnostics.faults.isEmpty)
+
+    // The next sync fills the screen.
+    #expect(await session.syncNow() == .succeeded)
+    await until { session.primaryListItems.map(\.title) == ["Kite"] }
+    #expect(!session.firstSyncFailed)
+  }
+
+  @Test("A sign-out during the first sync is no failure: nothing is captured, and the device is signed out")
+  func signOutDuringTheFirstSync() async throws {
+    let robin = try await instance.person(items: ["Kite"])
+    let device = instance.device(timerClock: timer, diagnostics: diagnostics)
+    let link = try await instance.loginLink(for: robin)
+
+    // The pull has written what came before the item, and the item is on its way when the person signs out.
+    let item = instance.conditioner.hold(Self.item, at: .answer)
+    let signingIn = Task { await device.signIn(pasting: link) }
+    await item.waitUntilHeld()
+    let session = try #require(device.session)
+    #expect(session.isSyncing)
+    await device.signOut()
+    item.release()
+    await signingIn.value
+
+    #expect(device.session == nil)
+    #expect(!session.firstSyncFailed)
+    #expect(diagnostics.faults.isEmpty)
   }
 }

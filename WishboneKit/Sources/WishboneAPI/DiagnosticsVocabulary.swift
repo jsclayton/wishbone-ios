@@ -21,6 +21,10 @@ public enum Fault: Sendable, Equatable {
   /// A migration dropped the copy: the schema number that the database had, and the app's.
   case copyDropped(from: Int, to: Int)
 
+  /// A sync can't read or write the copy, or its journal of unsent changes: the error's domain and code. Never a
+  /// cancel.
+  case copyFailed(ErrorCause)
+
   /// An answer that the client can't decode: the route, and the key path that failed. Never a value.
   case undecodableAnswer(Route, keyPath: String)
 
@@ -69,6 +73,7 @@ public enum Fault: Sendable, Equatable {
     switch self {
     case .databaseWillNotOpen: .databaseWillNotOpen
     case .copyDropped: .copyDropped
+    case .copyFailed: .copyFailed
     case .undecodableAnswer: .undecodableAnswer
     case .refusedWrite: .refusedWrite
     case .unknownErrorCode: .unknownErrorCode
@@ -82,6 +87,8 @@ public enum Fault: Sendable, Equatable {
       ["domain": .word(cause.domain.rawValue), "code": .number(cause.code)]
     case .copyDropped(let from, let to):
       ["from": .number(from), "to": .number(to)]
+    case .copyFailed(let cause):
+      ["domain": .word(cause.domain.rawValue), "code": .number(cause.code)]
     case .undecodableAnswer(let route, let keyPath):
       ["method": .word(route.method), "path": .word(route.template), "key_path": .word(keyPath)]
     case .refusedWrite(let route, let code):
@@ -101,6 +108,7 @@ public enum Fault: Sendable, Equatable {
   public enum Kind: String, Sendable, CaseIterable {
     case databaseWillNotOpen = "database_will_not_open"
     case copyDropped = "copy_dropped"
+    case copyFailed = "copy_failed"
     case undecodableAnswer = "undecodable_answer"
     case refusedWrite = "refused_write"
     case unknownErrorCode = "unknown_error_code"
@@ -110,6 +118,7 @@ public enum Fault: Sendable, Equatable {
       switch self {
       case .databaseWillNotOpen: ["domain", "code"]
       case .copyDropped: ["from", "to"]
+      case .copyFailed: ["domain", "code"]
       case .undecodableAnswer: ["method", "path", "key_path"]
       case .refusedWrite: ["method", "path", "code"]
       case .unknownErrorCode: ["code"]
