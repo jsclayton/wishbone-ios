@@ -203,6 +203,33 @@ public enum GiftWords {
     String(localized: "none", bundle: #bundle, comment: "No value, in a change of an item: no price")
   }
 
+  // MARK: - I won't get this, and the answers to a flag
+
+  /// "I won't get this": the row at the foot of a gift's page, a Giving row's action, and the confirmation's button.
+  /// The words say what it does, so the row doesn't say it by color alone.
+  public static var wontGetThis: String {
+    String(localized: "I won't get this", bundle: #bundle)
+  }
+
+  /// The confirmation's question: "You won't get Kite?". It never says who else can see anything.
+  public static func wontGetThisQuestion(_ title: String) -> String {
+    String(
+      localized: "You won't get \(title)?", bundle: #bundle,
+      comment: "The confirmation of I won't get this: the item's title")
+  }
+
+  /// The confirmation's message, under the question.
+  public static var wontGetThisMessage: String {
+    String(localized: "Other people can then claim it.", bundle: #bundle)
+  }
+
+  /// The answer to a flag: "Keep it" for an item that was removed from its list, and "OK" for the rest.
+  public static func answer(to flag: GivingGift.Flag) -> String {
+    flag.isAnsweredByKeepIt
+      ? String(localized: "Keep it", bundle: #bundle, comment: "The answer to a gift whose item was removed")
+      : String(localized: "OK", bundle: #bundle, comment: "The answer to a gift's flag: it clears the flag")
+  }
+
   /// What VoiceOver reads for the Gifts tab with its badge: "Gifts, 2 need attention".
   public static func tab(badge: Int) -> String {
     String(

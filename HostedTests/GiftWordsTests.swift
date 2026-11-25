@@ -76,4 +76,15 @@ struct GiftWordsTests {
     #expect(GiftWords.howManyValue(2, canRaise: true) == "2")
     #expect(GiftWords.howManyValue(2, canRaise: false) == "2, can't go higher")
   }
+
+  @Test("I won't get this, its confirmation, and the answers to a flag")
+  func answers() {
+    #expect(GiftWords.wontGetThis == "I won't get this")
+    #expect(GiftWords.wontGetThisQuestion("Kite") == "You won't get Kite?")
+    #expect(GiftWords.wontGetThisMessage == "Other people can then claim it.")
+    #expect(GiftWords.answer(to: .removed) == "Keep it")
+    #expect(GiftWords.answer(to: .changed) == "OK")
+    #expect(GiftWords.answer(to: .moved(toList: nil)) == "OK")
+    #expect(GiftWords.answer(to: .noLongerShared) == "OK")
+  }
 }

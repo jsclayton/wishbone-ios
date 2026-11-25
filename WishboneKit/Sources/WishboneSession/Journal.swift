@@ -53,6 +53,14 @@ public struct UnsentChange: Sendable, Equatable, Identifiable {
     /// Lower how many: `PATCH /gifts/{id}` with only `quantity`. A raise is never an unsent change: it is a claim,
     /// and waits for the server (see "Claims are online only" in `docs/spec.md`).
     case lowerQuantity(giftID: String, quantity: Int)
+
+    /// I won't get this: the giver unclaims their open gift, `DELETE /gifts/{id}`. The gift leaves the copy at once,
+    /// and the quantity goes back to all givers when the server accepts it.
+    case unclaim(giftID: String)
+
+    /// OK, or Keep it: the giver answers one flag of their open gift, `POST /gifts/{id}/acknowledge` with only that
+    /// flag's code. Keep it is the answer to `removed`. The code is the server's text, such as `changed`.
+    case acknowledge(giftID: String, flag: String)
   }
 }
 
@@ -114,6 +122,8 @@ struct UnsentChangeRow: Codable, Sendable, FetchableRecord, MutablePersistableRe
     case setFromLabel
     case setNote
     case lowerQuantity
+    case unclaim
+    case acknowledge
   }
 
   mutating func didInsert(_ inserted: InsertionSuccess) {
@@ -220,10 +230,12 @@ extension LocalDatabase {
   ///
   /// The answer is the thing as the server has it now, with the version that the answer carried. A gift that a
   /// change of occasion merged into another is the gift that stays, so the one with the change's ID leaves the copy.
+  /// An unclaim has no answer: the gift leaves the copy with the change.
   func accept(_ change: UnsentChange, answer gift: Versioned<Gift>?) async throws {
     let row = gift.map { GiftRow($0) }
     try await self.change { database in
       _ = try UnsentChangeRow.deleteOne(database, key: change.id)
+      if case .unclaim(let id) = change.action { _ = try GiftRow.deleteOne(database, key: id) }
       guard let row else { return }
       if row.id != change.action.targetID { _ = try GiftRow.deleteOne(database, key: change.action.targetID) }
       try row.save(database)
@@ -250,17 +262,20 @@ extension LocalDatabase {
 
   // MARK: - Over the copy
 
-  /// The gifts, each with the unsent changes to it applied in order over its row.
-  static func applying(_ changes: [UnsentChange], to gifts: [GiftRow]) -> [GiftRow] {
+  /// The gifts, each with the unsent changes to it applied in order over its row. An unclaimed gift is left out.
+  /// `now` is when a gift is said to be given within 14 days, for `needs_attention` after an answer to a flag.
+  static func applying(_ changes: [UnsentChange], to gifts: [GiftRow], now: Date = .now) -> [GiftRow] {
     guard !changes.isEmpty else { return gifts }
-    return gifts.map { gift in
-      changes.reduce(gift) { gift, change in
-        guard change.action.targetID == gift.id else { return gift }
+    return gifts.compactMap { gift in
+      changes.reduce(Optional(gift)) { gift, change in
+        guard let gift, change.action.targetID == gift.id else { return gift }
         return switch change.action {
         case .markBought(_, let isBought): gift.with(isBought: .shown(isBought))
         case .setFromLabel(_, let fromLabel): gift.with(fromLabel: fromLabel)
         case .setNote(_, let note): gift.with(note: .shown(note))
         case .lowerQuantity(_, let quantity): gift.with(quantity: quantity)
+        case .unclaim: nil
+        case .acknowledge(_, let flag): gift.answering(flag, now: now)
         }
       }
     }
@@ -283,11 +298,14 @@ extension UnsentChange.Action {
   /// The server's ID of what the change is to.
   var targetID: String {
     switch self {
-    case .markBought(let id, _), .setFromLabel(let id, _), .setNote(let id, _), .lowerQuantity(let id, _): id
+    case .markBought(let id, _), .setFromLabel(let id, _), .setNote(let id, _), .lowerQuantity(let id, _),
+      .unclaim(let id), .acknowledge(let id, _):
+      id
     }
   }
 
-  /// The merge patch of a change to a gift: only the fields that it changes.
+  /// The merge patch of a change to a gift: only the fields that it changes. An unclaim, or an answer to a flag, is
+  /// no patch: it sends nothing, or only the flag's code.
   var giftChanges: GiftChanges {
     switch self {
     case .markBought(_, let isBought): GiftChanges(isBought: isBought)
@@ -295,6 +313,7 @@ extension UnsentChange.Action {
     case .setFromLabel(_, let fromLabel): GiftChanges(fromLabel: fromLabel ?? "")
     case .setNote(_, let note): GiftChanges(note: note ?? "")
     case .lowerQuantity(_, let quantity): GiftChanges(quantity: quantity)
+    case .unclaim, .acknowledge: GiftChanges()
     }
   }
 
@@ -304,16 +323,38 @@ extension UnsentChange.Action {
     case .setFromLabel: .setFromLabel
     case .setNote: .setNote
     case .lowerQuantity: .lowerQuantity
+    case .unclaim: .unclaim
+    case .acknowledge: .acknowledge
     }
   }
 
-  /// The patch as the journal keeps it: the JSON that the change sends.
+  /// The patch as the journal keeps it: the JSON that the change sends. An answer to a flag keeps its code, and an
+  /// unclaim keeps an empty object.
   fileprivate func patch() throws -> String {
-    String(decoding: try JSONEncoder().encode(giftChanges), as: UTF8.self)
+    let data =
+      if case .acknowledge(_, let flag) = self {
+        try JSONEncoder().encode(FlagAnswer(codes: [flag]))
+      } else {
+        try JSONEncoder().encode(giftChanges)
+      }
+    return String(decoding: data, as: UTF8.self)
   }
 
   /// The action of a row of the journal. Nil for a patch that the app can't read.
   fileprivate init?(kind: UnsentChangeRow.Kind, targetID: String, patch: String) {
+    switch kind {
+    case .unclaim:
+      self = .unclaim(giftID: targetID)
+      return
+    case .acknowledge:
+      guard let answer = try? JSONDecoder().decode(FlagAnswer.self, from: Data(patch.utf8)),
+        answer.codes.count == 1, let flag = answer.codes.first
+      else { return nil }
+      self = .acknowledge(giftID: targetID, flag: flag)
+      return
+    case .markBought, .setFromLabel, .setNote, .lowerQuantity:
+      break
+    }
     guard let changes = try? JSONDecoder().decode(GiftChanges.self, from: Data(patch.utf8)) else { return nil }
     switch kind {
     case .markBought:
@@ -328,8 +369,15 @@ extension UnsentChange.Action {
     case .lowerQuantity:
       guard let quantity = changes.quantity else { return nil }
       self = .lowerQuantity(giftID: targetID, quantity: quantity)
+    case .unclaim, .acknowledge:
+      return nil
     }
   }
+}
+
+/// An answer to a flag, as the journal keeps it: the codes that it clears, which is always one.
+private struct FlagAnswer: Codable {
+  let codes: [String]
 }
 
 extension UnsentChange {
@@ -392,6 +440,33 @@ extension GiftRow {
   /// The gift with how many lowered.
   fileprivate func with(quantity: Int) -> GiftRow {
     with(isBought: isBought, fromLabel: fromLabel, note: note, quantity: quantity)
+  }
+
+  /// The gift with the flag answered: every flag with the code leaves it. It needs attention while a changed or a
+  /// removed flag is left, or while it isn't bought and is given within 14 days, as the server says. It can be
+  /// answered while a flag is left.
+  fileprivate func answering(_ code: String, now: Date) -> GiftRow {
+    guard let flags = flags.value else { return self }
+    let left = flags.filter { $0.code != code }
+    let needsAttention: Hideable<Bool> =
+      switch self.needsAttention {
+      case .hidden: .hidden
+      case .shown(let was):
+        .shown(
+          was == true
+            && (left.contains { $0.code == "changed" || $0.code == "removed" }
+              || (isBought.value != true && revealAt <= now.addingTimeInterval(14 * 24 * 60 * 60)))
+        )
+      }
+    return GiftRow(
+      id: id, state: state, quantity: quantity, itemID: itemID, itemTitle: itemTitle,
+      itemPrimaryImage: itemPrimaryImage, listID: listID, listName: listName, title: title, image: image,
+      priceMinor: priceMinor, topPriceMinor: topPriceMinor, currency: currency, recipientIDs: recipientIDs,
+      giverID: giverID, giverName: giverName, fromLabel: fromLabel, occasion: occasion, occasionName: occasionName,
+      occasionDate: occasionDate, revealAt: revealAt, givenAt: givenAt, isBought: isBought, note: note,
+      flags: .shown(left), needsAttention: needsAttention, createdAt: createdAt, canEdit: canEdit,
+      canDelete: canDelete, canRaiseQuantity: canRaiseQuantity, canAcknowledge: canAcknowledge && !left.isEmpty,
+      canRestore: canRestore, canAddAgain: canAddAgain, version: version)
   }
 
   /// The gift with the fields that an unsent change can set, as the change shows them over the row.

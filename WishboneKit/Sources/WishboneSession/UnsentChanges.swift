@@ -130,11 +130,23 @@ extension SessionModel {
     }
   }
 
-  /// Sends one unsent change, and gives the server's answer.
-  private func send(_ change: UnsentChange) async throws(APIError) -> Versioned<Gift> {
+  /// Sends one unsent change, and gives the server's answer. An unclaim has none.
+  ///
+  /// An unclaim of a gift that is gone (a 404) is done: it was unclaimed, merged, or restored from elsewhere, and the
+  /// giver no longer has it, which is what they asked for. So the gift leaves the copy, and nothing is said.
+  private func send(_ change: UnsentChange) async throws(APIError) -> Versioned<Gift>? {
     switch change.action {
     case .markBought(let id, _), .setFromLabel(let id, _), .setNote(let id, _), .lowerQuantity(let id, _):
-      try await client.updateGift(id, change.action.giftChanges, key: change.key)
+      return try await client.updateGift(id, change.action.giftChanges, key: change.key)
+    case .unclaim(let id):
+      do {
+        try await client.unclaimGift(id, key: change.key)
+      } catch .refused(let refusal) where refusal.status == 404 {
+        // Gone already.
+      }
+      return nil
+    case .acknowledge(let id, let flag):
+      return try await client.acknowledgeGift(id, codes: [flag], key: change.key)
     }
   }
 

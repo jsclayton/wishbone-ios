@@ -496,6 +496,20 @@
     "I don't have a link" : {
 
     },
+    "I won't get %@: %@" : {
+      "comment" : "A late refusal of I won't get this: the item's title, then why the change wasn't saved",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I won't get %1$@: %2$@"
+          }
+        }
+      }
+    },
+    "I won't get this" : {
+
+    },
     "I'll get this" : {
 
     },
@@ -530,6 +544,20 @@
     },
     "Keep editing" : {
 
+    },
+    "Keep it" : {
+      "comment" : "The answer to a gift whose item was removed"
+    },
+    "Keeping %@: %@" : {
+      "comment" : "A late refusal of Keep it: the item's title, then why the change wasn't saved",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keeping %1$@: %2$@"
+          }
+        }
+      }
     },
     "Last name" : {
 
@@ -718,7 +746,7 @@
       "comment" : "A gift's flag: the occasion that the gift moved to, or its recipients now, by name"
     },
     "OK" : {
-
+      "comment" : "The answer to a gift's flag: it clears the flag"
     },
     "Occasion" : {
 
@@ -752,6 +780,9 @@
 
     },
     "Other lists" : {
+
+    },
+    "Other people can then claim it." : {
 
     },
     "Part" : {
@@ -919,6 +950,17 @@
     "The camera is turned off on this device, so Wishbone can't scan. Paste a link." : {
 
     },
+    "The change to %@: %@" : {
+      "comment" : "A late refusal of OK on a gift's flag: the item's title, then why the change wasn't saved",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The change to %1$@: %2$@"
+          }
+        }
+      }
+    },
     "The from label of %@: %@" : {
       "comment" : "A late refusal: the item's title, then why the change wasn't saved",
       "localizations" : {
@@ -966,6 +1008,9 @@
 
     },
     "This device has no camera to scan with. Paste a link." : {
+
+    },
+    "This gift was already given." : {
 
     },
     "This is gone, or it isn't shared with you." : {
@@ -1160,6 +1205,9 @@
     },
     "You were signed out of %@. Ask for a new login link to sign in again." : {
 
+    },
+    "You won't get %@?" : {
+      "comment" : "The confirmation of I won't get this: the item's title"
     },
     "You're signed in to the app on another device. Open Wishbone there, and use Sign in on another device." : {
 
