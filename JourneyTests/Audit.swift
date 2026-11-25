@@ -512,6 +512,20 @@ enum Audit {
     }
   }
 
+  /// Puts the simulator in the default settings, before a journey launches the app. A run with no helper is in the
+  /// simulator's own settings, and stays there.
+  ///
+  /// `run` puts the simulator back in the default after each setting, but a journey that fails in a setting stops
+  /// there, and leaves the simulator in it. The next journey's app then launched in that setting. On 2026-11-24, in
+  /// CI run 45292582179 attempt 2, the sign-in journey failed on the help sheet at the largest text size, and the
+  /// sign-out journey after it launched at that size: Settings showed only its Signed in block, and the Support
+  /// Wishbone rows were below the fold, where the list hadn't made them. So each journey starts in the default. The
+  /// helper remembers what it set, so after a journey that ended in the default this makes no `simctl` call.
+  static func startInDefaultSettings() async throws {
+    guard let helper else { return }
+    try await apply(settings[0], helper: helper)
+  }
+
   /// Asks the settings helper to put the simulator in the setting. It answers when `simctl` has applied it.
   ///
   /// With `previous`, the helper sends the change again: it puts the simulator in `previous`, and then in the

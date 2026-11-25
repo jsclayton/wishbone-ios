@@ -56,7 +56,8 @@ nonisolated final class SignOutJourney: JourneyTestCase {
     // The rows under Sign out, which a larger text pushes off. At the largest text size they are below the fold,
     // so the journey scrolls each on the screen there.
     // The journey's launch fixes the US storefront (see `Audit.app()`), and Robin has no parents, so Support
-    // Wishbone's header, row and footer show.
+    // Wishbone's header, row and footer show. The journey starts in the default settings, where they are on the
+    // screen (see `Audit.startInDefaultSettings`).
     XCTAssertTrue(
       app.descendants(matching: .any).matching(
         NSPredicate(format: "label BEGINSWITH %@", Audit.words("Buy John a coffee"))
