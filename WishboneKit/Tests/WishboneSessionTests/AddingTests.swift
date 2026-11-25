@@ -147,6 +147,40 @@ final class AddingTests {
     #expect(instance.conditioner.requests.filter { $0.isOn(Self.upload) }.isEmpty)
   }
 
+  @Test("An item added while a sync runs never leaves the copy, not even for a moment, and one more sync runs after it")
+  func addDuringSync() async throws {
+    let versions = Route("GET", "/versions")
+    let (session, person) = try await signedIn()
+    // Something changes after the first sync, so the next `GET /versions` is not a 304, and its pull removes what
+    // its answer doesn't name.
+    try await instance.builder.goodToKnow("Likes kites", of: person)
+    var state = AddScreenState()
+    var draft = try #require(await search("a red kite \(instance.builder.tag)", in: session, state: &state))
+
+    // The server answers the sync's `GET /versions` before the add, and the answer arrives after it.
+    let held = instance.conditioner.hold(versions)
+    let early = Task { await session.syncNow() }
+    await held.waitUntilHeld()
+    let history = CopyHistory(of: session)
+    defer { history.stop() }
+    let item = try added(await session.add(&draft))
+
+    // The answer names no such item, and the add's answer wins over it: that sync keeps the item. The sync after it
+    // asks again, after the add.
+    let after = instance.conditioner.hold(versions)
+    held.release()
+    #expect(await early.value == .succeeded)
+    await after.waitUntilHeld()
+    after.release()
+
+    try await untilInStep(session, as: person)
+    #expect(session.item(id: item.id) != nil)
+    #expect(history.count > 1)
+    for (index, items) in history.items.enumerated() where items[item.id] == nil {
+      Issue.record("The item left the copy at change \(index)")
+    }
+  }
+
   @Test("A chosen option is saved into the notes, and Not sure adds nothing")
   func optionsGoIntoTheNotes() async throws {
     let page = try await StorePage(

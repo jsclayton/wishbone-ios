@@ -117,7 +117,8 @@ final class BlockedStoresTests {
     #expect(ownStores(of: admin) == [host])
   }
 
-  @Test("A store blocked while a sync runs stays in the copy once both end: one more sync runs after that sync")
+  @Test(
+    "A store blocked while a sync runs never leaves the copy, not even for a moment, and one more sync runs after it")
   func blockDuringSync() async throws {
     let admin = try await signedIn(as: instance.builder.admin)
     let host = store("during")
@@ -126,19 +127,55 @@ final class BlockedStoresTests {
     let held = instance.conditioner.hold(.init("GET", "/blocked-stores"))
     let early = Task { await admin.syncNow() }
     await held.waitUntilHeld()
+    let history = CopyHistory(of: admin)
+    defer { history.stop() }
     #expect(await admin.block(host) == .blocked)
     await until { self.ownStores(of: admin) == [host] }
 
-    // The answer has no such store, so that sync removes it. The sync after it reads them again, after the block.
+    // The answer has no such store, and the block's answer wins over it: that sync keeps the store. The sync after
+    // it reads them again, after the block.
     let after = instance.conditioner.hold(.init("GET", "/versions"))
     held.release()
     #expect(await early.value == .succeeded)
     await after.waitUntilHeld()
-    await until { self.ownStores(of: admin).isEmpty }
+    #expect(ownStores(of: admin) == [host])
     after.release()
 
+    // A sync after both has ended, so the copy has had every change of them.
+    await admin.syncNow()
     await until { self.ownStores(of: admin) == [host] }
     #expect(try await blockedOnServer().contains(host))
+    #expect(history.count > 0)
+    for (index, stores) in history.blockedStores.enumerated() where !stores.contains(where: { $0.store == host }) {
+      Issue.record("The store left the copy at change \(index)")
+    }
+  }
+
+  @Test("A store unblocked while a sync runs never comes back to the copy, not even for a moment")
+  func unblockDuringSync() async throws {
+    let blocked = try await instance.builder.blockedStore("undone")
+    let admin = try await signedIn(as: instance.builder.admin)
+    let row = try #require(admin.blockedStores.first { $0.id == blocked.id })
+
+    // The server answers the sync's read of the blocked stores before the unblock, and the answer arrives after it.
+    let held = instance.conditioner.hold(.init("GET", "/blocked-stores"))
+    let early = Task { await admin.syncNow() }
+    await held.waitUntilHeld()
+    #expect(await admin.unblock(row) == .unblocked)
+    await until { !admin.blockedStores.contains(row) }
+    let history = CopyHistory(of: admin)
+    defer { history.stop() }
+
+    // The answer still has the store, and the unblock's answer wins over it: that sync doesn't put it back.
+    held.release()
+    #expect(await early.value == .succeeded)
+    // A sync after both has ended, so the copy has had every change of them.
+    await admin.syncNow()
+    await until { !admin.blockedStores.contains { $0.id == blocked.id } }
+    #expect(!(try await blockedOnServer().contains(blocked.store)))
+    for (index, stores) in history.blockedStores.enumerated() where stores.contains(where: { $0.id == blocked.id }) {
+      Issue.record("The store came back to the copy at change \(index)")
+    }
   }
 
   @Test("A store that is already blocked is a success, and the list shows it once")

@@ -190,7 +190,7 @@ struct ClaimTests {
     #expect(!page.offersClaim)
   }
 
-  @Test("A claim made while a sync runs stays in the copy once both end: one more sync runs after that sync")
+  @Test("A claim made while a sync runs never leaves the copy, not even for a moment, and one more sync runs after it")
   func claimDuringSync() async throws {
     typealias Route = NetworkConditioner.Route
     let versions = Route("GET", "/versions")
@@ -208,15 +208,18 @@ struct ClaimTests {
     let held = instance.conditioner.hold(versions)
     let early = Task { await session.syncNow() }
     await held.waitUntilHeld()
+    let history = CopyHistory(of: session)
+    defer { history.stop() }
     #expect(await session.claim(item: lamp.id) == .claimed)
-    #expect(try #require(session.itemPage(id: lamp.id)).claims.count == 1)
+    let gift = try #require(session.itemPage(id: lamp.id)?.claims.first?.id)
 
-    // The answer names no gift, so that sync removes it. The sync after it asks again, after the claim.
+    // The answer names no gift, and the claim's answer wins over it: that sync keeps the gift. The sync after it
+    // asks again, after the claim.
     let after = instance.conditioner.hold(versions)
     held.release()
     #expect(await early.value == .succeeded)
     await after.waitUntilHeld()
-    await until { session.itemPage(id: lamp.id)?.claims.isEmpty == true }
+    #expect(session.itemPage(id: lamp.id)?.claims.map(\.id) == [gift])
     after.release()
 
     try await untilInStep(session, as: family.relative)
@@ -227,6 +230,15 @@ struct ClaimTests {
     #expect(page.item.myClaimedQuantity == .shown(1))
     #expect(page.stillWanted == .count(1, of: 2))
     #expect(!page.offersClaim)
+
+    // After each change to the copy since the claim, the gift and the item's new numbers were there.
+    #expect(history.count > 1)
+    for (index, gifts) in history.gifts.enumerated() where !gifts.contains(where: { $0.id == gift }) {
+      Issue.record("The gift left the copy at change \(index)")
+    }
+    for (index, items) in history.items.enumerated() where items[lamp.id]?.myClaimedQuantity != .shown(1) {
+      Issue.record("The item lost the claim at change \(index): \(String(describing: items[lamp.id]))")
+    }
   }
 
   @Test("A gift whose occasion the giver can't see gives its line with the reveal date, not the occasion")

@@ -12,6 +12,14 @@ import WishboneAPI
 struct LocalDatabase: Sendable {
   let writer: any DatabaseWriter
 
+  /// The rows that the answers of writes that wait for the server put into the copy. Every copy of the database
+  /// shares them.
+  let answers = Answers()
+
+  /// For a pull: the answers that came after the mark win over each change made through this copy of the database.
+  /// Nil for every other write.
+  private(set) var answeredAfter: Answers.Mark?
+
   /// A database in memory. Nothing is on disk.
   static func inMemory(diagnostics: any DiagnosticsReporter = .none) throws -> LocalDatabase {
     try LocalDatabase(writer: DatabaseQueue(), diagnostics: diagnostics)
@@ -120,6 +128,14 @@ struct LocalDatabase: Sendable {
     for suffix in ["", "-wal", "-shm"] {
       try? FileManager.default.removeItem(at: folder.appending(path: fileName + suffix))
     }
+  }
+
+  /// A copy of the database for a pull that started at the mark. Each change that the pull makes through it puts back
+  /// the rows that an answer saved or removed after the mark (see `Answers`).
+  func keepingAnswers(after mark: Answers.Mark) -> LocalDatabase {
+    var database = self
+    database.answeredAfter = mark
+    return database
   }
 
   /// Closes the database. Any later use of it throws.
@@ -338,15 +354,26 @@ struct LocalDatabase: Sendable {
   /// `isOutsideTheVersions` is for a change only to what `GET /versions` doesn't cover: the blocked stores. The
   /// kept `ETag` says nothing about them, so it stays.
   ///
+  /// `answering` names the rows that the answer of a write that waits for the server saves or removes. A pull's
+  /// change, made through `keepingAnswers(after:)`, puts back the rows that such an answer saved or removed after the
+  /// pull's mark, as the answer left them: an answer in flight wins over a pull for the same thing (see `Answers`).
+  ///
   /// The journal's writes go through here too (see `Journal.swift`). A fitness test holds this: nothing else in the
   /// module writes to the database.
   func change<Result: Sendable>(
     isOutsideTheVersions: Bool = false,
+    answering answered: [Answers.Rows] = [],
     _ updates: @escaping @Sendable (Database) throws -> Result
   ) async throws -> Result {
-    try await writer.write { database in
+    let answers = answers
+    let mark = answeredAfter
+    return try await writer.write { database in
       if !isOutsideTheVersions { try database.execute(sql: "DELETE FROM \(Self.keptETagTable)") }
-      return try updates(database)
+      let kept = try mark.map { try Self.answered(after: $0, by: answers, in: database) } ?? []
+      let result = try updates(database)
+      try Self.putBack(kept, in: database)
+      answers.note(answered)
+      return result
     }
   }
 
@@ -366,14 +393,19 @@ struct LocalDatabase: Sendable {
   /// is saved as a summary, with that version, in the same change. A summary in a body is of a user that the body
   /// is as new as, so it takes the place of an older row of that user, also of one in full: the name and the
   /// avatar stay, and the rest goes.
+  ///
+  /// `answering` is for the server's answer to a write that waits for it, such as the profile gate's: a pull that
+  /// started before it doesn't change the users (see `Answers`).
   func save(
     _ users: [Versioned<User>],
     summaries: [String: String] = [:],
-    removingUsers gone: [String] = []
+    removingUsers gone: [String] = [],
+    answering: Bool = false
   ) async throws {
     let rows = users.map { UserRow($0) }
     let inBodies = Self.summaryRows(in: users, named: summaries)
-    try await change { database in
+    let answered = answering ? users.map { Answers.Rows.row($0.resource.id, of: UserRow.self) } : []
+    try await change(answering: answered) { database in
       try UserRow.deleteAll(database, keys: gone)
       for row in inBodies + rows {
         try row.save(database)
@@ -488,11 +520,15 @@ struct LocalDatabase: Sendable {
   /// body carries one. A store link that it doesn't name has no version, so the next pull compares it again. The
   /// user who added the item is a summary, saved as the summaries of a user's body are. A removed item takes its
   /// store links with it.
+  ///
+  /// `answering` is for the server's answer to a write that waits for it, such as Add: a pull that started before it
+  /// doesn't change the items or their store links (see `Answers`).
   func save(
     _ items: [Versioned<Item>],
     storeLinks versions: [String: String] = [:],
     summaries: [String: String] = [:],
-    removingItems gone: [String] = []
+    removingItems gone: [String] = [],
+    answering: Bool = false
   ) async throws {
     let rows = items.map { ItemRow($0) }
     let links = items.flatMap { item in
@@ -501,7 +537,8 @@ struct LocalDatabase: Sendable {
       }
     }
     let inBodies = Self.summaryRows(in: items, named: summaries)
-    try await change { database in
+    let answered = answering ? items.flatMap { Self.answered(item: $0.resource.id) } : []
+    try await change(answering: answered) { database in
       try Self.removeItems(gone + items.map(\.resource.id), in: database)
       for row in inBodies {
         try row.save(database)
@@ -560,10 +597,16 @@ struct LocalDatabase: Sendable {
   /// change, so the gift and the item's new numbers show together. The item's store links keep the versions that
   /// the copy holds. With no item, which the instance didn't give after the claim, only the gifts are saved, and the
   /// next sync brings the item.
+  ///
+  /// It is the server's answer to a claim or a raise, which waits for it: a pull that started before it doesn't
+  /// change the gifts, the item, or its store links (see `Answers`).
   func saveClaim(_ gifts: [Versioned<Gift>], item: Versioned<Item>?) async throws {
     let rows = gifts.map { GiftRow($0) }
     let itemRow = item.map { ItemRow($0) }
-    try await change { database in
+    let answered =
+      gifts.map { Answers.Rows.row($0.resource.id, of: GiftRow.self) }
+      + (item.map { Self.answered(item: $0.resource.id) } ?? [])
+    try await change(answering: answered) { database in
       for row in rows {
         try row.save(database)
       }
@@ -580,9 +623,13 @@ struct LocalDatabase: Sendable {
 
   /// Puts the blocked stores in the place of the ones that the copy holds, in one change, when they differ. The
   /// kept `ETag` stays: `GET /versions` doesn't cover blocked stores.
-  func replaceBlockedStores(with stores: [Versioned<BlockedStore>]) async throws {
+  ///
+  /// `answering` is for the server's answer after a block that waits for it: a pull that started before it doesn't
+  /// change the blocked stores (see `Answers`).
+  func replaceBlockedStores(with stores: [Versioned<BlockedStore>], answering: Bool = false) async throws {
     let rows = stores.map { BlockedStoreRow($0) }.sorted { $0.id < $1.id }
-    try await change(isOutsideTheVersions: true) { database in
+    let answered = answering ? [Answers.Rows.all(of: BlockedStoreRow.self)] : []
+    try await change(isOutsideTheVersions: true, answering: answered) { database in
       guard try BlockedStoreRow.order(Column("id")).fetchAll(database) != rows else { return }
       try BlockedStoreRow.deleteAll(database)
       for row in rows {
@@ -593,9 +640,13 @@ struct LocalDatabase: Sendable {
 
   /// Saves a blocked store that the server has just blocked, in the place of a row with its ID or its store. The
   /// kept `ETag` stays: `GET /versions` doesn't cover blocked stores.
+  ///
+  /// It is the server's answer to a block, which waits for it: a pull that started before it doesn't remove the
+  /// store (see `Answers`).
   func saveBlockedStore(_ store: Versioned<BlockedStore>) async throws {
     let row = BlockedStoreRow(store)
-    try await change(isOutsideTheVersions: true) { database in
+    let answered = [Answers.Rows.row(row.id, of: BlockedStoreRow.self)]
+    try await change(isOutsideTheVersions: true, answering: answered) { database in
       try BlockedStoreRow.filter(Column("store") == row.store && Column("id") != row.id).deleteAll(database)
       try row.save(database)
     }
@@ -603,8 +654,12 @@ struct LocalDatabase: Sendable {
 
   /// Removes a blocked store that the server no longer blocks. The kept `ETag` stays: `GET /versions` doesn't cover
   /// blocked stores.
+  ///
+  /// It is the server's answer to an unblock, which waits for it: a pull that started before it doesn't put the store
+  /// back (see `Answers`).
   func removeBlockedStore(_ id: String) async throws {
-    try await change(isOutsideTheVersions: true) { database in
+    let answered = [Answers.Rows.row(id, of: BlockedStoreRow.self)]
+    try await change(isOutsideTheVersions: true, answering: answered) { database in
       _ = try BlockedStoreRow.deleteOne(database, key: id)
     }
   }
@@ -676,6 +731,11 @@ struct LocalDatabase: Sendable {
     try RecipientRow.filter(ids.contains(Column("listID"))).deleteAll(database)
     let items = try String.fetchAll(database, ItemRow.select(Column("id")).filter(ids.contains(Column("listID"))))
     try removeItems(items, in: database)
+  }
+
+  /// The rows of an item that an answer saves: the item, and its store links, which its body has in full.
+  private static func answered(item id: String) -> [Answers.Rows] {
+    [.row(id, of: ItemRow.self), .storeLinks(ofItem: id)]
   }
 
   /// Removes the items, with their store links.

@@ -32,6 +32,12 @@ import WishboneAPI
 ///
 /// A pull writes each thing when its answer arrives. A pull that stops in the middle keeps what it wrote, and the
 /// next pull fetches the rest.
+///
+/// **An answer in flight wins over a pull for the same thing.** A write that waits for the server (a claim, Add, a
+/// block or an unblock, the profile gate) can put its answer into the copy while a pull runs, and the pull's answers
+/// can be older than it. The pull never removes or overwrites what such an answer saved after the pull asked, and
+/// never brings back what it removed (see `Answers`). The next pull asks after the write, and the server is the
+/// authority again.
 struct Pull: Sendable {
   let client: APIClient
   let database: LocalDatabase
@@ -49,8 +55,13 @@ struct Pull: Sendable {
   /// there, and has changed nothing.
   @concurrent
   func run() async throws -> UserRow? {
+    // The answers of writes that wait for the server, put into the copy after this, win over what the answer of
+    // `GET /versions` leads the pull to write (see `Answers`). The mark comes before the request, so an answer that
+    // arrives before it, of a write that the server made after it, wins too.
+    let keeping = Pull(
+      client: client, database: database.keepingAnswers(after: database.answers.mark()), userID: userID)
     let answer = try await client.versions(ifNoneMatch: try await database.keptETag())
-    if case .changed(let versions) = answer { try await pull(versions) }
+    if case .changed(let versions) = answer { try await keeping.pull(versions) }
     try await pullBlockedStores()
     return try await database.user(userID)
   }
