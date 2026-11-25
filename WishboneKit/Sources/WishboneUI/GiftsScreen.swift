@@ -1,14 +1,16 @@
 import SwiftUI
 import WishboneSession
 
-/// The Gifts tab: a control that picks the part, then the part. Giving is the only part until Given and Received
-/// come. Each window has its own part. See `docs/screens/gifts.md`.
+/// The Gifts tab: a control that picks the part, then the part. Each window has its own part. See
+/// `docs/screens/gifts.md`.
 ///
 /// **Giving** has the user's open gifts, in groups by list and occasion. A group with a gift that needs attention
-/// goes first, then the groups are in order of reveal. Its states are the ones that every screen shares, and its
-/// own empty state.
+/// goes first, then the groups are in order of reveal. **Given** has the gifts that the user gave, and **Received**
+/// the gifts given to the user, not to their children. Each is in groups by occasion, the newest first. Each part's
+/// states are the ones that every screen shares, and its own empty state.
 ///
-/// **Only the giver sees it.** Nothing from this tab goes to a system surface or into the shared container.
+/// **Only the giver sees Giving and Given.** Received has no giver's note or bought mark: the server doesn't send
+/// them. Nothing from this tab goes to a system surface or into the shared container.
 ///
 /// **Provisional.** Plain default: a segmented control at the top, and each part as a system list in one column of
 /// readable width, with a section for each group.
@@ -26,8 +28,31 @@ struct GiftsScreen: View {
   @ScaledMetric(relativeTo: .body) private var readableWidth: CGFloat = 640
 
   var body: some View {
+    content
+      .contentMargins(.horizontal, max(0, (width - readableWidth) / 2), for: .scrollContent)
+      .onGeometryChange(for: CGFloat.self) {
+        $0.size.width
+      } action: {
+        width = $0
+      }
+      .safeAreaInset(edge: .top, spacing: 0) {
+        picker
+      }
+      .navigationTitle(Text("Gifts", bundle: #bundle))
+  }
+
+  @ViewBuilder
+  private var content: some View {
+    switch part {
+    case .giving: giving
+    case .given: given
+    case .received: received
+    }
+  }
+
+  private var giving: some View {
     let groups = session.givingGroups
-    List {
+    return List {
       ForEach(groups) { group in
         Section {
           ForEach(group.gifts) { gift in
@@ -36,26 +61,60 @@ struct GiftsScreen: View {
               wontGetThis: { confirmingUnclaim = gift.gift })
           }
         } header: {
-          GivingHeading(group: group)
+          GiftsHeading(words: GiftWords.heading(group))
         }
       }
-    }
-    .contentMargins(.horizontal, max(0, (width - readableWidth) / 2), for: .scrollContent)
-    .onGeometryChange(for: CGFloat.self) {
-      $0.size.width
-    } action: {
-      width = $0
     }
     .wontGetThisConfirmation(of: $confirmingUnclaim) { gift in
       Task { await session.unclaim(gift: gift.id) }
     }
     .sharedStates(of: session, hasRows: !groups.isEmpty) {
-      GivingIsEmpty()
+      PartIsEmpty(
+        words: String(
+          localized: "You aren't getting anything yet. Open someone on Home and tap I'll get this.", bundle: #bundle))
     }
-    .safeAreaInset(edge: .top, spacing: 0) {
-      picker
+  }
+
+  private var given: some View {
+    let groups = session.givenGroups
+    return List {
+      ForEach(groups) { group in
+        Section {
+          ForEach(group.gifts) { row in
+            NavigationLink(value: Page.gift(id: row.id)) {
+              GivenLabel(row: row)
+            }
+          }
+        } header: {
+          GiftsHeading(words: GiftWords.heading(group))
+        }
+      }
     }
-    .navigationTitle(Text("Gifts", bundle: #bundle))
+    .sharedStates(of: session, hasRows: !groups.isEmpty) {
+      PartIsEmpty(
+        words: String(localized: "Nothing given yet. A gift moves here the day after its occasion.", bundle: #bundle))
+    }
+  }
+
+  private var received: some View {
+    let groups = session.receivedGroups
+    return List {
+      ForEach(groups) { group in
+        Section {
+          ForEach(group.gifts) { row in
+            NavigationLink(value: Page.gift(id: row.id)) {
+              ReceivedLabel(row: row, tileUserID: session.session.userID)
+            }
+          }
+        } header: {
+          GiftsHeading(words: GiftWords.heading(group))
+        }
+      }
+    }
+    .sharedStates(of: session, hasRows: !groups.isEmpty) {
+      PartIsEmpty(
+        words: String(localized: "Nothing received yet. Gifts show here the day after an occasion.", bundle: #bundle))
+    }
   }
 
   /// The control that picks the part.
@@ -79,20 +138,23 @@ struct GiftsScreen: View {
 
 extension GiftsPart {
   /// The part's name, as the control shows it and VoiceOver reads it.
-  var name: String {
+  public var name: String {
     switch self {
     case .giving: String(localized: "Giving", bundle: #bundle)
+    case .given: String(localized: "Given", bundle: #bundle)
+    case .received: String(localized: "Received", bundle: #bundle)
     }
   }
 }
 
-/// A Giving heading: "For Mom and Dad · Christmas", or only the occasion or the reveal date. It is plain text in
-/// the primary color, and a heading for the VoiceOver rotor.
-private struct GivingHeading: View {
-  let group: GivingGroup
+/// A group's heading: in Giving, "For Mom and Dad · Christmas", or only the occasion or the reveal date, and in Given
+/// and Received, "Christmas · Dec 25, 2025", or only the date. It is plain text in the primary color, and a heading
+/// for the VoiceOver rotor.
+private struct GiftsHeading: View {
+  let words: String
 
   var body: some View {
-    Text(GiftWords.heading(group))
+    Text(words)
       .font(.headline)
       // The absolute primary color: the hierarchical `.primary` takes the header's own secondary style.
       .foregroundStyle(Color.primary)
@@ -267,15 +329,17 @@ private struct GivingGiftLabel: View {
   }
 }
 
-/// Giving's empty state: it says so, and points to Home's people. It grows to its words in a scroll view, as the
-/// unreachable view does: the unavailable view alone cuts a larger text short.
-private struct GivingIsEmpty: View {
+/// A part's empty state: it says so. Giving's also points to Home's people. It grows to its words in a scroll view, as
+/// the unreachable view does: the unavailable view alone cuts a larger text short.
+private struct PartIsEmpty: View {
+  let words: String
+
   var body: some View {
     GeometryReader { window in
       ScrollView {
         ContentUnavailableView {
           Label {
-            Text("You aren't getting anything yet. Open someone on Home and tap I'll get this.", bundle: #bundle)
+            Text(words)
           } icon: {
             Image(systemName: "gift")
           }
@@ -285,5 +349,66 @@ private struct GivingIsEmpty: View {
         .frame(maxWidth: .infinity, minHeight: window.size.height)
       }
     }
+  }
+}
+
+/// The gift of a Given row: the image and title as they were at reveal, who it went to, and the date it was given.
+/// A giver who couldn't see the list has no one to name, so the row leaves that out. It is one element, read in that
+/// order, and it opens the gift's page. At the largest text sizes, the image moves above the text.
+private struct GivenLabel: View {
+  let row: GiftHistoryRow
+
+  var body: some View {
+    HistoryLabel(gift: row.gift, tileUserID: row.recipients?.first?.id ?? row.gift.giverID ?? "") {
+      if let recipients = row.recipients, !recipients.isEmpty {
+        Text(GiftWords.forLine(recipients.map(\.name)))
+      }
+      if let givenAt = row.gift.givenAt {
+        Text(GiftWords.given(givenAt))
+      }
+    }
+  }
+}
+
+/// The gift of a Received row: the image and title, and who gave it, "From Emma · claimed by Mom", or the giver's
+/// name. Never the giver's note or bought mark: the server doesn't send them. It is one element, and it opens the
+/// gift's page. At the largest text sizes, the image moves above the text.
+private struct ReceivedLabel: View {
+  let row: GiftHistoryRow
+
+  /// The user whose color the tile takes: the recipient.
+  let tileUserID: String
+
+  var body: some View {
+    HistoryLabel(gift: row.gift, tileUserID: tileUserID) {
+      Text(GiftWords.givenBy(fromLabel: row.gift.fromLabel, giver: row.giverName))
+    }
+  }
+}
+
+/// A given gift's label: the image, the title, then the lines. It is one element.
+private struct HistoryLabel<Lines: View>: View {
+  let gift: GiftRow
+  let tileUserID: String
+  @ViewBuilder let lines: Lines
+
+  @Environment(\.dynamicTypeSize) private var size
+
+  var body: some View {
+    let layout =
+      size.isAccessibilitySize
+      ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) : AnyLayout(HStackLayout(alignment: .top, spacing: 12))
+    layout {
+      ItemTile(image: gift.image, userID: tileUserID)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(gift.title)
+          .font(.body.weight(.semibold))
+        lines
+      }
+      .fixedSize(horizontal: false, vertical: true)
+      .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    .padding(.vertical, 4)
+    .accessibilityElement(children: .combine)
   }
 }

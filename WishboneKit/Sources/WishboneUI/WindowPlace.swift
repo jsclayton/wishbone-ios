@@ -16,10 +16,10 @@ public enum WindowTab: String, Codable, Sendable, CaseIterable {
 
 /// A part of the Gifts tab. One part shows at a time, and to change the part is not a push. See
 /// `docs/screens/gifts.md`.
-///
-/// Giving is the only part until Given and Received come.
 public enum GiftsPart: String, Codable, Sendable, CaseIterable {
   case giving
+  case given
+  case received
 }
 
 /// A page that a window pushes on a tab. It names its thing by ID only.
@@ -30,7 +30,7 @@ public enum Page: Codable, Hashable, Sendable {
   /// An item's page. Its address has no list, so the page stays when the item moves.
   case item(id: String)
 
-  /// A gift's page: one of the user's open gifts.
+  /// A gift's page: one of the user's open gifts, or a given gift that the user gave or received.
   case gift(id: String)
   case people
 
@@ -154,7 +154,8 @@ extension Page {
     /// An item's page. The page reads what it shows from the session model: see `SessionModel.itemPage(id:)`.
     case item(id: String)
 
-    /// A gift's page. The page reads what it shows from the session model: see `SessionModel.giftPage(id:)`.
+    /// A gift's page. The page reads what it shows from the session model: see `SessionModel.giftPage(id:)` for an
+    /// open gift, and `SessionModel.givenGiftPage(id:)` for a given one.
     case gift(id: String)
     case people
 
@@ -181,8 +182,10 @@ extension Page {
     // A user whom the copy holds only as a summary has no page, on the server or here.
     case .user(let id): session.userPage(id: id) == nil ? .notFound : .user(id: id)
     case .item(let id): session.itemPage(id: id) == nil ? .notFound : .item(id: id)
-    // Only its giver sees an open gift. For anyone else, and once it is gone, it is not in the copy.
-    case .gift(let id): session.giftPage(id: id) == nil ? .notFound : .gift(id: id)
+    // Only its giver sees an open gift. A given gift is seen by its giver, its recipients, and their parents. For
+    // anyone else, and once it is gone, it is not in the copy.
+    case .gift(let id):
+      session.giftPage(id: id) == nil && session.givenGiftPage(id: id) == nil ? .notFound : .gift(id: id)
     case .people: .people
     // Only the admin has For the admin. A window restored for anyone else doesn't get the page.
     case .allUsers, .allGroups, .deactivatedUsers: session.peoplePage.forAdmin == nil ? .notFound : .forAdmin(self)

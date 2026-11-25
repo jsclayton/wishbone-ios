@@ -34,6 +34,8 @@ struct PageScreen: View {
     case .gift(let id):
       if let gift = session.giftPage(id: id) {
         GiftPageScreen(page: gift, session: session, pages: $pages)
+      } else if let gift = session.givenGiftPage(id: id) {
+        GivenGiftPageScreen(page: gift, session: session)
       } else {
         NotFoundPage()
       }

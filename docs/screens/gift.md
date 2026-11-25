@@ -85,7 +85,7 @@ Decided, as the web app has them: "I won't get this", "I didn't get this", "Add 
 |---|---|
 | Title | "Gift" |
 | For | "For Dad", "For Mom and Dad" |
-| Fields | "Bought", "How many", "Occasion", "From", "Note" |
+| Fields | "Bought", "How many", "Occasion", "From", "Note", and "Given" on a given gift |
 | From, prompt | "Who it's from, if not only you" |
 | Note, footer | "Only you see this note." |
 | A change | "Title: {old} → {new}", "Price: {old} → {new}", "Price: {old} → none", "The photo changed", "{store}: {old} → {new}", "{store} was removed", "Wants: {old} → {new}", "Now always wanted", "No longer always wanted", "The notes changed" |

@@ -11,6 +11,35 @@ public enum GiftWords {
     heading(recipients: group.recipients?.map(\.name), occasion: group.occasion)
   }
 
+  /// A Given or Received heading: "Christmas · Dec 25, 2025", the occasion's name as it was at reveal and the date
+  /// it fell on. Only the date when the user doesn't get the name.
+  public static func heading(_ group: GiftHistoryGroup) -> String {
+    heading(occasionName: group.occasionName, occasionDate: group.occasionDate)
+  }
+
+  /// The heading from the occasion's name, nil when the user doesn't get it, and its date as `YYYY-MM-DD`.
+  public static func heading(occasionName: String?, occasionDate: String) -> String {
+    let date = OccasionDateWords.withYear(occasionDate)
+    guard let name = occasionName, !name.isEmpty else { return date }
+    return String(
+      localized: "\(name) · \(date)", bundle: #bundle,
+      comment: "A Given or Received heading: the occasion's name, then the date it fell on, with the year")
+  }
+
+  /// "Given Dec 26, 2025": the day a gift was given, on a Given row.
+  public static func given(_ date: Date) -> String {
+    let day = date.formatted(.dateTime.month(.abbreviated).day().year())
+    return String(localized: "Given \(day)", bundle: #bundle, comment: "The day a gift was given, on a Given row")
+  }
+
+  /// Who gave a gift: "From Emma · claimed by Mom" when it has a from label, or the giver's name alone.
+  public static func givenBy(fromLabel: String?, giver: String) -> String {
+    guard let label = fromLabel, !label.isEmpty else { return giver }
+    return String(
+      localized: "From \(label) · claimed by \(giver)", bundle: #bundle,
+      comment: "Who gave a gift: its from label, then the giver who claimed it, by name")
+  }
+
   /// The heading from the recipients' names, nil when the giver can't see the list, and the occasion.
   public static func heading(recipients: [String]?, occasion: ItemPage.ClaimLine.Occasion) -> String {
     let occasion = self.occasion(occasion)

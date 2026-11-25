@@ -162,6 +162,19 @@ enum OccasionDateWords {
     style.timeZone = .gmt
     return date.formatted(style)
   }
+
+  /// The month, day and year of a `YYYY-MM-DD` date: "Dec 25, 2025". Text that is not such a date shows as it is.
+  static func withYear(_ text: String) -> String {
+    let parts = text.split { !$0.isNumber }.compactMap { Int($0) }
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = .gmt
+    guard parts.count == 3,
+      let date = calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2]))
+    else { return text }
+    var style = Date.FormatStyle.dateTime.month(.abbreviated).day().year()
+    style.timeZone = .gmt
+    return date.formatted(style)
+  }
 }
 
 /// The time left: "today", "tomorrow", "in 12 days".

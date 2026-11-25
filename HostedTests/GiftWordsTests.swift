@@ -77,6 +77,26 @@ struct GiftWordsTests {
     #expect(GiftWords.howManyValue(2, canRaise: false) == "2, can't go higher")
   }
 
+  @Test(
+    """
+    A Given or Received heading names the occasion and its date, a Given row its day, and a Received row who gave it, \
+    with the from label
+    """
+  )
+  func givenAndReceived() throws {
+    #expect(GiftWords.heading(occasionName: "Christmas", occasionDate: "2025-12-25") == "Christmas · Dec 25, 2025")
+    #expect(GiftWords.heading(occasionName: nil, occasionDate: "2025-12-25") == "Dec 25, 2025")
+    #expect(GiftWords.heading(occasionName: "", occasionDate: "2025-12-25") == "Dec 25, 2025")
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = .current
+    let boxingDay = try #require(calendar.date(from: DateComponents(year: 2025, month: 12, day: 26, hour: 12)))
+    #expect(GiftWords.given(boxingDay) == "Given Dec 26, 2025")
+    #expect(GiftWords.givenBy(fromLabel: "Emma", giver: "Mom") == "From Emma · claimed by Mom")
+    #expect(GiftWords.givenBy(fromLabel: nil, giver: "Mom") == "Mom")
+    #expect(GiftWords.givenBy(fromLabel: "", giver: "Mom") == "Mom")
+    #expect(GiftsPart.allCases.map(\.name) == ["Giving", "Given", "Received"])
+  }
+
   @Test("I won't get this, its confirmation, and the answers to a flag")
   func answers() {
     #expect(GiftWords.wontGetThis == "I won't get this")
