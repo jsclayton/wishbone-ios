@@ -487,7 +487,7 @@
       "localizations" : {
         "en" : {
           "stringUnit" : {
-            "state" : "new",
+            "state" : "translated",
             "value" : "How many of %1$@: %2$@"
           }
         }
@@ -924,7 +924,7 @@
       "localizations" : {
         "en" : {
           "stringUnit" : {
-            "state" : "new",
+            "state" : "translated",
             "value" : "The from label of %1$@: %2$@"
           }
         }
@@ -938,7 +938,7 @@
       "localizations" : {
         "en" : {
           "stringUnit" : {
-            "state" : "new",
+            "state" : "translated",
             "value" : "The note on %1$@: %2$@"
           }
         }
