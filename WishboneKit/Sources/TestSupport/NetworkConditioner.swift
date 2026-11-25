@@ -19,7 +19,7 @@ import Synchronization
 /// - Response headers with one name come back as one header, joined with commas. An answer has no
 ///   `Content-Encoding`: its body comes back as it is after the coding.
 public final class NetworkConditioner: Sendable {
-  /// The conditioner's address, such as `http://localhost:50124`. Use it in place of the server's address.
+  /// The conditioner's address, such as `http://127.0.0.1:50124`. Use it in place of the server's address.
   public let address: URL
 
   /// The address of the real server behind it.
@@ -38,7 +38,8 @@ public final class NetworkConditioner: Sendable {
     case untrustedCertificate
   }
 
-  /// Starts a conditioner in front of the server at `server`, on a free port. Its address is `https` with `tls`.
+  /// Starts a conditioner in front of the server at `server`, on a free port of `127.0.0.1`. Its address is `https`
+  /// with `tls`.
   public init(to server: URL, tls: TLS = .none) async throws {
     core = Core(server: server)
     let parameters: NWParameters
@@ -52,7 +53,7 @@ public final class NetworkConditioner: Sendable {
     }
     let port = try await core.start(with: parameters)
     let scheme = tls == .none ? "http" : "https"
-    guard let address = URL(string: "\(scheme)://localhost:\(port)") else { throw URLError(.badURL) }
+    guard let address = URL(string: "\(scheme)://127.0.0.1:\(port)") else { throw URLError(.badURL) }
     self.address = address
     self.server = server
   }
@@ -369,6 +370,14 @@ extension NetworkConditioner {
       // its own process, after the client connected: `URLSession` there reports `networkConnectionLost`. A journey
       // runs the conditioner in the simulator.
       parameters.requiredInterfaceType = .loopback
+      // The listener binds `127.0.0.1` exactly, not every address. The kernel can give a listener at every address
+      // a port that another process listens on at `127.0.0.1` only, and that process then gets every connection to
+      // `127.0.0.1` at the port: a socket at the exact address always wins. Seen in
+      // `NetworkConditionerTests.stopDuringForwards()` on 2026-11-25: a Mac had about ten such sockets, the
+      // processes of other apps, and every request of a round got a 404 from one of them. Bound exactly, the
+      // listener is that socket. Another socket can bind the same address and port only when both set
+      // `SO_REUSEPORT`, and the listener doesn't.
+      parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
       let listener = try NWListener(using: parameters, on: .any)
       listener.newConnectionHandler = { [self] connection in accept(connection) }
       state.withLock { $0.listener = listener }

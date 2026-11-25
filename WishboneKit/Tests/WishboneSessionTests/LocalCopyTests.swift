@@ -113,8 +113,10 @@ struct LocalCopyTests {
     #expect(sessions.count == 1)
     #expect(files.fileExists(atPath: own.appending(path: "database.sqlite").path(percentEncoded: false)))
     #expect(try own.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true)
-    // The folder's name gives away neither the instance address nor the user.
-    #expect(!own.lastPathComponent.contains("localhost"))
+    // The folder's name gives away neither the instance address nor the user. The host is the one the device signed
+    // in at, so the check follows the conditioner's address.
+    let host = try #require(URL(string: try instance.address.text)?.host())
+    #expect(!own.lastPathComponent.contains(host))
   }
 
   @Test("A database file that will not open is made again, and the next sync fills the copy")

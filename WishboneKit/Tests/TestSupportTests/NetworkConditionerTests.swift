@@ -230,35 +230,110 @@ struct NetworkConditionerTests {
   /// through `TestHTTP`, whose few slots every test in the process shares: the round held 8 of them until all 8
   /// arrived, so it waited on the other tests' requests, and they on its. A request goes to the round's own new
   /// listener, so the listen queue that the slots guard is not in its way.
+  ///
+  /// Each wait of a round has a limit of its own. A round that runs out of it fails by its number, with what each
+  /// request got, and stops its conditioner. The test ran out of its minute on 2026-11-24 and 2026-11-25, and the
+  /// limits found why: the round's conditioner had a port that another process listened on at `127.0.0.1`, so all
+  /// 8 requests got that process's 404, and none reached the hold. The conditioner now listens at `127.0.0.1`
+  /// exactly, where no other socket takes its connections.
   @Test("A stop while requests are on their way to the server ends them, and the test process goes on")
   func stopDuringForwards() async throws {
     let requests = 8
+    let limit = Duration.seconds(10)
     for round in 0..<120 {
       let conditioner = try await NetworkConditioner(to: server.address)
+      // A round that ends early, at its limit or at the test's, stops its conditioner, which releases the hold.
+      defer { conditioner.stop() }
       let hold = conditioner.hold(Route("GET", "/health"), at: .request)
-      let url = Self.alone(conditioner.url("/health"))
-      let sent = (0..<requests).map { _ in
-        Task { try? await Self.status(of: url) }
+      let url = conditioner.url("/health")
+      let ends = Ends(requests)
+      let sent = (0..<requests).map { number in
+        Task { await ends.record(number) { try await Self.status(of: url) } }
       }
-      await hold.waitUntilHeld(requests)
-      // A wait that a time limit cancelled returns at once, so the round ends then too.
+      defer { sent.forEach { $0.cancel() } }
+      let isHeld = await Self.ends(within: limit) { await hold.waitUntilHeld(requests) }
+      // A wait that the test's time limit cancelled returns at once, so the round ends then too.
       try Task.checkCancellation()
+      guard isHeld else {
+        let got = conditioner.requests.count
+        Issue.record("Round \(round): the conditioner got \(got) of the \(requests) requests in \(limit). \(ends)")
+        return
+      }
       hold.release()
       // The stop comes a little later in each round, so in some round it finds the forwards at each of their steps.
       for _ in 0..<round { await Task.yield() }
       conditioner.stop()
-      for request in sent {
-        // Each ends: with the server's answer when its forward came before the stop, and with no answer after.
-        if let status = await request.value { #expect(status == 200) }
+      let haveEnded = await Self.ends(within: limit) {
+        await withTaskCancellationHandler {
+          for request in sent { await request.value }
+        } onCancel: {
+          sent.forEach { $0.cancel() }
+        }
       }
+      try Task.checkCancellation()
+      guard haveEnded else {
+        Issue.record("Round \(round): the requests didn't all end in \(limit) after the stop. \(ends)")
+        return
+      }
+      // Each ended: with the server's answer when its forward came before the stop, and with no answer after.
+      for status in ends.statuses { #expect(status == 200, "Round \(round). \(ends)") }
     }
   }
 
-  /// The URL at `127.0.0.1`, where the conditioner listens, so that a new session doesn't look up `localhost`.
-  private static func alone(_ url: URL) -> URL {
-    var parts = URLComponents(url: url, resolvingAgainstBaseURL: false)
-    parts?.host = "127.0.0.1"
-    return parts?.url ?? url
+  /// How each request of a round ended, by its number.
+  private final class Ends: Sendable, CustomStringConvertible {
+    private let count: Int
+    private let results = Mutex<[Int: Result<Int, any Error>]>([:])
+
+    init(_ count: Int) {
+      self.count = count
+    }
+
+    /// Sends a request, and keeps how it ended.
+    func record(_ number: Int, _ request: () async throws -> Int) async {
+      let result: Result<Int, any Error>
+      do {
+        result = .success(try await request())
+      } catch {
+        result = .failure(error)
+      }
+      results.withLock { $0[number] = result }
+    }
+
+    /// The statuses of the requests that got an answer.
+    var statuses: [Int] {
+      results.withLock { $0.values.compactMap { try? $0.get() } }
+    }
+
+    var description: String {
+      let results = results.withLock { $0 }
+      let ends = (0..<count).map { number in
+        switch results[number] {
+        case .success(let status): "\(number + 1): \(status)"
+        case .failure(let error as URLError): "\(number + 1): URLError \(error.code.rawValue)"
+        case .failure(let error): "\(number + 1): \(error)"
+        case nil: "\(number + 1): on its way"
+        }
+      }
+      return "The requests: \(ends.joined(separator: ", "))."
+    }
+  }
+
+  /// Whether `work` ends within `limit`. When it doesn't, the call cancels it, and returns when it has ended.
+  private static func ends(within limit: Duration, _ work: @escaping @Sendable () async -> Void) async -> Bool {
+    await withTaskGroup(of: Bool.self) { group in
+      group.addTask {
+        await work()
+        return true
+      }
+      group.addTask {
+        try? await Task.sleep(for: limit)
+        return false
+      }
+      let first = await group.next() ?? false
+      group.cancelAll()
+      return first
+    }
   }
 
   /// The status of a GET, on a session of its own. A session opens at most 6 connections to a host at once, so
