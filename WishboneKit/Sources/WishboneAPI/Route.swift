@@ -422,13 +422,23 @@ struct AcknowledgeBody: Encodable, Sendable {
   }
 }
 
-/// The body of `POST /items/{id}/gifts`: one, with the server's own pick of the occasion. See "Claims are online
-/// only" in `docs/spec.md`.
+/// The body of `POST /items/{id}/gifts`: one, for the occasion named, or for the server's own pick when none is. See
+/// "Claims are online only" in `docs/spec.md`.
 struct ClaimBody: Encodable, Sendable {
   let quantity: Int
 
+  /// One of the occasions that the giver may pick. Nil leaves the pick to the server: the soonest of them.
+  let occasionID: String?
+
   enum CodingKeys: String, CodingKey, CaseIterable {
     case quantity
+    case occasionID = "occasion_id"
+  }
+
+  func encode(to encoder: any Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(quantity, forKey: .quantity)
+    try container.encodeIfPresent(occasionID, forKey: .occasionID)
   }
 }
 
@@ -449,11 +459,20 @@ public struct GiftChanges: Codable, Sendable, Equatable {
   /// `item_fully_claimed`, and a recipient of the list never raises (403 `quantity_raise_not_allowed`).
   public var quantity: Int?
 
-  public init(isBought: Bool? = nil, fromLabel: String? = nil, note: String? = nil, quantity: Int? = nil) {
+  /// The occasion: one of `GET /occasions?list_id=` for the gift's list, else 422 `occasion_not_allowed`. A giver who
+  /// can see none of the other recipients can't pick one (422 `occasion_locked`). When the giver has another open
+  /// gift on the item for that occasion, the two merge, and the answer is the gift that stays.
+  public var occasionID: String?
+
+  public init(
+    isBought: Bool? = nil, fromLabel: String? = nil, note: String? = nil, quantity: Int? = nil,
+    occasionID: String? = nil
+  ) {
     self.isBought = isBought
     self.fromLabel = fromLabel
     self.note = note
     self.quantity = quantity
+    self.occasionID = occasionID
   }
 
   enum CodingKeys: String, CodingKey, CaseIterable {
@@ -461,6 +480,7 @@ public struct GiftChanges: Codable, Sendable, Equatable {
     case fromLabel = "from_label"
     case note
     case quantity
+    case occasionID = "occasion_id"
   }
 
   public func encode(to encoder: any Encoder) throws {
@@ -469,6 +489,7 @@ public struct GiftChanges: Codable, Sendable, Equatable {
     try container.encodeIfPresent(fromLabel, forKey: .fromLabel)
     try container.encodeIfPresent(note, forKey: .note)
     try container.encodeIfPresent(quantity, forKey: .quantity)
+    try container.encodeIfPresent(occasionID, forKey: .occasionID)
   }
 }
 
@@ -486,11 +507,12 @@ extension Endpoint where Response == Gift {
       route: .acknowledgeGift, parameters: ["id": id], body: AcknowledgeBody(codes: codes), idempotencyKey: key)
   }
 
-  /// Claims one of the item, for the soonest occasion that the giver may pick, with a key of its own, so that a
-  /// resend after a lost connection makes one gift.
-  static func claim(_ itemID: String) -> Endpoint {
+  /// Claims one of the item, for the occasion, or for the soonest occasion that the giver may pick when none is
+  /// named, with a key of its own, so that a resend after a lost connection makes one gift.
+  static func claim(_ itemID: String, occasionID: String? = nil) -> Endpoint {
     Endpoint(
-      route: .claim, parameters: ["id": itemID], body: ClaimBody(quantity: 1), idempotencyKey: UUID().uuidString)
+      route: .claim, parameters: ["id": itemID], body: ClaimBody(quantity: 1, occasionID: occasionID),
+      idempotencyKey: UUID().uuidString)
   }
 }
 

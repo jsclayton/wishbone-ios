@@ -85,7 +85,7 @@ nonisolated final class DropGiftJourney: JourneyTestCase {
     // The rows from Bought down go off the screen as the text grows. At the largest text size, the audit scrolls to
     // I won't get this.
     let pageRows = [
-      "Bought", "How many", "1", "Occasion", "Birthday", "Hidden until", "From", "Note", "Only you see this note.",
+      "Bought", "How many", "1", "Occasion", "Hidden until", "From", "Note", "Only you see this note.",
     ]
     try await Audit.run(
       on: app, showing: "a gift's page", in: self, rowsThatLeaveTheScreen: pageRows,

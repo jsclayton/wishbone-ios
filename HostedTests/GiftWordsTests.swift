@@ -107,4 +107,13 @@ struct GiftWordsTests {
     #expect(GiftWords.answer(to: .moved(toList: nil)) == "OK")
     #expect(GiftWords.answer(to: .noLongerShared) == "OK")
   }
+
+  @Test("The Occasion menu names whose each occasion is, and Get another has its full words")
+  func occasions() {
+    #expect(GiftWords.pickable(kind: .birthday, name: "Birthday", person: "Morgan") == "Morgan's birthday")
+    #expect(GiftWords.pickable(kind: .custom, name: "Recital", person: "Morgan") == "Morgan's Recital")
+    #expect(GiftWords.pickable(kind: .shared, name: "Holiday", person: nil) == "Holiday")
+    #expect(GiftWords.pickable(kind: .custom, name: "Recital", person: nil) == "Recital")
+    #expect(GiftWords.getAnother == "Get another for a different occasion")
+  }
 }

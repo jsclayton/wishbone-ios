@@ -20,6 +20,14 @@ public struct GiftPage: Equatable, Sendable {
   /// The gift's occasion, or only its reveal date when the giver can't see the occasion.
   public let occasion: ItemPage.ClaimLine.Occasion
 
+  /// The occasions in the Occasion row's menu, soonest first. Empty when the row is not a button: the giver can't
+  /// edit the gift, or can see none of the other recipients (`occasion_locked`). See
+  /// `SessionModel.pickableOccasions(onList:)`.
+  public let occasions: [OccasionRow]
+
+  /// The occasion that Get another for a different occasion claims for. Nil when the row is not offered.
+  public let anotherOccasion: OccasionRow?
+
   /// The flags that the app has words for, in the server's order.
   public let flags: [GivingGift.Flag]
 
@@ -122,6 +130,8 @@ extension SessionModel {
       gift: gift,
       recipients: gift.recipientIDs.isHidden ? nil : (gift.recipientIDs.value ?? []).compactMap { user(id: $0) },
       occasion: ItemPage.ClaimLine(gift).occasion,
+      occasions: canPickOccasion(ofGift: id) ? pickableOccasions(onList: gift.listID) : [],
+      anotherOccasion: anotherOccasion(forGift: id),
       flags: givingGift(gift).flags,
       changes: changes.compactMap(GiftPage.Change.init),
       linksItem: !isRemoved && itemPage(id: gift.itemID) != nil,

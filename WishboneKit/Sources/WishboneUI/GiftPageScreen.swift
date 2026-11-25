@@ -5,9 +5,14 @@ import WishboneSession
 /// is for, each flag in words with every change of a changed item, then Bought, How many, Occasion with the reveal
 /// date, From, and Note. See `docs/screens/gift.md`.
 ///
-/// From `can_edit`: Bought is a toggle, How many a stepper, and From and Note are text fields that save when they lose
-/// focus. Each is an unsent change, except a raise of how many, which waits for the server. Occasion is read here.
-/// It becomes a control in a later step.
+/// From `can_edit`: Bought is a toggle, How many a stepper, Occasion a menu of the occasions that the giver can pick,
+/// and From and Note are text fields that save when they lose focus. Each is an unsent change, except a raise of how
+/// many, which waits for the server. When the giver can see none of the other recipients, Occasion is not a button. A
+/// pick that merges the gift into the giver's other gift for that occasion shows the gift that stays, in this window.
+///
+/// From the item's `can_claim`, while an occasion that the giver can pick has no gift of theirs on the item, Get
+/// another for a different occasion claims one for the soonest such occasion. It waits for the server, and pushes the
+/// new gift's page.
 ///
 /// From `can_acknowledge`, each flag has its answer: Keep it for an item that was removed, and OK for the rest. From
 /// `can_delete`, I won't get this sits at the foot, after a confirmation. Each is an unsent change. After I won't get
@@ -78,15 +83,7 @@ struct GiftPageScreen: View {
         if gift.canEdit {
           QuantityStepper(gift: gift, session: session)
         }
-        FieldRow(label: String(localized: "Occasion", bundle: #bundle)) {
-          VStack(alignment: .trailing, spacing: 2) {
-            Text(GiftWords.occasion(page.occasion))
-            if case .named = page.occasion {
-              Text(GiftWords.hiddenUntil(gift.revealAt))
-                .font(.footnote)
-            }
-          }
-        }
+        OccasionField(page: page, session: session, pick: pick)
         if gift.canEdit {
           GiftTextField(
             field: .fromLabel, giftID: gift.id, saved: gift.fromLabel ?? "",
@@ -123,6 +120,13 @@ struct GiftPageScreen: View {
       } footer: {
         Text("Only you see this note.", bundle: #bundle)
       }
+      if let another = page.anotherOccasion {
+        Section {
+          GetAnotherRow(gift: gift, occasion: another, session: session) { id in
+            pages.append(.gift(id: id))
+          }
+        }
+      }
       if gift.canDelete {
         Section {
           Button(role: .destructive) {
@@ -150,6 +154,18 @@ struct GiftPageScreen: View {
     #endif
   }
 
+  /// Pick the occasion. When the pick merges this gift into the giver's other gift for that occasion, this window
+  /// shows the gift that stays first, so it never shows the "not found" page here. Then the pick is saved as an
+  /// unsent change.
+  private func pick(_ occasionID: String) {
+    let id = page.gift.id
+    let holder = session.gift(holdingPick: occasionID, of: id)
+    if holder != id, let index = pages.lastIndex(of: .gift(id: id)) {
+      pages[index] = .gift(id: holder)
+    }
+    Task { await session.pickOccasion(occasionID, forGift: id) }
+  }
+
   /// I won't get this: the page closes in this window first, so it never shows the "not found" page here. Then the
   /// unclaim is saved as an unsent change, and every other window that shows the page shows the "not found" page.
   private func unclaim(_ gift: GiftRow) {
@@ -157,6 +173,118 @@ struct GiftPageScreen: View {
       pages.removeSubrange(index...)
     }
     Task { await session.unclaim(gift: gift.id) }
+  }
+}
+
+/// Occasion, with the reveal date under it. From `can_edit`, while the giver can see another of the list's
+/// recipients, it is a menu of the occasions that they can pick, soonest first, with the gift's own checked. Otherwise
+/// it is not a button. VoiceOver reads the label, the occasion, and the reveal date.
+private struct OccasionField: View {
+  let page: GiftPage
+  let session: SessionModel
+  let pick: (String) -> Void
+
+  var body: some View {
+    if page.occasions.isEmpty {
+      field
+    } else {
+      Menu {
+        ForEach(page.occasions) { occasion in
+          Button {
+            pick(occasion.id)
+          } label: {
+            if occasion.id == page.gift.occasion?.id {
+              Label(words(occasion), systemImage: "checkmark")
+            } else {
+              Text(words(occasion))
+            }
+            if let date = occasion.nextDate {
+              Text(OccasionDateWords.monthAndDay(date))
+            }
+          }
+        }
+      } label: {
+        field
+      }
+      .tint(.primary)
+    }
+  }
+
+  private var field: some View {
+    FieldRow(label: String(localized: "Occasion", bundle: #bundle)) {
+      VStack(alignment: .trailing, spacing: 2) {
+        Text(value)
+        if case .named = page.occasion {
+          Text(GiftWords.hiddenUntil(page.gift.revealAt))
+            .font(.footnote)
+        }
+      }
+    }
+  }
+
+  /// The gift's occasion as the menu words it, when it is one that the giver can pick. Otherwise its name, or only
+  /// its reveal date.
+  private var value: String {
+    page.occasions.first { $0.id == page.gift.occasion?.id }.map(words) ?? GiftWords.occasion(page.occasion)
+  }
+
+  private func words(_ occasion: OccasionRow) -> String {
+    GiftWords.pickable(
+      kind: occasion.kind, name: occasion.name, person: occasion.userID.flatMap { session.user(id: $0)?.name })
+  }
+}
+
+/// Get another for a different occasion: a full-width row that claims one more of the item for the soonest
+/// occasion that the giver can pick and has no gift for. It waits for the server, says "Claiming" meanwhile, and says
+/// in place why nothing was claimed. A claim pushes the new gift's page.
+private struct GetAnotherRow: View {
+  let gift: GiftRow
+  let occasion: OccasionRow
+  let session: SessionModel
+  let push: (String) -> Void
+
+  @State private var isClaiming = false
+  @State private var said: String?
+
+  var body: some View {
+    Button {
+      Task { await getAnother() }
+    } label: {
+      HStack(spacing: 8) {
+        if isClaiming {
+          ProgressView()
+            .accessibilityHidden(true)
+        }
+        Text(GiftWords.getAnother)
+      }
+      .frame(maxWidth: .infinity)
+    }
+    .disabled(isClaiming)
+    // A new gift in the same window starts with nothing said.
+    .onChange(of: gift.id) {
+      said = nil
+    }
+    if let said {
+      Text(said)
+    }
+  }
+
+  private func getAnother() async {
+    guard !isClaiming else { return }
+    isClaiming = true
+    said = nil
+    let outcome = await session.getAnother(forGift: gift.id)
+    isClaiming = false
+    switch outcome {
+    case .claimed(let id):
+      push(id)
+    case .notOffered:
+      break
+    case .notClaimed(let claim):
+      let recipients = session.recipients(ofList: gift.listID).compactMap { session.user(id: $0.userID) }
+      said = ClaimWords.result(of: claim, address: session.session.instance, recipients: recipients)
+      if let said { AccessibilityNotification.Announcement(said).post() }
+    }
   }
 }
 

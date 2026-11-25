@@ -136,7 +136,8 @@ extension SessionModel {
   /// giver no longer has it, which is what they asked for. So the gift leaves the copy, and nothing is said.
   private func send(_ change: UnsentChange) async throws(APIError) -> Versioned<Gift>? {
     switch change.action {
-    case .markBought(let id, _), .setFromLabel(let id, _), .setNote(let id, _), .lowerQuantity(let id, _):
+    case .markBought(let id, _), .setFromLabel(let id, _), .setNote(let id, _), .lowerQuantity(let id, _),
+      .setOccasion(let id, _):
       return try await client.updateGift(id, change.action.giftChanges, key: change.key)
     case .unclaim(let id):
       do {

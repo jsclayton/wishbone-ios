@@ -38,32 +38,47 @@ extension SessionModel {
   public func claim(item id: String) async -> ClaimOutcome {
     guard !hasEnded else { return .failed }
     do {
-      let gifts: [Versioned<Gift>]
-      do {
-        gifts = [try await client.claim(id)]
-      } catch APIError.refused(let refusal) where refusal.code == .alreadyClaimed {
-        // The server has the gift: the answer to an earlier tap was lost. The gifts on the item that the session's
-        // user can see are their own.
-        let onItem = try? await client.gifts(ofItem: id)
-        gifts = (onItem?.rows ?? []).filter { $0.resource.giver?.id == session.userID && $0.resource.state == .open }
-      }
-      // The item's new numbers. Without them, the gift is saved alone, and the next sync brings the item.
-      let item = try? await client.item(id)
-      guard !hasEnded else { return .failed }
-      try await database.saveClaim(gifts, item: item)
-      // A sync that runs now may have asked before the claim. Its pull keeps the gift, and one more sync asks after it.
-      syncAgainIfSyncing()
-      await publishNow()
+      _ = try await claimOne(of: id, for: nil)
       return .claimed
-    } catch APIError.refused(let refusal) where refusal.code == .itemFullyClaimed {
+    } catch {
+      return await claimOutcome(of: error)
+    }
+  }
+
+  /// Claims one of the item, for the occasion or for the server's own pick, and saves the giver's gifts that the
+  /// claim made or found into the copy, with the item's new numbers, and publishes them. Gives back the gifts.
+  func claimOne(of id: String, for occasionID: String?) async throws -> [Versioned<Gift>] {
+    let gifts: [Versioned<Gift>]
+    do {
+      gifts = [try await client.claim(id, occasionID: occasionID)]
+    } catch APIError.refused(let refusal) where refusal.code == .alreadyClaimed {
+      // The server has the gift: the answer to an earlier tap was lost. The gifts on the item that the session's
+      // user can see are their own.
+      let onItem = try? await client.gifts(ofItem: id)
+      gifts = (onItem?.rows ?? []).filter { $0.resource.giver?.id == session.userID && $0.resource.state == .open }
+    }
+    // The item's new numbers. Without them, the gift is saved alone, and the next sync brings the item.
+    let item = try? await client.item(id)
+    guard !hasEnded else { throw CancellationError() }
+    try await database.saveClaim(gifts, item: item)
+    // A sync that runs now may have asked before the claim. Its pull keeps the gift, and one more sync asks after it.
+    syncAgainIfSyncing()
+    await publishNow()
+    return gifts
+  }
+
+  /// How a claim that threw ended.
+  func claimOutcome(of error: any Error) async -> ClaimOutcome {
+    switch error {
+    case APIError.refused(let refusal) where refusal.code == .itemFullyClaimed:
       return .someoneElseGotIt
-    } catch let error as APIError {
+    case let error as APIError:
       if let refusal = await outcome(of: error) { return .refused(refusal) }
       if case .unreachable = error { return .unreachable }
       return .failed
-    } catch is CancellationError {
+    case is CancellationError:
       return .failed
-    } catch {
+    default:
       Log.fault(.session, "The copy can't take the claim.", detail: "\(error)")
       return .failed
     }

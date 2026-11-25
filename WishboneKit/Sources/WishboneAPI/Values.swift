@@ -270,6 +270,12 @@ public struct OccasionSummary: Model, Codable, Equatable {
   public let kind: OccasionKind
   public let name: String
 
+  public init(id: String, kind: OccasionKind, name: String) {
+    self.id = id
+    self.kind = kind
+    self.name = name
+  }
+
   enum CodingKeys: String, CodingKey, CaseIterable {
     case id
     case kind
