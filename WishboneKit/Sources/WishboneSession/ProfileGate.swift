@@ -132,8 +132,9 @@ extension SessionModel {
   /// Puts an answer of the server about the session's own user into the copy, which every window reads.
   private func keep(_ user: Versioned<User>) async throws {
     guard !hasEnded else { throw CancellationError() }
-    try await database.save([user])
-    // A sync that runs now may have fetched the user before this answer, and can put the old record back.
+    try await database.save([user], answering: true)
+    // A sync that runs now may have fetched the user before this answer. Its pull keeps this record, and one more
+    // sync asks after it.
     syncAgainIfSyncing()
   }
 

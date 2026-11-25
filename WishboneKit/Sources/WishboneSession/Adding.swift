@@ -381,8 +381,8 @@ extension SessionModel {
       let key = draft.key(for: item)
       let added = try await client.createItem(item, onList: list.id, key: key)
       guard !hasEnded else { return .failed }
-      try await database.save([added])
-      // A sync that runs now may have asked before the add, and can take the item out of the copy again.
+      try await database.save([added], answering: true)
+      // A sync that runs now may have asked before the add. Its pull keeps the item, and one more sync asks after it.
       syncAgainIfSyncing()
       return .added(AddedItem(id: added.resource.id, title: added.resource.title, listName: list.name))
     } catch {

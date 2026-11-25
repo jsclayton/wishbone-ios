@@ -31,7 +31,10 @@ extension Pull {
   ///
   /// The session's user is the admin when the copy says so. The pull has just brought the user's record up to
   /// date, or `GET /versions` has just said that it is current.
+  ///
+  /// A block or an unblock whose answer the copy takes after the read is asked for wins over it (see `Answers`).
   func pullBlockedStores() async throws {
+    let database = database.keepingAnswers(after: database.answers.mark())
     guard try await database.user(userID)?.record?.isAdmin == true else {
       if try await database.holdsBlockedStores() { try await database.replaceBlockedStores(with: []) }
       return

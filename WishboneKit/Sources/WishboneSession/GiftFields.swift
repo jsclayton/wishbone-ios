@@ -129,7 +129,7 @@ extension SessionModel {
       let item = try? await client.item(gift.itemID)
       guard !hasEnded else { return .failed }
       try await database.saveClaim([answer], item: item)
-      // A sync that runs now may have asked before the raise, and can put the old number back in the copy.
+      // A sync that runs now may have asked before the raise. Its pull keeps the number, and one more sync asks after it.
       syncAgainIfSyncing()
       await publishNow()
       return .raised

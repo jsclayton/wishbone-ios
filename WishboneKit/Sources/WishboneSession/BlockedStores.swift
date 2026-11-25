@@ -82,7 +82,8 @@ extension SessionModel {
       let store = try await client.blockStore(entry.text)
       guard !hasEnded else { return .failed }
       try await database.saveBlockedStore(store)
-      // A sync that runs now may have read the blocked stores before the block, and can take the store out again.
+      // A sync that runs now may have read the blocked stores before the block. Its pull keeps the store, and one
+      // more sync reads them after it.
       syncAgainIfSyncing()
       return .blocked
     } catch APIError.refused(let refusal) where refusal.code == .alreadyBlocked {
@@ -118,7 +119,8 @@ extension SessionModel {
       }
       guard !hasEnded else { return .failed }
       try await database.removeBlockedStore(store.id)
-      // A sync that runs now may have read the blocked stores before the unblock, and can put the store back.
+      // A sync that runs now may have read the blocked stores before the unblock. Its pull doesn't put the store
+      // back, and one more sync reads them after it.
       syncAgainIfSyncing()
       return .unblocked
     } catch let error as APIError {
@@ -138,7 +140,7 @@ extension SessionModel {
   private func readBlockedStoresAgain() async {
     guard let stores = try? await client.blockedStores(), !hasEnded else { return }
     do {
-      try await database.replaceBlockedStores(with: stores.rows)
+      try await database.replaceBlockedStores(with: stores.rows, answering: true)
       syncAgainIfSyncing()
     } catch is CancellationError {
     } catch {

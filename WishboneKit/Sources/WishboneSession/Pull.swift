@@ -9,8 +9,8 @@ import WishboneAPI
 ///    version, is fetched.
 /// 3. A thing is fetched from its own address, or from its collection when that takes fewer requests.
 /// 4. Each row is saved with the version that its own answer carried, and never with the one that the entry named.
-/// 5. The answer's `ETag` is kept only when every fetch gave the version that its entry named. Otherwise none is
-///    kept, and the next pull compares again.
+/// 5. The answer's `ETag` is kept only when every fetch gave the version that its entry named, and no answer of a
+///    write came during the pull. Otherwise none is kept, and the next pull compares again.
 ///
 /// **What the copy holds:** every user, group, occasion, list, list recipient, item, store link, gift and
 /// invitation that the session's user can see, and the memberships that the user can read: every kind that the
@@ -32,6 +32,12 @@ import WishboneAPI
 ///
 /// A pull writes each thing when its answer arrives. A pull that stops in the middle keeps what it wrote, and the
 /// next pull fetches the rest.
+///
+/// **An answer in flight wins over a pull for the same thing.** A write that waits for the server (a claim, Add, a
+/// block or an unblock, the profile gate) can put its answer into the copy while a pull runs, and the pull's answers
+/// can be older than it. The pull never removes or overwrites what such an answer saved after the pull asked, and
+/// never brings back what it removed (see `Answers`). The next pull asks after the write, and the server is the
+/// authority again.
 struct Pull: Sendable {
   let client: APIClient
   let database: LocalDatabase
@@ -49,8 +55,13 @@ struct Pull: Sendable {
   /// there, and has changed nothing.
   @concurrent
   func run() async throws -> UserRow? {
+    // The answers of writes that wait for the server, put into the copy after this, win over what the answer of
+    // `GET /versions` leads the pull to write (see `Answers`). The mark comes before the request, so an answer that
+    // arrives before it, of a write that the server made after it, wins too.
+    let keeping = Pull(
+      client: client, database: database.keepingAnswers(after: database.answers.mark()), userID: userID)
     let answer = try await client.versions(ifNoneMatch: try await database.keptETag())
-    if case .changed(let versions) = answer { try await pull(versions) }
+    if case .changed(let versions) = answer { try await keeping.pull(versions) }
     try await pullBlockedStores()
     return try await database.user(userID)
   }

@@ -51,7 +51,7 @@ extension SessionModel {
       let item = try? await client.item(id)
       guard !hasEnded else { return .failed }
       try await database.saveClaim(gifts, item: item)
-      // A sync that runs now may have asked before the claim, and can take the gift out of the copy again.
+      // A sync that runs now may have asked before the claim. Its pull keeps the gift, and one more sync asks after it.
       syncAgainIfSyncing()
       await publishNow()
       return .claimed

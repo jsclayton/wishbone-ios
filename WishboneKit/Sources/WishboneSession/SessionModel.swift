@@ -411,11 +411,12 @@ public final class SessionModel {
   /// Asks for one more sync when a sync runs now, after a write that waits for the server has put the server's
   /// answer into the copy. Nothing waits for that sync.
   ///
-  /// A pull writes each thing when its answer arrives, and an answer can be older than the write. A pull whose
-  /// `GET /versions` was answered before the server made the change removes the new row as absent, and a body
-  /// that it fetched before the change puts the old one back. The server is right, and the copy is wrong until a
-  /// pull asks again. So one more sync runs after this one: its `GET /versions` comes after the write, and brings
-  /// the write back. The kept `ETag` can stay: the write changed the versions, so they no longer match it.
+  /// A pull writes each thing when its answer arrives, and an answer can be older than the write. The pull never
+  /// removes or overwrites the write's rows (see `Answers`), so what the user did stays on the screen. But the pull
+  /// can't tell what else its old answers missed, such as another of the write's effects that the copy took from no
+  /// answer of the write. So one more sync runs after this one: its `GET /versions` comes after the write, and the
+  /// server is the authority again. The kept `ETag` can stay: the write changed the versions, so they no longer
+  /// match it.
   ///
   /// A pull that started after the server's answer asks after the write too. So with no sync running, nothing more
   /// is needed.

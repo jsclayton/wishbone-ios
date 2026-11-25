@@ -136,6 +136,38 @@ final class ProfileGateTests {
     #expect(first.user?.record?.lastName == "Fischer")
   }
 
+  @Test("A profile confirmed while a sync runs is never taken back, not even for a moment")
+  func confirmDuringSync() async throws {
+    let robin = try await instance.person("Robin")
+    let session = try #require(try await signedIn(as: robin).session)
+    let user = try #require(session.user)
+    #expect(session.needsProfileGate)
+    // The user changes after the first sync, so the next pull reads the user again.
+    try await instance.builder.goodToKnow("Likes kites", of: robin)
+
+    // The server answers the pull's read of the user before the gate, and the answer arrives after it.
+    let held = instance.conditioner.hold(Route("GET", "/users/{id}"))
+    let early = Task { await session.syncNow() }
+    await held.waitUntilHeld()
+    let history = CopyHistory(of: session)
+    defer { history.stop() }
+    #expect(await session.confirmProfile(ProfileDraft(user)) == .confirmed)
+    await until { !session.needsProfileGate }
+
+    // The held answer is the user before the gate, and the gate's answer wins over it. The sync after it reads the
+    // user again, after the gate.
+    held.release()
+    #expect(await early.value == .succeeded)
+    await session.syncNow()
+    await until { session.user?.record?.goodToKnow == "Likes kites" }
+    #expect(!session.needsProfileGate)
+    #expect(try await record(of: robin)["profile_confirmed_at"].string != nil)
+    #expect(history.count > 1)
+    for (index, user) in history.user.enumerated() where user?.record?.canConfirmProfile != false {
+      Issue.record("The gate came back at change \(index)")
+    }
+  }
+
   @Test("Clearing sends null: a last name of spaces, a birthday with no year, and Remove only with an avatar")
   func clearing() async throws {
     let robin = try await instance.person("Robin")
