@@ -261,7 +261,7 @@ struct UnsentChangesTests {
     #expect(refusal.refusal.code == .forbidden)
     #expect(refusal.refusal.status == 403)
     #expect(refusal.refusal.route == .updateGift)
-    session.lateRefusalsShown()
+    session.lateRefusalsShown(in: window)
     #expect(session.lateRefusalAlert == nil)
 
     // Never again: not at the next foreground, and not after a relaunch.
@@ -300,13 +300,9 @@ struct UnsentChangesTests {
     #expect(session.lateRefusalAlert?.refusals.map(\.refusal.code) == [.notFound])
   }
 
-  @Test(
-    """
-    An alert of late refusals stays in its window while that window is in the foreground. When the window closes \
-    before the alert does, the next window that comes to the foreground shows it
-    """
-  )
-  func lateRefusalAlertMoves() async throws {
+  /// A giver whose late refusal waits for a window: they marked the gift bought offline, and it was unclaimed in a
+  /// browser meanwhile.
+  private func aLateRefusalWaits() async throws -> (Device, SessionModel) {
     let seeded = try await seed()
     let device = try await signedIn(as: seeded.giver, with: seeded.gift)
     let session = try #require(device.session)
@@ -317,28 +313,86 @@ struct UnsentChangesTests {
     instance.conditioner.passEverything()
     await session.syncNow()
     await until { session.lateRefusals.count == 1 }
+    return (device, session)
+  }
 
-    // The alert shows in the window. It stays there when another window comes to the foreground, and when its own
-    // window leaves the foreground and comes back.
+  @Test(
+    """
+    An alert of late refusals stays in its window while that window is in the foreground, or only inactive. When \
+    two windows come back from Control Center in either order, it doesn't move
+    """
+  )
+  func lateRefusalAlertStays() async throws {
+    let (_, session) = try await aLateRefusalWaits()
+
+    // The alert shows in the window. It stays there when another window comes to the foreground beside it.
     await session.cameToForeground(window: window)
     let shown = try #require(session.lateRefusalAlert)
     #expect(shown.window == window)
     let other = UUID()
     await session.cameToForeground(window: other)
     #expect(session.lateRefusalAlert == shown)
-    session.leftForeground(window: other)
+
+    // Control Center makes both windows inactive. The other one comes back first: the alert stays.
     session.leftForeground(window: window)
+    session.leftForeground(window: other)
+    await session.cameToForeground(window: other)
     await session.cameToForeground(window: window)
     #expect(session.lateRefusalAlert == shown)
 
-    // The window closes before the alert does. The next window that comes to the foreground shows it, once.
+    // And again, with the window of the alert first.
+    session.leftForeground(window: other)
     session.leftForeground(window: window)
+    await session.cameToForeground(window: window)
+    await session.cameToForeground(window: other)
+    #expect(session.lateRefusalAlert == shown)
+
+    // The other window can't close it. Its own window can, once, and it never shows again.
+    session.lateRefusalsShown(in: other)
+    #expect(session.lateRefusalAlert == shown)
+    session.lateRefusalsShown(in: window)
+    #expect(session.lateRefusalAlert == nil)
+    session.leftForeground(window: other)
+    await session.cameToForeground(window: other)
+    #expect(session.lateRefusalAlert == nil)
+  }
+
+  @Test(
+    """
+    When the window of an alert of late refusals goes to the background, or closes, before the alert does, the next \
+    window that comes to the foreground shows it, once. The window it left can't close it there
+    """
+  )
+  func lateRefusalAlertMoves() async throws {
+    let (_, session) = try await aLateRefusalWaits()
+    await session.cameToForeground(window: window)
+    let shown = try #require(session.lateRefusalAlert)
+    #expect(shown.window == window)
+
+    // The window goes to the background. The next window that comes to the foreground shows the alert.
+    let other = UUID()
+    session.wentToBackground(window: window)
     await session.cameToForeground(window: other)
     #expect(session.lateRefusalAlert?.window == other)
     #expect(session.lateRefusalAlert?.refusals == shown.refusals)
-    session.lateRefusalsShown()
-    session.leftForeground(window: other)
+
+    // As the alert leaves the first window, SwiftUI says that the first window's alert closed. It still shows in
+    // the other one.
+    session.lateRefusalsShown(in: window)
+    #expect(session.lateRefusalAlert?.window == other)
+
+    // The other window closes before the alert does. The first window, back in the foreground, shows it.
+    session.wentToBackground(window: other)
     await session.cameToForeground(window: window)
+    #expect(session.lateRefusalAlert?.window == window)
+    #expect(session.lateRefusalAlert?.refusals == shown.refusals)
+    session.lateRefusalsShown(in: other)
+    #expect(session.lateRefusalAlert?.window == window)
+
+    // Closed in its window, it never shows again.
+    session.lateRefusalsShown(in: window)
+    session.wentToBackground(window: window)
+    await session.cameToForeground(window: other)
     #expect(session.lateRefusalAlert == nil)
   }
 
