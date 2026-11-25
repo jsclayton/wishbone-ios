@@ -454,6 +454,9 @@
         }
       }
     },
+    "Get another for a different occasion" : {
+
+    },
     "Getting a login link" : {
 
     },
@@ -1031,6 +1034,20 @@
     },
     "The occasion changed. It's now for %@." : {
       "comment" : "A gift's flag on its page: the gift's occasion stopped applying, and it moved to this one"
+    },
+    "The occasion for this gift can't be changed." : {
+
+    },
+    "The occasion of %@: %@" : {
+      "comment" : "A late refusal of a pick of the gift's occasion: the item's title, then why the change wasn't saved",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The occasion of %1$@: %2$@"
+          }
+        }
+      }
     },
     "The photo changed" : {
 
