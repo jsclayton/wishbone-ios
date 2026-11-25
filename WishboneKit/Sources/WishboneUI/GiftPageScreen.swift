@@ -294,9 +294,9 @@ private struct GiftTextField: View {
     case .fromLabel:
       TextField(
         text: oneLine,
-        // A prompt stays on one line, so at the largest text sizes it is the section's footer instead.
-        prompt: size.isAccessibilitySize
-          ? Text(verbatim: "") : Text("Who it's from, if not only you", bundle: #bundle),
+        // A prompt stays on one line, so at the largest text sizes it is the section's footer instead, and the
+        // field shows its label.
+        prompt: size.isAccessibilitySize ? nil : Text("Who it's from, if not only you", bundle: #bundle),
         axis: .vertical
       ) {
         Text(label)
