@@ -5,7 +5,8 @@
 ///   server, not the app's fault.
 /// - `refused`: captured for a 400 or a 422 of a write that the app sent, as the route and the code, and
 ///   for a code that is not in `ErrorCode`'s list, as the code only. Otherwise never: a 404 or a 410 for something
-///   deleted elsewhere, a 403, a 429.
+///   deleted elsewhere, a 403, a 429, a blocked store (`store_blocked`), and a store's image that the server
+///   couldn't download (`image_fetch_failed`).
 /// - `undecodable`: captured, as the path template and the key path, never a value. Except for `GET /health`: an
 ///   address that is not a Wishbone answers it so, and the sign-in says "No Wishbone found".
 ///
@@ -84,8 +85,11 @@ extension APIError {
 
 extension APIError.Refusal {
   /// A 400 or a 422 of a write is the app's fault: it sent what the server can't take. So is a code that the app
-  /// doesn't know. Any other refusal is the server's answer to the person, and no fault.
+  /// doesn't know. Any other refusal is the server's answer to the person, and no fault. Nor are a blocked store
+  /// (`store_blocked`), which is the operator's setting, and a store's image that the server couldn't download
+  /// (`image_fetch_failed`), which is the store's server, though each is a 422 of a write.
   public var diagnosticSide: DiagnosticSide {
+    if code == .storeBlocked || code == .imageFetchFailed { return .never }
     if route.isWrite, status == 400 || status == 422 { return .captured(.refused(route, code: code)) }
     if case .unknown(let text) = code { return .captured(.unknown(text)) }
     return .never

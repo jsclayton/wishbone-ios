@@ -23,9 +23,9 @@ final class AddingTests {
   }
 
   /// A device signed in as a new person, with the first sync over: the copy has the primary list.
-  private func signedIn() async throws -> (SessionModel, Fixture.Person) {
+  private func signedIn(diagnostics: RecordingDiagnostics? = nil) async throws -> (SessionModel, Fixture.Person) {
     let person = try await instance.person("Robin")
-    let device = instance.device()
+    let device = diagnostics.map { instance.device(diagnostics: $0) } ?? instance.device()
     await device.signIn(pasting: try await instance.loginLink(for: person))
     let session = try #require(device.session)
     try await untilInStep(session, as: person)
@@ -323,6 +323,50 @@ final class AddingTests {
     #expect(Set(creates.compactMap { $0.headers["idempotency-key"] }).count == 1)
     #expect(instance.conditioner.requests.filter { $0.isOn(Self.upload) }.count == 1)
     await until { session.item(id: item.id) != nil }
+  }
+
+  @Test("A link from a blocked store is refused, and diagnostics capture no fault, only the request")
+  func blockedStoreIsNoFault() async throws {
+    let blocked = try await instance.builder.blockedStore()
+    let diagnostics = RecordingDiagnostics()
+    let (session, _) = try await signedIn(diagnostics: diagnostics)
+    var state = AddScreenState()
+    let link = "https://\(blocked.store)/products/kite"
+
+    #expect(await search(link, in: session, state: &state) == nil)
+    guard case .refused(_, let refusal) = state.phase else {
+      Issue.record("The search of a blocked store ended with \(state.phase)")
+      return
+    }
+    #expect(refusal.status == 422)
+    #expect(refusal.code == .storeBlocked)
+    // A blocked store is the operator's setting, not the app's fault. The request's breadcrumb still records it.
+    #expect(diagnostics.faults.isEmpty, "\(diagnostics.faults)")
+    #expect(diagnostics.breadcrumbs.contains(.request(.search, .clientError)))
+  }
+
+  @Test("An image that the server can't download is left out, and diagnostics capture no fault, only the request")
+  func failedImageIsNoFault() async throws {
+    let page = try await StorePage(title: "Drum \(instance.builder.tag)", priceMinor: 900, images: 1)
+    let diagnostics = RecordingDiagnostics()
+    let (session, person) = try await signedIn(diagnostics: diagnostics)
+    var state = AddScreenState()
+    var draft = try #require(await search(page.url.absoluteString, in: session, state: &state))
+    // The store has no image at this address, so the server's download of it fails.
+    let missing = page.url.absoluteString + "-missing.png"
+    draft.images.insert(.init(url: missing, isTicked: true), at: 0)
+
+    let item = try added(await session.add(&draft))
+
+    // The server refused the missing image with `image_fetch_failed`, and the item has the other one.
+    let uploads = instance.conditioner.requests.filter { $0.isOn(Self.upload) }
+    #expect(
+      try uploads.map { try JSON(parsing: $0.body)["url"].string } == [missing, page.imageURLs[0].absoluteString])
+    let saved = try await onServer(item.id, as: person)
+    #expect(saved["images"].array?.count == 1)
+    // A failed download is the store's server, not the app's fault. The request's breadcrumb still records it.
+    #expect(diagnostics.faults.isEmpty, "\(diagnostics.faults)")
+    #expect(diagnostics.breadcrumbs.contains(.request(.uploadImage, .clientError)))
   }
 
   @Test("The Added row goes when the user leaves the screen")
