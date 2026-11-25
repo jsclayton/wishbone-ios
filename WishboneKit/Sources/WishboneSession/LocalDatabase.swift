@@ -626,6 +626,16 @@ struct LocalDatabase: Sendable {
     }
   }
 
+  /// Removes a given gift that the session's user restored: the server hides it from them from then on.
+  ///
+  /// It is the server's answer to a restore, which waits for it: a pull that started before it doesn't put the gift
+  /// back (see `Answers`).
+  func removeRestoredGift(_ id: String) async throws {
+    try await change(answering: [Answers.Rows.row(id, of: GiftRow.self)]) { database in
+      _ = try GiftRow.deleteOne(database, key: id)
+    }
+  }
+
   /// Puts the blocked stores in the place of the ones that the copy holds, in one change, when they differ. The
   /// kept `ETag` stays: `GET /versions` doesn't cover blocked stores.
   ///

@@ -61,6 +61,10 @@ public struct GivenGiftPage: Equatable, Sendable {
 
   /// Whether the list's name pushes the list's page: the viewer can see the list, and the copy holds it.
   public let linksList: Bool
+
+  /// Whom I didn't get this speaks for, from the gift's `can_restore`. Nil when the page doesn't offer it, as for
+  /// the gift's giver.
+  public let restorer: Restorer?
 }
 
 extension SessionModel {
@@ -115,7 +119,8 @@ extension SessionModel {
       giverName: giverName(of: gift),
       isGiver: isGiver,
       linksItem: itemPage(id: gift.itemID) != nil,
-      linksList: recipients != nil && listPage(id: gift.listID) != nil)
+      linksList: recipients != nil && listPage(id: gift.listID) != nil,
+      restorer: restorer(of: gift))
   }
 
   private func recipients(of gift: GiftRow) -> [UserRow]? {

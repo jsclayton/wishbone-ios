@@ -5,6 +5,10 @@ import WishboneSession
 /// occasion, how many, and the date it was given. Its giver also sees the bought mark and the note, as they were.
 /// See "A given gift" in `docs/screens/gift.md`.
 ///
+/// From `can_restore`, I didn't get this sits at the foot, after a confirmation. It waits for the server, and the
+/// page's links wait with it. When the server takes the gift back, the page closes in this window, which shows what
+/// was under it, and then the gift leaves the copy. Otherwise the row says why, in place, and nothing changes.
+///
 /// **A recipient never sees the giver's note or bought mark.** The server doesn't send them, and the page shows them
 /// only to the giver. The page never says who else claimed the item. Nothing on it goes to a system surface or into
 /// the shared container.
@@ -14,6 +18,21 @@ import WishboneSession
 struct GivenGiftPageScreen: View {
   let page: GivenGiftPage
   let session: SessionModel
+
+  /// The window's pages on the tab, so that I didn't get this closes this page.
+  @Binding var pages: [Page]
+
+  /// The page that this window keeps showing while I didn't get this waits and the page closes (see `PageScreen`).
+  @Binding var restoring: GivenGiftPage?
+
+  /// What I didn't get this asks about.
+  @State private var confirmingRestore: RestoreAsk?
+
+  /// Whether a restore waits for the server.
+  @State private var isRestoring = false
+
+  /// The words of the last restore that didn't happen.
+  @State private var restoreSaid: String?
 
   /// The width of the window, for the list's column of readable width.
   @State private var width: CGFloat = 0
@@ -28,6 +47,7 @@ struct GivenGiftPageScreen: View {
           NavigationLink(value: Page.item(id: gift.itemID)) {
             GiftHeader(gift: gift, tileUserID: tileUserID)
           }
+          .disabled(isRestoring)
         } else {
           GiftHeader(gift: gift, tileUserID: tileUserID)
         }
@@ -36,6 +56,7 @@ struct GivenGiftPageScreen: View {
           NavigationLink(value: Page.list(id: gift.listID)) {
             Text(gift.listName)
           }
+          .disabled(isRestoring)
         } else {
           Text(gift.listName)
         }
@@ -79,6 +100,30 @@ struct GivenGiftPageScreen: View {
           Text("Only you see this note.", bundle: #bundle)
         }
       }
+      if let restorer = page.restorer {
+        Section {
+          Button(role: .destructive) {
+            restoreSaid = nil
+            confirmingRestore = RestoreAsk(gift: gift, restorer: restorer)
+          } label: {
+            HStack(spacing: 8) {
+              if isRestoring {
+                ProgressView()
+                  .accessibilityHidden(true)
+              }
+              Text(RestoreWords.action(of: restorer))
+            }
+            .frame(maxWidth: .infinity)
+          }
+          .disabled(isRestoring)
+          if let restoreSaid {
+            Text(restoreSaid)
+          }
+        }
+      }
+    }
+    .didntGetThisConfirmation(of: $confirmingRestore) { ask in
+      Task { await restore(ask) }
     }
     .contentMargins(.horizontal, max(0, (width - readableWidth) / 2), for: .scrollContent)
     .onGeometryChange(for: CGFloat.self) {
@@ -91,5 +136,30 @@ struct GivenGiftPageScreen: View {
     #if os(iOS)
       .navigationBarTitleDisplayMode(.inline)
     #endif
+  }
+
+  /// I didn't get this: waits for the server. When the server takes the gift back, the page closes in this window,
+  /// before the copy drops the gift, and it keeps showing the gift while it closes. So it never shows the "not found"
+  /// page here, and VoiceOver never reads it. Otherwise the row says why, and nothing changes.
+  ///
+  /// It closes only while it is the window's top page. Its links wait with the restore, so nothing is pushed above it
+  /// meanwhile, and the close never takes another page with it. A page closed with Back meanwhile stays closed.
+  private func restore(_ ask: RestoreAsk) async {
+    guard !isRestoring else { return }
+    isRestoring = true
+    restoreSaid = nil
+    restoring = page
+    let closing = Page.gift(id: ask.gift.id)
+    var closed = false
+    let outcome = await session.restore(gift: ask.gift.id) {
+      guard pages.last == closing else { return }
+      pages.removeLast()
+      closed = true
+    }
+    isRestoring = false
+    // A page that didn't close shows what the copy holds again.
+    if !closed { restoring = nil }
+    restoreSaid = RestoreWords.result(of: outcome, address: session.session.instance)
+    if let restoreSaid { AccessibilityNotification.Announcement(restoreSaid).post() }
   }
 }
