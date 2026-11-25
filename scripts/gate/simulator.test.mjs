@@ -800,6 +800,36 @@ test('a journey runs an audit again for text called partially unsupported only w
   assert.match(audit, /static let partlyScalingWords = "Dynamic Type font sizes are partially unsupported"/);
 });
 
+test("an audit's failure says how many tries in a row had only one kind of issue, and counts only those", () => {
+  const audit = readFileSync(new URL('../../JourneyTests/Audit.swift', import.meta.url), 'utf8');
+  // Each try sets both counts: one more after a try whose every issue was of that kind, and none after any other.
+  // So a try of the other kind, or a mix, starts the count again.
+  assert.match(
+    audit,
+    /\n\s*onlyLostInARow = lostElements > 0 && lostElements == issues\.count \? onlyLostInARow \+ 1 : 0\n/,
+  );
+  assert.match(
+    audit,
+    /\n\s*onlyPartlyScalingInARow = partlyScaling > 0 && partlyScaling == issues\.count \? onlyPartlyScalingInARow \+ 1 : 0\n/,
+  );
+  // Each "times in a row" of the two retries comes from its own count, and only above one: never from a count of
+  // retries, which also counts the tries of the other kind.
+  const inARow = [...audit.matchAll(/\\\((\w+)(?: \+ 1)?\) times in a row/g)].map((match) => match[0]);
+  assert.ok(inARow.includes('\\(onlyLostInARow) times in a row'), 'the failure counts tries with only lost elements');
+  assert.ok(inARow.includes('\\(onlyPartlyScalingInARow) times in a row'), 'the failure counts tries with only partly scaling text');
+  assert.ok(!inARow.some((words) => /lostRetries|partlyScalingRetries/.test(words)), `Audit.swift counts retries: ${inARow}`);
+  assert.match(audit, /onlyLostInARow > 1\n\s*\? " The audit named an element/);
+  assert.match(audit, /onlyPartlyScalingInARow > 1\n\s*\? " The audit called the text partially unsupported/);
+});
+
+test("each audit's retry puts the issues that caused it in the log", () => {
+  const audit = readFileSync(new URL('../../JourneyTests/Audit.swift', import.meta.url), 'utf8');
+  for (const words of ['named an element that was gone from the screen', 'called only text that scales partially unsupported']) {
+    const line = new RegExp(`"The audit of \\\\\\(audited\\) ${words}\\. It runs again "\\n\\s*\\+ "\\([^\\n]*\\)\\. Its issues: \\\\\\(issues\\.joined\\(separator: "; "\\)\\)"\\)`);
+    assert.match(audit, line, `the retry for "${words}" logs its issues`);
+  }
+});
+
 test('a journey with no settings helper audits a still screen, not one still on its way in', () => {
   const audit = readFileSync(new URL('../../JourneyTests/Audit.swift', import.meta.url), 'utf8');
   const noHelper = /guard let helper else \{([\s\S]*?)\n    \}/.exec(audit)[1];

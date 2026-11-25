@@ -96,7 +96,8 @@ enum Audit {
       // still screen: a journey calls the audit as soon as the screen's first element shows, often in the push or
       // the sheet that brings the screen, and the Dynamic Type check reads text that is still moving as partly
       // unsupported. On 2026-11-23, in CI run 45280072592 attempt 2, the double-length run audited Acknowledgements
-      // just after its push, and the check called eight of its texts partially unsupported.
+      // just after its push, and the check called eight of its texts partially unsupported. The push was most likely
+      // the cause: no screenshot showed it, and a wait for a still screen meets the flake either way.
       let shown = try await stillScreen(of: app, screen, in: ownSetting)
       try await audit(
         app, screen, in: ownSetting, screenshot: shown.screenshot, rows: rowsThatLeaveTheScreen, test: test)
@@ -142,9 +143,10 @@ enum Audit {
   /// How far under the top of the content a drag down puts a row whose top went past it.
   private static let overshootMargin: CGFloat = 20
 
-  /// Drags the screen's content up until the row's top is at the top of the content, under the navigation bar, so
-  /// the row is on the screen whole. A list that stops moving before the row is in place fails. Returns the top of the content when it
-  /// scrolled, or nil when the row was on the screen whole already.
+  /// Drags the screen's content up, and back down when a drag took the row too far, until the row's top is near the
+  /// top of the content, under the navigation bar, so the row is on the screen whole. A list that stops moving
+  /// before the row is in place fails. Returns the top of the content when it scrolled, or nil when the row was on
+  /// the screen whole already.
   ///
   /// After each drag, it waits for a still screen before it reads the row's place. A drag on a slow runner can let the
   /// list coast: on 2026-11-24, in CI run 45292582179 attempt 2, a drag of 69 points moved the help sheet's list about
@@ -170,8 +172,10 @@ enum Audit {
       // top of the content, so the drag is long enough to move the list.
       let offset = element.exists ? element.frame.minY - top : nil
       let distance = offset.map { $0 < -1 ? $0 - overshootMargin : $0 } ?? window.frame.height * 0.4
-      // The row isn't on the screen whole, and its top is at the top of the content: its bottom is below the screen.
+      // When the row's top is at the top of the content, the row is on the screen whole, or its bottom is below the
+      // screen and it is too tall.
       if let offset, offset >= -1, offset < 4 {
+        if isOnScreen() { return top }
         throw AuditError("\(row) is too tall to show whole on the screen of \(screen) at the largest text size.")
       }
       let before = element.exists ? element.frame : nil
@@ -223,18 +227,27 @@ enum Audit {
     var partlyScaling = 0
     var lostRetries = 0
     var partlyScalingRetries = 0
+    // How many tries in a row, up to the last, had only issues of that kind. A try with no element on any issue
+    // and a try with only partly scaling text can come one after the other, so a count of retries is not a count
+    // of tries in a row. An issue is never of both kinds, so at most one of the two is above zero.
+    var onlyLostInARow = 0
+    var onlyPartlyScalingInARow = 0
     while true {
       try await withRetriesAfterTimeOut(audited) {
         (issues, lostElements, partlyScaling) = try performAudit(
           app, setting: setting, types: types, rows: rows, contentTop: contentTop)
       }
+      onlyLostInARow = lostElements > 0 && lostElements == issues.count ? onlyLostInARow + 1 : 0
+      onlyPartlyScalingInARow = partlyScaling > 0 && partlyScaling == issues.count ? onlyPartlyScalingInARow + 1 : 0
       // Only an audit whose every issue has no element runs again. An issue with an element is real, and a retry
       // whose audit missed it would hide it, so an audit with one fails at once.
       if lostElements > 0, lostElements == issues.count, lostRetries < lostElementRetryLimit {
         lostRetries += 1
+        // The issues go in the log, so a retry that then fails in another way, such as a screen that didn't
+        // settle, still shows what caused it.
         print(
           "The audit of \(audited) named an element that was gone from the screen. It runs again "
-            + "(\(lostRetries) of \(lostElementRetryLimit)).")
+            + "(\(lostRetries) of \(lostElementRetryLimit)). Its issues: \(issues.joined(separator: "; "))")
         await reportRetry(audited, at: "lost-element-retries")
         try await Task.sleep(for: auditRetryPause)
         continue
@@ -245,7 +258,7 @@ enum Audit {
         partlyScalingRetries += 1
         print(
           "The audit of \(audited) called only text that scales partially unsupported. It runs again "
-            + "(\(partlyScalingRetries) of \(partlyScalingRetryLimit)).")
+            + "(\(partlyScalingRetries) of \(partlyScalingRetryLimit)). Its issues: \(issues.joined(separator: "; "))")
         await reportRetry(audited, at: "partly-scaling-retries")
         try await Task.sleep(for: auditRetryPause)
         _ = try await stillScreen(of: app, screen, in: setting)
@@ -254,12 +267,14 @@ enum Audit {
       break
     }
     if !issues.isEmpty {
+      // Each suffix counts only the tries in a row whose every issue was of its kind, up to the last. A last try
+      // with a mix of issues gets neither: the log names the issues of each retry.
       let lost =
-        lostElements > 0 && lostRetries > 0
-        ? " The audit named an element that wasn't on the screen \(lostRetries + 1) times in a row." : ""
+        onlyLostInARow > 1
+        ? " The audit named an element that wasn't on the screen \(onlyLostInARow) times in a row." : ""
       let partly =
-        partlyScaling > 0 && partlyScalingRetries > 0
-        ? " The audit called the text partially unsupported \(partlyScalingRetries + 1) times in a row." : ""
+        onlyPartlyScalingInARow > 1
+        ? " The audit called the text partially unsupported \(onlyPartlyScalingInARow) times in a row." : ""
       XCTFail("\(audited): \(issues.joined(separator: "; "))\(lost)\(partly)")
     }
   }
@@ -285,9 +300,7 @@ enum Audit {
   private static func stillScreen(
     of app: XCUIApplication, _ screen: String, in setting: String
   ) async throws -> (screenshot: XCUIScreenshot, pixels: Data) {
-    try await settledScreen(
-      of: app, screen, in: Setting(name: "", label: setting, isDark: false), where: { _ in true },
-      checksAppearance: false)
+    try await settledScreen(of: app, screen, in: setting, appearance: nil, where: { _ in true })
   }
 
   /// How many times an audit runs again, after the first time, when every issue that no exception allows has no
@@ -572,8 +585,8 @@ enum Audit {
     while true {
       do {
         return try await settledScreen(
-          of: app, screen, in: setting, where: { $0 != change.before }, before: change.before,
-          unchangedLimit: resends < resendLimit ? unchangedLimit : nil)
+          of: app, screen, in: setting.label, appearance: setting, where: { $0 != change.before },
+          before: change.before, unchangedLimit: resends < resendLimit ? unchangedLimit : nil)
       } catch is Unchanged {
         resends += 1
         try await apply(setting, after: change.from, helper: change.helper)
@@ -582,6 +595,14 @@ enum Audit {
         throw AuditError("\(error.description) The change was sent again \(times).")
       }
     }
+  }
+
+  /// Waits until two screenshots in a row are the same, pass `accept`, and are in the setting's appearance. See
+  /// `settledScreen(of:_:in:appearance:where:before:unchangedLimit:)`.
+  private static func settledScreen(
+    of app: XCUIApplication, _ screen: String, in setting: Setting, where accept: (Data) -> Bool
+  ) async throws -> (screenshot: XCUIScreenshot, pixels: Data) {
+    try await settledScreen(of: app, screen, in: setting.label, appearance: setting, where: accept)
   }
 
   /// No screenshot showed the change, at the limit. See `settledScreen(of:in:after:)`.
@@ -597,8 +618,8 @@ enum Audit {
   /// alone took it as the default. Increase Contrast was then audited on the screen in dark mode, and the fade to
   /// light came during the audit: the contrast check measured grey text on grey. So the appearance is checked too.
   ///
-  /// With `checksAppearance` false, a screenshot in any appearance counts: the wait is for a still screen only, as in
-  /// a run with no helper, whose appearance is the simulator's own.
+  /// `label` is the words of the setting, for a failure. With no `appearance`, a screenshot in any appearance counts:
+  /// the wait is for a still screen only, as in a run with no helper, whose appearance is the simulator's own.
   ///
   /// `before` is the screen before a change. With `unchangedLimit`, it throws `Unchanged` when no screenshot
   /// showed the change for that long: each was exactly `before`, or not in the setting's appearance.
@@ -607,8 +628,8 @@ enum Audit {
   /// no screenshot before it: the runner stalled, so the time before is not the app's, and the screenshot before the
   /// stall is not one of two in a row. What the screen showed before the stall still counts as shown.
   private static func settledScreen(
-    of app: XCUIApplication, _ screen: String, in setting: Setting, where accept: (Data) -> Bool,
-    before: Data? = nil, unchangedLimit: Duration? = nil, checksAppearance: Bool = true
+    of app: XCUIApplication, _ screen: String, in label: String, appearance: Setting?,
+    where accept: (Data) -> Bool, before: Data? = nil, unchangedLimit: Duration? = nil
   ) async throws -> (screenshot: XCUIScreenshot, pixels: Data) {
     var started = ContinuousClock.now
     var deadline = started + settleTimeout
@@ -617,14 +638,14 @@ enum Audit {
     var inAppearance = false
     var onlyBefore = true
     while true {
-      let (screenshot, timeOuts) = try await Screenshot.take(of: app, showing: "\(screen), in \(setting.label)")
+      let (screenshot, timeOuts) = try await Screenshot.take(of: app, showing: "\(screen), in \(label)")
       if timeOuts > 0 {
         started = ContinuousClock.now
         deadline = started + settleTimeout
         last = nil
       }
       let pixels = screenshot.pngRepresentation
-      let shows = !checksAppearance || isInAppearance(screenshot, of: setting)
+      let shows = appearance.map { isInAppearance(screenshot, of: $0) } ?? true
       if pixels == last, shows, accept(pixels) { return (screenshot, pixels) }
       last = pixels
       inAppearance = inAppearance || shows
@@ -639,13 +660,13 @@ enum Audit {
       guard ContinuousClock.now < deadline else {
         let unchanged =
           if moved || before == nil {
-            inAppearance ? "" : " It never showed \(setting.isDark ? "dark" : "light") appearance."
+            inAppearance ? "" : " It never showed \(appearance?.isDark == true ? "dark" : "light") appearance."
           } else if onlyBefore {
             " It showed the screen as it was before the change."
           } else {
-            " It never showed the change in \(setting.isDark ? "dark" : "light") appearance."
+            " It never showed the change in \(appearance?.isDark == true ? "dark" : "light") appearance."
           }
-        throw AuditError("The screen didn't settle in \(setting.label) within \(settleTimeout).\(unchanged)")
+        throw AuditError("The screen didn't settle in \(label) within \(settleTimeout).\(unchanged)")
       }
       try await Task.sleep(for: .milliseconds(250))
     }

@@ -131,10 +131,20 @@ struct NetworkConditionerTests {
   @Test("A wait for more than one held request returns when the hold has held them all")
   func waitsForEveryHeldRequest() async throws {
     let hold = conditioner.hold(Route("GET", "/health"), at: .request)
+    let heldThree = Mutex(false)
+    let waiting = Task {
+      await hold.waitUntilHeld(3)
+      heldThree.withLock { $0 = true }
+    }
     async let first = TestHTTP.send("GET", conditioner.url("/health"))
     async let second = TestHTTP.send("GET", conditioner.url("/health"))
+    await hold.waitUntilHeld(2)
+    // A wait for three that returned at two would set the flag about now, so the test gives it a moment.
+    try await Task.sleep(for: .milliseconds(200))
+    #expect(!heldThree.withLock { $0 })
     async let third = TestHTTP.send("GET", conditioner.url("/health"))
-    await hold.waitUntilHeld(3)
+    await waiting.value
+    #expect(heldThree.withLock { $0 })
     #expect(conditioner.requests.count == 3)
     hold.release()
     #expect(try await [first.status, second.status, third.status] == [200, 200, 200])
@@ -231,6 +241,8 @@ struct NetworkConditionerTests {
         Task { try? await Self.status(of: url) }
       }
       await hold.waitUntilHeld(requests)
+      // A wait that a time limit cancelled returns at once, so the round ends then too.
+      try Task.checkCancellation()
       hold.release()
       // The stop comes a little later in each round, so in some round it finds the forwards at each of their steps.
       for _ in 0..<round { await Task.yield() }
