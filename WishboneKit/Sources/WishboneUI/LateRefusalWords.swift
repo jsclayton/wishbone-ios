@@ -47,6 +47,10 @@ public enum LateRefusalWords {
       return String(
         localized: "Keeping \(refusal.title): \(reason)", bundle: #bundle,
         comment: "A late refusal of Keep it: the item's title, then why the change wasn't saved")
+    case .setOccasion:
+      return String(
+        localized: "The occasion of \(refusal.title): \(reason)", bundle: #bundle,
+        comment: "A late refusal of a pick of the gift's occasion: the item's title, then why the change wasn't saved")
     case .acknowledge:
       return String(
         localized: "The change to \(refusal.title): \(reason)", bundle: #bundle,

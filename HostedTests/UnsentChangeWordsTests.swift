@@ -74,4 +74,18 @@ struct UnsentChangeWordsTests {
     #expect(LateRefusalWords.line(keep) == "Keeping Kite: You can't do this any more.")
     #expect(LateRefusalWords.line(ok) == "The change to Kite: You can't do this any more.")
   }
+
+  @Test("A late refusal of a pick of the occasion names the item, with the words for occasion_not_allowed")
+  func lateRefusalOfAnOccasion() {
+    let refusal = APIError.Refusal(
+      route: .updateGift, status: 422, code: .occasionNotAllowed, detail: "The server's words")
+    let pick = LateRefusal(
+      id: 1,
+      action: .setOccasion(
+        giftID: "15", occasion: PickedOccasion(id: "7", kind: .custom, name: "Recital", date: "2040-06-01")),
+      title: "Kite", refusal: refusal)
+    #expect(
+      LateRefusalWords.line(pick)
+        == "The occasion of Kite: That occasion can't be used for this gift. Pick another.")
+  }
 }

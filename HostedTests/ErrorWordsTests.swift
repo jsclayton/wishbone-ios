@@ -34,6 +34,7 @@ struct ErrorWordsTests {
       "recipient_cannot_claim": "You can't claim on a list that is for you.",
       "quantity_raise_not_allowed": "You can only lower how many, because this list is now for you too.",
       "occasion_not_allowed": "That occasion can't be used for this gift. Pick another.",
+      "occasion_locked": "The occasion for this gift can't be changed.",
       "gift_given": "This gift was already given.",
     ]
     for (code, expected) in table {

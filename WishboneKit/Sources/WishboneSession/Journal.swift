@@ -61,6 +61,28 @@ public struct UnsentChange: Sendable, Equatable, Identifiable {
     /// OK, or Keep it: the giver answers one flag of their open gift, `POST /gifts/{id}/acknowledge` with only that
     /// flag's code. Keep it is the answer to `removed`. The code is the server's text, such as `changed`.
     case acknowledge(giftID: String, flag: String)
+
+    /// Pick the occasion: `PATCH /gifts/{id}` with only `occasion_id`. When the giver has another open gift on the
+    /// item for that occasion, the server merges the two, and its answer is the gift that stays.
+    case setOccasion(giftID: String, occasion: PickedOccasion)
+  }
+}
+
+/// An occasion that a giver picked for a gift, with what the gift shows until the server answers: its kind and
+/// name, and its next date when it was picked. See "Pick the occasion" in `docs/screens/gift.md`.
+public struct PickedOccasion: Sendable, Equatable, Codable {
+  public let id: String
+  public let kind: OccasionKind
+  public let name: String
+
+  /// The occasion's next date when the giver picked it, as `YYYY-MM-DD`: the gift's occasion date.
+  public let date: String
+
+  public init(id: String, kind: OccasionKind, name: String, date: String) {
+    self.id = id
+    self.kind = kind
+    self.name = name
+    self.date = date
   }
 }
 
@@ -124,6 +146,7 @@ struct UnsentChangeRow: Codable, Sendable, FetchableRecord, MutablePersistableRe
     case lowerQuantity
     case unclaim
     case acknowledge
+    case setOccasion
   }
 
   mutating func didInsert(_ inserted: InsertionSuccess) {
@@ -263,22 +286,39 @@ extension LocalDatabase {
   // MARK: - Over the copy
 
   /// The gifts, each with the unsent changes to it applied in order over its row. An unclaimed gift is left out.
-  /// `now` is when a gift is said to be given within 14 days, for `needs_attention` after an answer to a flag.
+  /// `now` is when a gift is said to be given within 14 days, for `needs_attention` after an answer to a flag or a
+  /// pick of the occasion.
+  ///
+  /// A pick of the occasion for which the giver has another open gift on the item merges the two, as the server
+  /// does: the other gift takes this one in, and this one is left out. See "Occasions for a gift" in the server's
+  /// spec.
   static func applying(_ changes: [UnsentChange], to gifts: [GiftRow], now: Date = .now) -> [GiftRow] {
     guard !changes.isEmpty else { return gifts }
-    return gifts.compactMap { gift in
-      changes.reduce(Optional(gift)) { gift, change in
-        guard let gift, change.action.targetID == gift.id else { return gift }
-        return switch change.action {
-        case .markBought(_, let isBought): gift.with(isBought: .shown(isBought))
-        case .setFromLabel(_, let fromLabel): gift.with(fromLabel: fromLabel)
-        case .setNote(_, let note): gift.with(note: .shown(note))
-        case .lowerQuantity(_, let quantity): gift.with(quantity: quantity)
-        case .unclaim: nil
-        case .acknowledge(_, let flag): gift.answering(flag, now: now)
+    var rows = gifts
+    var picked = false
+    for change in changes {
+      guard let index = rows.firstIndex(where: { $0.id == change.action.targetID }) else { continue }
+      let gift = rows[index]
+      switch change.action {
+      case .markBought(_, let isBought): rows[index] = gift.with(isBought: .shown(isBought))
+      case .setFromLabel(_, let fromLabel): rows[index] = gift.with(fromLabel: fromLabel)
+      case .setNote(_, let note): rows[index] = gift.with(note: .shown(note))
+      case .lowerQuantity(_, let quantity): rows[index] = gift.with(quantity: quantity)
+      case .unclaim: rows.remove(at: index)
+      case .acknowledge(_, let flag): rows[index] = gift.answering(flag, now: now)
+      case .setOccasion(_, let occasion):
+        picked = true
+        if let staying = rows.firstIndex(where: { gift.mergesInto($0, for: occasion.id) }) {
+          rows[staying] = rows[staying].takingIn(gift, now: now)
+          rows.remove(at: index)
+        } else {
+          rows[index] = gift.moved(to: occasion, now: now)
         }
       }
     }
+    // A pick moves the reveal, so the soonest reveal is first again, as the copy reads the rows.
+    guard picked else { return rows }
+    return rows.sorted { $0.revealAt != $1.revealAt ? $0.revealAt < $1.revealAt : $0.id < $1.id }
   }
 
   /// Every unsent change, in the journal's order.
@@ -299,7 +339,7 @@ extension UnsentChange.Action {
   var targetID: String {
     switch self {
     case .markBought(let id, _), .setFromLabel(let id, _), .setNote(let id, _), .lowerQuantity(let id, _),
-      .unclaim(let id), .acknowledge(let id, _):
+      .unclaim(let id), .acknowledge(let id, _), .setOccasion(let id, _):
       id
     }
   }
@@ -313,6 +353,7 @@ extension UnsentChange.Action {
     case .setFromLabel(_, let fromLabel): GiftChanges(fromLabel: fromLabel ?? "")
     case .setNote(_, let note): GiftChanges(note: note ?? "")
     case .lowerQuantity(_, let quantity): GiftChanges(quantity: quantity)
+    case .setOccasion(_, let occasion): GiftChanges(occasionID: occasion.id)
     case .unclaim, .acknowledge: GiftChanges()
     }
   }
@@ -325,17 +366,18 @@ extension UnsentChange.Action {
     case .lowerQuantity: .lowerQuantity
     case .unclaim: .unclaim
     case .acknowledge: .acknowledge
+    case .setOccasion: .setOccasion
     }
   }
 
-  /// The patch as the journal keeps it: the JSON that the change sends. An answer to a flag keeps its code, and an
-  /// unclaim keeps an empty object.
+  /// The patch as the journal keeps it: the JSON that the change sends. An answer to a flag keeps its code, a pick
+  /// of the occasion keeps what it shows too, and an unclaim keeps an empty object.
   fileprivate func patch() throws -> String {
     let data =
-      if case .acknowledge(_, let flag) = self {
-        try JSONEncoder().encode(FlagAnswer(codes: [flag]))
-      } else {
-        try JSONEncoder().encode(giftChanges)
+      switch self {
+      case .acknowledge(_, let flag): try JSONEncoder().encode(FlagAnswer(codes: [flag]))
+      case .setOccasion(_, let occasion): try JSONEncoder().encode(OccasionPick(occasion))
+      default: try JSONEncoder().encode(giftChanges)
       }
     return String(decoding: data, as: UTF8.self)
   }
@@ -351,6 +393,10 @@ extension UnsentChange.Action {
         answer.codes.count == 1, let flag = answer.codes.first
       else { return nil }
       self = .acknowledge(giftID: targetID, flag: flag)
+      return
+    case .setOccasion:
+      guard let pick = try? JSONDecoder().decode(OccasionPick.self, from: Data(patch.utf8)) else { return nil }
+      self = .setOccasion(giftID: targetID, occasion: pick.occasion)
       return
     case .markBought, .setFromLabel, .setNote, .lowerQuantity:
       break
@@ -369,7 +415,7 @@ extension UnsentChange.Action {
     case .lowerQuantity:
       guard let quantity = changes.quantity else { return nil }
       self = .lowerQuantity(giftID: targetID, quantity: quantity)
-    case .unclaim, .acknowledge:
+    case .unclaim, .acknowledge, .setOccasion:
       return nil
     }
   }
@@ -378,6 +424,33 @@ extension UnsentChange.Action {
 /// An answer to a flag, as the journal keeps it: the codes that it clears, which is always one.
 private struct FlagAnswer: Codable {
   let codes: [String]
+}
+
+/// A pick of the occasion, as the journal keeps it: the `occasion_id` that it sends, and the kind, name and date
+/// that the gift shows until the server answers.
+private struct OccasionPick: Codable {
+  let occasionID: String
+  let kind: String
+  let name: String
+  let date: String
+
+  enum CodingKeys: String, CodingKey {
+    case occasionID = "occasion_id"
+    case kind
+    case name
+    case date
+  }
+
+  init(_ occasion: PickedOccasion) {
+    occasionID = occasion.id
+    kind = occasion.kind.rawValue
+    name = occasion.name
+    date = occasion.date
+  }
+
+  var occasion: PickedOccasion {
+    PickedOccasion(id: occasionID, kind: OccasionKind(rawValue: kind), name: name, date: date)
+  }
 }
 
 extension UnsentChange {
@@ -466,6 +539,91 @@ extension GiftRow {
       occasionDate: occasionDate, revealAt: revealAt, givenAt: givenAt, isBought: isBought, note: note,
       flags: .shown(left), needsAttention: needsAttention, createdAt: createdAt, canEdit: canEdit,
       canDelete: canDelete, canRaiseQuantity: canRaiseQuantity, canAcknowledge: canAcknowledge && !left.isEmpty,
+      canRestore: canRestore, canAddAgain: canAddAgain, version: version)
+  }
+
+  /// Whether a pick of the occasion for this gift merges it into the other gift: the giver's other open gift on the
+  /// same item, for that occasion.
+  fileprivate func mergesInto(_ other: GiftRow, for occasionID: String) -> Bool {
+    other.id != id && other.state == .open && state == .open && other.giverID == giverID && other.itemID == itemID
+      && other.occasion?.id == occasionID
+  }
+
+  /// The gift moved to the picked occasion: its name, its date, and the reveal that follows it.
+  ///
+  /// The reveal is the latest midnight, among the recipients' time zones, at the start of the day after the
+  /// occasion. The copy doesn't hold every recipient's zone, but the gift's reveal now says how far that midnight is
+  /// from the day's start in UTC. The recipients stay the same, so the new reveal is as far from the new day's
+  /// start. A change of daylight saving time between the two can move it by an hour, until the server's answer
+  /// comes.
+  fileprivate func moved(to occasion: PickedOccasion, now: Date) -> GiftRow {
+    let revealAt =
+      switch (Self.dayAfter(occasionDate), Self.dayAfter(occasion.date)) {
+      case (let old?, let new?): new.addingTimeInterval(self.revealAt.timeIntervalSince(old))
+      case (nil, let new?): new
+      case (_, nil): self.revealAt
+      }
+    return with(
+      quantity: quantity, fromLabel: fromLabel, note: note,
+      occasion: OccasionSummary(id: occasion.id, kind: occasion.kind, name: occasion.name),
+      occasionName: occasion.name, occasionDate: occasion.date, revealAt: revealAt, flags: flags,
+      canAcknowledge: canAcknowledge, now: now)
+  }
+
+  /// This gift with the moving gift taken in, as the server merges them: its ID, bought mark and from label stay,
+  /// or it takes the moving gift's from label when it has none. The quantities add up, the moving gift's note goes
+  /// at the end of this one's, on a new line, and its flags join this one's.
+  fileprivate func takingIn(_ moving: GiftRow, now: Date) -> GiftRow {
+    let note: Hideable<String> =
+      switch (self.note, moving.note) {
+      case (.shown(let staying?), .shown(let added?)): .shown(staying + "\n" + added)
+      case (.shown(nil), .shown(let added?)): .shown(added)
+      default: self.note
+      }
+    let flags: Hideable<[Flag]> =
+      switch (self.flags, moving.flags) {
+      case (.shown(let staying), .shown(let added)):
+        .shown((staying ?? []) + (added ?? []).filter { !(staying ?? []).contains($0) })
+      default: self.flags
+      }
+    return with(
+      quantity: quantity + moving.quantity, fromLabel: fromLabel ?? moving.fromLabel, note: note,
+      occasion: occasion, occasionName: occasionName, occasionDate: occasionDate, revealAt: revealAt, flags: flags,
+      canAcknowledge: canAcknowledge || moving.canAcknowledge, now: now)
+  }
+
+  /// The start of the day after a `YYYY-MM-DD` date, in UTC. Nil for text that is not such a date.
+  private static func dayAfter(_ text: String) -> Date? {
+    let parts = text.split(separator: "-").compactMap { Int($0) }
+    guard parts.count == 3 else { return nil }
+    var utc = Calendar(identifier: .gregorian)
+    utc.timeZone = .gmt
+    return utc.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2] + 1))
+  }
+
+  /// The gift with its occasion, its reveal, how many, its text fields and its flags set, as a pick of the occasion
+  /// shows them. It needs attention while a changed or a removed flag is left, or while it isn't bought and is given
+  /// within 14 days, as the server says.
+  private func with(
+    quantity: Int, fromLabel: String?, note: Hideable<String>, occasion: OccasionSummary?, occasionName: String?,
+    occasionDate: String, revealAt: Date, flags: Hideable<[Flag]>, canAcknowledge: Bool, now: Date
+  ) -> GiftRow {
+    let needsAttention: Hideable<Bool> =
+      switch self.needsAttention {
+      case .hidden: .hidden
+      case .shown:
+        .shown(
+          (flags.value ?? []).contains { $0.code == "changed" || $0.code == "removed" }
+            || (isBought.value != true && revealAt <= now.addingTimeInterval(14 * 24 * 60 * 60)))
+      }
+    return GiftRow(
+      id: id, state: state, quantity: quantity, itemID: itemID, itemTitle: itemTitle,
+      itemPrimaryImage: itemPrimaryImage, listID: listID, listName: listName, title: title, image: image,
+      priceMinor: priceMinor, topPriceMinor: topPriceMinor, currency: currency, recipientIDs: recipientIDs,
+      giverID: giverID, giverName: giverName, fromLabel: fromLabel, occasion: occasion, occasionName: occasionName,
+      occasionDate: occasionDate, revealAt: revealAt, givenAt: givenAt, isBought: isBought, note: note,
+      flags: flags, needsAttention: needsAttention, createdAt: createdAt, canEdit: canEdit, canDelete: canDelete,
+      canRaiseQuantity: canRaiseQuantity, canAcknowledge: canAcknowledge && !(flags.value ?? []).isEmpty,
       canRestore: canRestore, canAddAgain: canAddAgain, version: version)
   }
 

@@ -295,11 +295,12 @@ public struct APIClient: Sendable {
     try await rows { cursor in .page(of: .gifts, filters: ["item_id": itemID], cursor: cursor) }
   }
 
-  /// `POST /items/{id}/gifts`: claims one of the item, for the soonest occasion that the giver may pick. Gives back
-  /// the gift, with the version that the answer carried. A giver who has a gift on the item for that occasion
-  /// already gets a 409 `already_claimed`, and a giver who comes after the last one a 409 `item_fully_claimed`.
-  public func claim(_ itemID: String) async throws(APIError) -> Versioned<Gift> {
-    try await versioned(.claim(itemID))
+  /// `POST /items/{id}/gifts`: claims one of the item, for the occasion, or for the soonest occasion that the giver
+  /// may pick when `occasionID` is nil. Gives back the gift, with the version that the answer carried. A giver who
+  /// has a gift on the item for that occasion already gets a 409 `already_claimed`, a giver who comes after the last
+  /// one a 409 `item_fully_claimed`, and an occasion that the giver may not pick is a 422 `occasion_not_allowed`.
+  public func claim(_ itemID: String, occasionID: String? = nil) async throws(APIError) -> Versioned<Gift> {
+    try await versioned(.claim(itemID, occasionID: occasionID))
   }
 
   /// `PATCH /gifts/{id}`: a merge patch of the giver's open gift, with no `If-Match`. `key` is the unsent change's

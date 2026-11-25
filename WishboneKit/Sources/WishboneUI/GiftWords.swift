@@ -58,6 +58,24 @@ public enum GiftWords {
     }
   }
 
+  /// An occasion that the giver can pick, in the Occasion row's menu: "Morgan's birthday", "Morgan's Recital", or
+  /// "Holiday" for a shared occasion. `person` is the name of the occasion's user, nil for a shared occasion or one
+  /// whose user is not in the copy.
+  public static func pickable(kind: OccasionKind, name: String, person: String?) -> String {
+    guard let person, kind != .shared else { return name }
+    if kind == .birthday {
+      return String(localized: "\(person)'s birthday", bundle: #bundle)
+    }
+    return String(
+      localized: "\(person)'s \(name)", bundle: #bundle,
+      comment: "The first is the person's name. The second is the name of their occasion, such as graduation.")
+  }
+
+  /// "Get another for a different occasion": the row that claims one more of the item, for another occasion.
+  public static var getAnother: String {
+    String(localized: "Get another for a different occasion", bundle: #bundle)
+  }
+
   /// "Hidden until Dec 26": the gift's reveal date.
   public static func hiddenUntil(_ date: Date) -> String {
     let day = date.formatted(.dateTime.month(.abbreviated).day())
