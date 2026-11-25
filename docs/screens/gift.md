@@ -34,7 +34,7 @@ One gift in full. While a gift is open, its giver marks it bought here, changes 
 4. For its giver only: the bought mark and the private note, as they were.
 5. For a recipient, or a recipient's parent: **I didn't get this** and **Add again**.
 
-**Provisional.** Plain default: a system form. The image and title are the header, the flags are the first section, and each field is a row. The buttons at the foot are full-width rows. Return in the Note adds a line, so a Done key above the keyboard ends its editing.
+**Provisional.** Plain default: a system form. The image and title are the header, the flags are the first section, and each field is a row. The buttons at the foot are full-width rows. Return in the Note adds a line, so a Done key above the keyboard ends its editing. The From field wraps, and its Return ends its editing. At the largest text sizes, a field's prompt doesn't fit on its one line, so the From field's prompt is the footer of its section. The values and labels are in the primary color.
 
 ## States
 
