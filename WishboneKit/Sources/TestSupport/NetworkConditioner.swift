@@ -364,8 +364,11 @@ extension NetworkConditioner {
 
     /// Starts to listen on a free port of this machine, and returns the port.
     func start(with parameters: NWParameters) async throws -> Int {
-      // Only this machine can connect.
-      parameters.acceptLocalOnly = true
+      // Only this machine can connect: the listener takes a connection only on the loopback interface. Not with
+      // `acceptLocalOnly`, which works on macOS, but in the iOS simulator refuses every connection, also one from
+      // its own process, after the client connected: `URLSession` there reports `networkConnectionLost`. A journey
+      // runs the conditioner in the simulator.
+      parameters.requiredInterfaceType = .loopback
       let listener = try NWListener(using: parameters, on: .any)
       listener.newConnectionHandler = { [self] connection in accept(connection) }
       state.withLock { $0.listener = listener }
