@@ -52,6 +52,7 @@ See [ADR 0003](adr/0003-one-session-model-is-shared-by-every-window-with-no-view
 - One `Device` for the app, `@Observable` and `@MainActor`. It holds one session at most: it signs in with a login link, publishes what the signed-out screen shows, and holds the session model while it is signed in. The app's composition root builds it once, and puts it in the environment of every window scene.
 - One `SessionModel` for each signed-in session, `@Observable` and `@MainActor`. The `Device` builds it at sign-in, and at launch from the session keychain. Every window reads the same one.
 - The session model owns the local database. Screens read only the database, through the session model, and never call the API client.
+- The session model publishes the copy through one observation (`CopyObservation.swift`). Inside each commit, it reads again only the parts of the snapshot whose tables the change wrote, and it publishes the snapshots in the order of the changes. A test holds each snapshot to the whole copy as its change left it.
 - Every write goes through the session model: it records the change, applies it to the copy, and sends it. A claim and a raise of a gift's quantity wait for the server instead.
 - Sign-out, or the API's own 401, discards the session model, the database, and its unsent changes.
 - The share extension builds its own session model, with a database in memory.
