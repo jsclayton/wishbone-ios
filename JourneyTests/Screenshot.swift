@@ -12,6 +12,13 @@ nonisolated class JourneyTestCase: XCTestCase {
     Screenshot.reset()
   }
 
+  /// Each test starts in the default settings, also after a test that failed in another setting of the audit. See
+  /// `Audit.startInDefaultSettings`.
+  override func setUp() async throws {
+    try await super.setUp()
+    try await Audit.startInDefaultSettings()
+  }
+
   override func record(_ issue: XCTIssue) {
     if Screenshot.catches(issue) { return }
     super.record(issue)
