@@ -5,6 +5,10 @@ import WishboneSession
 /// occasion, how many, and the date it was given. Its giver also sees the bought mark and the note, as they were.
 /// See "A given gift" in `docs/screens/gift.md`.
 ///
+/// From `can_restore`, I didn't get this sits at the foot, after a confirmation. It waits for the server. After it,
+/// the gift leaves the copy, and the page closes in this window, which shows what was under it. Otherwise the row
+/// says why, in place, and nothing changes.
+///
 /// **A recipient never sees the giver's note or bought mark.** The server doesn't send them, and the page shows them
 /// only to the giver. The page never says who else claimed the item. Nothing on it goes to a system surface or into
 /// the shared container.
@@ -14,6 +18,18 @@ import WishboneSession
 struct GivenGiftPageScreen: View {
   let page: GivenGiftPage
   let session: SessionModel
+
+  /// The window's pages on the tab, so that I didn't get this closes this page.
+  @Binding var pages: [Page]
+
+  /// What I didn't get this asks about.
+  @State private var confirmingRestore: RestoreAsk?
+
+  /// Whether a restore waits for the server.
+  @State private var isRestoring = false
+
+  /// The words of the last restore that didn't happen.
+  @State private var restoreSaid: String?
 
   /// The width of the window, for the list's column of readable width.
   @State private var width: CGFloat = 0
@@ -79,6 +95,30 @@ struct GivenGiftPageScreen: View {
           Text("Only you see this note.", bundle: #bundle)
         }
       }
+      if let restorer = page.restorer {
+        Section {
+          Button(role: .destructive) {
+            restoreSaid = nil
+            confirmingRestore = RestoreAsk(gift: gift, restorer: restorer)
+          } label: {
+            HStack(spacing: 8) {
+              if isRestoring {
+                ProgressView()
+                  .accessibilityHidden(true)
+              }
+              Text(RestoreWords.action(of: restorer))
+            }
+            .frame(maxWidth: .infinity)
+          }
+          .disabled(isRestoring)
+          if let restoreSaid {
+            Text(restoreSaid)
+          }
+        }
+      }
+    }
+    .didntGetThisConfirmation(of: $confirmingRestore) { ask in
+      Task { await restore(ask) }
     }
     .contentMargins(.horizontal, max(0, (width - readableWidth) / 2), for: .scrollContent)
     .onGeometryChange(for: CGFloat.self) {
@@ -91,5 +131,20 @@ struct GivenGiftPageScreen: View {
     #if os(iOS)
       .navigationBarTitleDisplayMode(.inline)
     #endif
+  }
+
+  /// I didn't get this: waits for the server. After a restore, the page closes in this window, which shows what was
+  /// under it. Otherwise the row says why, and nothing changes.
+  private func restore(_ ask: RestoreAsk) async {
+    guard !isRestoring else { return }
+    isRestoring = true
+    restoreSaid = nil
+    let outcome = await session.restore(gift: ask.gift.id)
+    isRestoring = false
+    if outcome == .restored, let index = pages.lastIndex(of: .gift(id: ask.gift.id)) {
+      pages.removeSubrange(index...)
+    }
+    restoreSaid = RestoreWords.result(of: outcome, address: session.session.instance)
+    if let restoreSaid { AccessibilityNotification.Announcement(restoreSaid).post() }
   }
 }

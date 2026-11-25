@@ -23,6 +23,12 @@ struct GiftsScreen: View {
   /// The gift that I won't get this asks about.
   @State private var confirmingUnclaim: GiftRow?
 
+  /// The gift that I didn't get this asks about.
+  @State private var confirmingRestore: RestoreAsk?
+
+  /// The words of the last I didn't get this that didn't happen, in an alert.
+  @State private var restoreSaid: String?
+
   /// The width of the window, for the list's column of readable width.
   @State private var width: CGFloat = 0
   @ScaledMetric(relativeTo: .body) private var readableWidth: CGFloat = 640
@@ -102,8 +108,8 @@ struct GiftsScreen: View {
       ForEach(groups) { group in
         Section {
           ForEach(group.gifts) { row in
-            NavigationLink(value: Page.gift(id: row.id)) {
-              ReceivedLabel(row: row, tileUserID: session.session.userID)
+            ReceivedRow(row: row, tileUserID: session.session.userID) {
+              confirmingRestore = RestoreAsk(gift: row.gift, restorer: .sessionUser)
             }
           }
         } header: {
@@ -111,10 +117,33 @@ struct GiftsScreen: View {
         }
       }
     }
+    .didntGetThisConfirmation(of: $confirmingRestore) { ask in
+      Task { await restore(ask) }
+    }
+    .alert(
+      restoreSaid ?? "",
+      isPresented: Binding {
+        restoreSaid != nil
+      } set: {
+        if !$0 { restoreSaid = nil }
+      }
+    ) {
+      Button(role: .cancel) {
+      } label: {
+        Text("OK", bundle: #bundle)
+      }
+    }
     .sharedStates(of: session, hasRows: !groups.isEmpty) {
       PartIsEmpty(
         words: String(localized: "Nothing received yet. Gifts show here the day after an occasion.", bundle: #bundle))
     }
+  }
+
+  /// I didn't get this, from a Received row: waits for the server, and the row goes. Otherwise an alert says why,
+  /// and nothing changes.
+  private func restore(_ ask: RestoreAsk) async {
+    let outcome = await session.restore(gift: ask.gift.id)
+    restoreSaid = RestoreWords.result(of: outcome, address: session.session.instance)
   }
 
   /// The control that picks the part.
@@ -365,6 +394,38 @@ private struct GivenLabel: View {
       }
       if let givenAt = row.gift.givenAt {
         Text(GiftWords.given(givenAt))
+      }
+    }
+  }
+}
+
+/// A Received row: the gift, which opens the gift's page. From `can_restore`, I didn't get this is in its context
+/// menu and its accessibility actions, after a confirmation. Its actions are Open and I didn't get this.
+private struct ReceivedRow: View {
+  let row: GiftHistoryRow
+
+  /// The user whose color the tile takes: the recipient.
+  let tileUserID: String
+
+  /// Asks to confirm I didn't get this.
+  let didntGetThis: () -> Void
+
+  var body: some View {
+    let canRestore = row.gift.canRestore
+    let words = RestoreWords.action(of: .sessionUser)
+    NavigationLink(value: Page.gift(id: row.id)) {
+      ReceivedLabel(row: row, tileUserID: tileUserID)
+    }
+    .accessibilityActions {
+      if canRestore {
+        Button(words, action: didntGetThis)
+      }
+    }
+    .contextMenu {
+      if canRestore {
+        Button(role: .destructive, action: didntGetThis) {
+          Label(words, systemImage: "arrow.uturn.backward")
+        }
       }
     }
   }

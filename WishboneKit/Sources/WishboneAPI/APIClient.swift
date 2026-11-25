@@ -325,6 +325,13 @@ public struct APIClient: Sendable {
     try await versioned(.acknowledgeGift(id, codes: codes, key: key))
   }
 
+  /// `POST /gifts/{id}/restore`: I didn't get this. A recipient of a given gift, or their parent, says that it
+  /// didn't arrive. The gift opens again for its giver, or is deleted when the giver is deleted or deactivated, and
+  /// is a 404 for the caller from then on. An open gift, or one the caller gave, is a 403.
+  public func restoreGift(_ id: String) async throws(APIError) {
+    _ = try await load(.restoreGift(id))
+  }
+
   /// `GET /blocked-stores`: every blocked store, each with its version. Only the admin can read it.
   public func blockedStores() async throws(APIError) -> FetchedCollection<Versioned<BlockedStore>> {
     try await rows { cursor in .page(of: .blockedStores, cursor: cursor) }

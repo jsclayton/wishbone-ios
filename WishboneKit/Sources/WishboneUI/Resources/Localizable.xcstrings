@@ -17,6 +17,20 @@
         }
       }
     },
+    "%@ didn't get %@?" : {
+      "comment" : "The confirmation of I didn't get this, for a child: the child's name, then the item's title",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ didn't get %2$@?"
+          }
+        }
+      }
+    },
+    "%@ didn't get this" : {
+      "comment" : "I didn't get this, for a child: the child's name"
+    },
     "%@ hasn't added anything yet." : {
 
     },
@@ -345,6 +359,9 @@
     "Can't reach %@" : {
 
     },
+    "Can't reach %@. Nothing changed." : {
+
+    },
     "Can't reach %@. Nothing was claimed." : {
 
     },
@@ -524,6 +541,9 @@
         }
       }
     },
+    "I didn't get this" : {
+
+    },
     "I don't have a link" : {
 
     },
@@ -545,6 +565,9 @@
 
     },
     "If Wishbone crashes, it sends a report to its developer, never anything from your family's lists." : {
+
+    },
+    "It leaves your Received. If the giver still uses Wishbone, they see that, and can give it again." : {
 
     },
     "It never sends anything from your family's lists, names, birthdays, or the address of your Wishbone." : {
@@ -1221,6 +1244,9 @@
           }
         }
       }
+    },
+    "You didn't get %@?" : {
+      "comment" : "The confirmation of I didn't get this: the item's title"
     },
     "You need a new login link to sign in again." : {
 
