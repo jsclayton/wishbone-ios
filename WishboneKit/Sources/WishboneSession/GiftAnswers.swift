@@ -13,6 +13,22 @@ import WishboneAPI
 // **Only the giver sees an open gift.** Nothing here says who else claimed the item, and nothing goes to a system
 // surface or into the shared container.
 
+extension GiftRow.Flag {
+  /// The flag's code, as the server writes it: what an answer to the flag names.
+  var code: String {
+    switch self {
+    case .changed: "changed"
+    case .removed: "removed"
+    case .moved: "moved"
+    case .occasionMoved: "occasion_moved"
+    case .noLongerShared: "no_longer_shared"
+    case .restored: "restored"
+    case .recipientsChanged: "recipients_changed"
+    case .unknown(let code): code
+    }
+  }
+}
+
 extension GivingGift.Flag {
   /// The flag's code, as the server writes it: what its answer names.
   public var code: String {

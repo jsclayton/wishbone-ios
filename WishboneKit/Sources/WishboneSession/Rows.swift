@@ -414,20 +414,6 @@ public struct GiftRow: Codable, Sendable, Equatable, Identifiable, FetchableReco
 
     /// A code that the app doesn't know, with its text.
     case unknown(String)
-
-    /// The flag's code, as the server writes it: what an answer to the flag names.
-    public var code: String {
-      switch self {
-      case .changed: "changed"
-      case .removed: "removed"
-      case .moved: "moved"
-      case .occasionMoved: "occasion_moved"
-      case .noLongerShared: "no_longer_shared"
-      case .restored: "restored"
-      case .recipientsChanged: "recipients_changed"
-      case .unknown(let code): code
-      }
-    }
   }
 }
 
