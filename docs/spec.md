@@ -955,7 +955,7 @@ Every new error type picks its side: captured, a breadcrumb, or never.
   - a response that the client can't decode (the path template and the key path that failed, never a value), except `GET /health`, where an answer that can't be decoded means no Wishbone is there (the same as an answer that isn't the API's)
   - an unsent change refused late, or any 400 or 422 refusal of a write that the app sent (the method, the path template, and the server's error code, never the body)
   - an error code that is not in the app's list (the code only)
-- **Never captured:** unreachable, offline, timed out, cancelled, the API's own 401, a 404 or 410 for something deleted elsewhere, a version block, and a server 5xx. A 5xx is the operator's server, not the app's fault.
+- **Never captured:** unreachable, offline, timed out, cancelled, the API's own 401, a 404 or 410 for something deleted elsewhere, a version block, a server 5xx, a blocked store (`store_blocked`), and a store's image that the server couldn't download (`image_fetch_failed`). A 5xx is the operator's server, a blocked store is the operator's setting, and a failed download is the store's server: none is the app's fault.
 - **Breadcrumbs, typed and made by the app only:**
   - one for each request (the method, the path template, and the status class)
   - the start and outcome of each sync
