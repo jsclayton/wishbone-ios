@@ -32,6 +32,7 @@ struct ErrorWordsTests {
       "login_link_invalid": "That link was already used, or it has expired. Ask for a new one.",
       "item_fully_claimed": "Someone else just got this.",
       "recipient_cannot_claim": "You can't claim on a list that is for you.",
+      "quantity_raise_not_allowed": "You can only lower how many, because this list is now for you too.",
       "occasion_not_allowed": "That occasion can't be used for this gift. Pick another.",
     ]
     for (code, expected) in table {

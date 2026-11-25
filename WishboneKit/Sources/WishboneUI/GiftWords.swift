@@ -35,6 +35,32 @@ public enum GiftWords {
     return String(localized: "Hidden until \(day)", bundle: #bundle)
   }
 
+  /// What a raise of how many that didn't raise says, in place. Nil for a raise that the server granted: the
+  /// number says it. The words never say who else claimed.
+  public static func raiseResult(of outcome: RaiseOutcome, address: InstanceAddress) -> String? {
+    switch outcome {
+    case .raised, .notOffered:
+      return nil
+    case .someoneElseGotIt:
+      return ErrorWords.someoneElseGotIt
+    case .unreachable:
+      return String(localized: "Can't reach \(address.text). The number didn't change.", bundle: #bundle)
+    case .refused(let refusal):
+      return ErrorWords.words(for: refusal) ?? ErrorWords.fault
+    case .failed:
+      return ErrorWords.fault
+    }
+  }
+
+  /// What VoiceOver reads as the value of the stepper of how many: "2", or "2, can't go higher".
+  public static func howManyValue(_ quantity: Int, canRaise: Bool) -> String {
+    canRaise
+      ? quantity.formatted()
+      : String(
+        localized: "\(quantity), can't go higher", bundle: #bundle,
+        comment: "VoiceOver: how many of a gift, when the giver can't raise it")
+  }
+
   /// "3 of these", for a gift of more than one.
   public static func howMany(_ quantity: Int) -> String {
     String(localized: "\(quantity) of these", bundle: #bundle)

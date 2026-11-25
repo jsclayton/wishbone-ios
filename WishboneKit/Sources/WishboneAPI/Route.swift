@@ -423,17 +423,36 @@ public struct GiftChanges: Codable, Sendable, Equatable {
   /// The giver's private mark: bought, or not.
   public var isBought: Bool?
 
-  public init(isBought: Bool? = nil) {
+  /// Who the gift is from, at most 60 characters. An empty string clears it.
+  public var fromLabel: String?
+
+  /// The giver's private note, at most 2000 characters. An empty string clears it.
+  public var note: String?
+
+  /// How many the giver gets, at least 1. A raise is a claim: the server can refuse it with 409
+  /// `item_fully_claimed`, and a recipient of the list never raises (403 `quantity_raise_not_allowed`).
+  public var quantity: Int?
+
+  public init(isBought: Bool? = nil, fromLabel: String? = nil, note: String? = nil, quantity: Int? = nil) {
     self.isBought = isBought
+    self.fromLabel = fromLabel
+    self.note = note
+    self.quantity = quantity
   }
 
   enum CodingKeys: String, CodingKey, CaseIterable {
     case isBought = "is_bought"
+    case fromLabel = "from_label"
+    case note
+    case quantity
   }
 
   public func encode(to encoder: any Encoder) throws {
     var container = encoder.container(keyedBy: CodingKeys.self)
     try container.encodeIfPresent(isBought, forKey: .isBought)
+    try container.encodeIfPresent(fromLabel, forKey: .fromLabel)
+    try container.encodeIfPresent(note, forKey: .note)
+    try container.encodeIfPresent(quantity, forKey: .quantity)
   }
 }
 

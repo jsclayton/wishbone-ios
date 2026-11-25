@@ -46,4 +46,17 @@ struct UnsentChangeWordsTests {
         Marking Ball not bought: This is gone, or it isn't shared with you.
         """)
   }
+
+  @Test("A late refusal of the from label, the note, or how many names the field and the item")
+  func lateRefusalsOfGiftFields() {
+    let refusal = APIError.Refusal(route: .updateGift, status: 403, code: .forbidden, detail: "The server's words")
+    let fromLabel = LateRefusal(
+      id: 1, action: .setFromLabel(giftID: "15", fromLabel: "Emma"), title: "Kite", refusal: refusal)
+    let note = LateRefusal(id: 2, action: .setNote(giftID: "15", note: nil), title: "Kite", refusal: refusal)
+    let quantity = LateRefusal(
+      id: 3, action: .lowerQuantity(giftID: "15", quantity: 1), title: "Kite", refusal: refusal)
+    #expect(LateRefusalWords.line(fromLabel) == "The from label of Kite: You can't do this any more.")
+    #expect(LateRefusalWords.line(note) == "The note on Kite: You can't do this any more.")
+    #expect(LateRefusalWords.line(quantity) == "How many of Kite: You can't do this any more.")
+  }
 }

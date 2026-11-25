@@ -42,6 +42,17 @@ public struct UnsentChange: Sendable, Equatable, Identifiable {
     /// Mark bought: sets or clears the giver's private mark on an open gift, `PATCH /gifts/{id}` with only
     /// `is_bought`.
     case markBought(giftID: String, isBought: Bool)
+
+    /// Set the from label: who an open gift is from, `PATCH /gifts/{id}` with only `from_label`. Nil clears it.
+    case setFromLabel(giftID: String, fromLabel: String?)
+
+    /// Write the note: the giver's private note on an open gift, `PATCH /gifts/{id}` with only `note`. Nil clears
+    /// it.
+    case setNote(giftID: String, note: String?)
+
+    /// Lower how many: `PATCH /gifts/{id}` with only `quantity`. A raise is never an unsent change: it is a claim,
+    /// and waits for the server (see "Claims are online only" in `docs/spec.md`).
+    case lowerQuantity(giftID: String, quantity: Int)
   }
 }
 
@@ -100,6 +111,9 @@ struct UnsentChangeRow: Codable, Sendable, FetchableRecord, MutablePersistableRe
   /// later version of the app wrote must still read.
   enum Kind: String, Codable, Sendable {
     case markBought
+    case setFromLabel
+    case setNote
+    case lowerQuantity
   }
 
   mutating func didInsert(_ inserted: InsertionSuccess) {
@@ -175,6 +189,15 @@ extension LocalDatabase {
     try await writer.read { database in try UnsentChangeRow.fetchCount(database) }
   }
 
+  /// Whether an unsent change of how many waits for the gift.
+  func hasUnsentQuantityChange(toGift id: String) async throws -> Bool {
+    try await writer.read { database in
+      try UnsentChangeRow
+        .filter(Column("kind") == UnsentChangeRow.Kind.lowerQuantity.rawValue && Column("targetID") == id)
+        .fetchCount(database) > 0
+    }
+  }
+
   /// The late refusals that no window has shown yet, the oldest first.
   func lateRefusals() async throws -> [LateRefusal] {
     try await writer.read { database in try Self.lateRefusals(in: database) }
@@ -232,9 +255,12 @@ extension LocalDatabase {
     guard !changes.isEmpty else { return gifts }
     return gifts.map { gift in
       changes.reduce(gift) { gift, change in
-        switch change.action {
-        case .markBought(let id, let isBought) where id == gift.id: gift.with(isBought: isBought)
-        case .markBought: gift
+        guard change.action.targetID == gift.id else { return gift }
+        return switch change.action {
+        case .markBought(_, let isBought): gift.with(isBought: .shown(isBought))
+        case .setFromLabel(_, let fromLabel): gift.with(fromLabel: fromLabel)
+        case .setNote(_, let note): gift.with(note: .shown(note))
+        case .lowerQuantity(_, let quantity): gift.with(quantity: quantity)
         }
       }
     }
@@ -257,7 +283,7 @@ extension UnsentChange.Action {
   /// The server's ID of what the change is to.
   var targetID: String {
     switch self {
-    case .markBought(let id, _): id
+    case .markBought(let id, _), .setFromLabel(let id, _), .setNote(let id, _), .lowerQuantity(let id, _): id
     }
   }
 
@@ -265,32 +291,43 @@ extension UnsentChange.Action {
   var giftChanges: GiftChanges {
     switch self {
     case .markBought(_, let isBought): GiftChanges(isBought: isBought)
+    // The server clears a from label or a note for an empty string, as for null.
+    case .setFromLabel(_, let fromLabel): GiftChanges(fromLabel: fromLabel ?? "")
+    case .setNote(_, let note): GiftChanges(note: note ?? "")
+    case .lowerQuantity(_, let quantity): GiftChanges(quantity: quantity)
     }
   }
 
   fileprivate var kind: UnsentChangeRow.Kind {
     switch self {
     case .markBought: .markBought
+    case .setFromLabel: .setFromLabel
+    case .setNote: .setNote
+    case .lowerQuantity: .lowerQuantity
     }
   }
 
   /// The patch as the journal keeps it: the JSON that the change sends.
   fileprivate func patch() throws -> String {
-    let data =
-      switch self {
-      case .markBought: try JSONEncoder().encode(giftChanges)
-      }
-    return String(decoding: data, as: UTF8.self)
+    String(decoding: try JSONEncoder().encode(giftChanges), as: UTF8.self)
   }
 
   /// The action of a row of the journal. Nil for a patch that the app can't read.
   fileprivate init?(kind: UnsentChangeRow.Kind, targetID: String, patch: String) {
+    guard let changes = try? JSONDecoder().decode(GiftChanges.self, from: Data(patch.utf8)) else { return nil }
     switch kind {
     case .markBought:
-      guard let changes = try? JSONDecoder().decode(GiftChanges.self, from: Data(patch.utf8)),
-        let isBought = changes.isBought
-      else { return nil }
+      guard let isBought = changes.isBought else { return nil }
       self = .markBought(giftID: targetID, isBought: isBought)
+    case .setFromLabel:
+      guard let fromLabel = changes.fromLabel else { return nil }
+      self = .setFromLabel(giftID: targetID, fromLabel: fromLabel.isEmpty ? nil : fromLabel)
+    case .setNote:
+      guard let note = changes.note else { return nil }
+      self = .setNote(giftID: targetID, note: note.isEmpty ? nil : note)
+    case .lowerQuantity:
+      guard let quantity = changes.quantity else { return nil }
+      self = .lowerQuantity(giftID: targetID, quantity: quantity)
     }
   }
 }
@@ -338,13 +375,33 @@ extension LateRefusalRow {
 
 extension GiftRow {
   /// The gift with the giver's mark set, as an unsent change shows it over the row.
-  fileprivate func with(isBought: Bool) -> GiftRow {
+  fileprivate func with(isBought: Hideable<Bool>) -> GiftRow {
+    with(isBought: isBought, fromLabel: fromLabel, note: note, quantity: quantity)
+  }
+
+  /// The gift with its from label set, or cleared.
+  fileprivate func with(fromLabel: String?) -> GiftRow {
+    with(isBought: isBought, fromLabel: fromLabel, note: note, quantity: quantity)
+  }
+
+  /// The gift with its note set, or cleared.
+  fileprivate func with(note: Hideable<String>) -> GiftRow {
+    with(isBought: isBought, fromLabel: fromLabel, note: note, quantity: quantity)
+  }
+
+  /// The gift with how many lowered.
+  fileprivate func with(quantity: Int) -> GiftRow {
+    with(isBought: isBought, fromLabel: fromLabel, note: note, quantity: quantity)
+  }
+
+  /// The gift with the fields that an unsent change can set, as the change shows them over the row.
+  private func with(isBought: Hideable<Bool>, fromLabel: String?, note: Hideable<String>, quantity: Int) -> GiftRow {
     GiftRow(
       id: id, state: state, quantity: quantity, itemID: itemID, itemTitle: itemTitle,
       itemPrimaryImage: itemPrimaryImage, listID: listID, listName: listName, title: title, image: image,
       priceMinor: priceMinor, topPriceMinor: topPriceMinor, currency: currency, recipientIDs: recipientIDs,
       giverID: giverID, giverName: giverName, fromLabel: fromLabel, occasion: occasion, occasionName: occasionName,
-      occasionDate: occasionDate, revealAt: revealAt, givenAt: givenAt, isBought: .shown(isBought), note: note,
+      occasionDate: occasionDate, revealAt: revealAt, givenAt: givenAt, isBought: isBought, note: note,
       flags: flags, needsAttention: needsAttention, createdAt: createdAt, canEdit: canEdit, canDelete: canDelete,
       canRaiseQuantity: canRaiseQuantity, canAcknowledge: canAcknowledge, canRestore: canRestore,
       canAddAgain: canAddAgain, version: version)

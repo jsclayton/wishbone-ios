@@ -5,8 +5,9 @@ import WishboneSession
 /// is for, each flag in words with every change of a changed item, then Bought, How many, Occasion with the reveal
 /// date, From, and Note. See `docs/screens/gift.md`.
 ///
-/// Bought is a toggle, from `can_edit`: an unsent change. The other fields are read here. Each becomes a control, and
-/// each flag gets its answer, in a later step.
+/// From `can_edit`: Bought is a toggle, How many a stepper, and From and Note are text fields that save when they lose
+/// focus. Each is an unsent change, except a raise of how many, which waits for the server. Occasion is read here.
+/// It becomes a control, and each flag gets its answer, in a later step.
 ///
 /// **Only its giver sees an open gift,** and the page never says who else claimed the item. Nothing on it goes to a
 /// system surface or into the shared container.
@@ -62,9 +63,7 @@ struct GiftPageScreen: View {
           }
         }
         if gift.canEdit {
-          FieldRow(label: String(localized: "How many", bundle: #bundle)) {
-            Text(gift.quantity.formatted())
-          }
+          QuantityStepper(gift: gift, session: session)
         }
         FieldRow(label: String(localized: "Occasion", bundle: #bundle)) {
           VStack(alignment: .trailing, spacing: 2) {
@@ -76,19 +75,31 @@ struct GiftPageScreen: View {
             }
           }
         }
-        FieldRow(label: String(localized: "From", bundle: #bundle)) {
-          if let label = gift.fromLabel, !label.isEmpty {
-            Text(label)
-          } else {
-            Text("Who it's from, if not only you", bundle: #bundle)
-              .foregroundStyle(.secondary)
+        if gift.canEdit {
+          GiftTextField(
+            field: .fromLabel, giftID: gift.id, saved: gift.fromLabel ?? "",
+            save: { await session.setFromLabel(gift: gift.id, $0) })
+        } else {
+          FieldRow(label: String(localized: "From", bundle: #bundle)) {
+            if let label = gift.fromLabel, !label.isEmpty {
+              Text(label)
+            } else {
+              Text("Who it's from, if not only you", bundle: #bundle)
+                .foregroundStyle(.secondary)
+            }
           }
         }
       }
       Section {
-        FieldRow(label: String(localized: "Note", bundle: #bundle)) {
-          if let note = gift.note.value, !note.isEmpty {
-            Text(note)
+        if gift.canEdit {
+          GiftTextField(
+            field: .note, giftID: gift.id, saved: gift.note.value ?? "",
+            save: { await session.setNote(gift: gift.id, $0) })
+        } else {
+          FieldRow(label: String(localized: "Note", bundle: #bundle)) {
+            if let note = gift.note.value, !note.isEmpty {
+              Text(note)
+            }
           }
         }
       } footer: {
@@ -106,6 +117,167 @@ struct GiftPageScreen: View {
     #if os(iOS)
       .navigationBarTitleDisplayMode(.inline)
     #endif
+  }
+}
+
+/// How many, a stepper. Lowering is an unsent change: it shows at once. Raising waits for the server, says "Raising"
+/// meanwhile, and says in place why it didn't raise. It can't go higher without `can_raise_quantity`, or lower than
+/// one. VoiceOver reads "How many, {n}", and says when it can't go higher.
+private struct QuantityStepper: View {
+  let gift: GiftRow
+  let session: SessionModel
+
+  @State private var isRaising = false
+  @State private var said: String?
+
+  var body: some View {
+    let canRaise = gift.canRaiseQuantity && !isRaising
+    Stepper(
+      onIncrement: canRaise ? { Task { await raise() } } : nil,
+      onDecrement: canLower ? { Task { await lower() } } : nil
+    ) {
+      HStack(spacing: 8) {
+        Text("How many", bundle: #bundle)
+        Spacer(minLength: 8)
+        if isRaising {
+          ProgressView()
+            .accessibilityHidden(true)
+        }
+        Text(gift.quantity.formatted())
+          .foregroundStyle(.secondary)
+          .monospacedDigit()
+      }
+    }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(Text("How many", bundle: #bundle))
+    .accessibilityValue(Text(GiftWords.howManyValue(gift.quantity, canRaise: gift.canRaiseQuantity)))
+    .accessibilityAdjustableAction { direction in
+      switch direction {
+      case .increment where canRaise: Task { await raise() }
+      case .decrement where canLower: Task { await lower() }
+      default: break
+      }
+    }
+    // A new gift in the same window starts with nothing said.
+    .onChange(of: gift.id) {
+      said = nil
+    }
+    if let said {
+      Text(said)
+    }
+  }
+
+  private var canLower: Bool {
+    gift.quantity > 1 && !isRaising
+  }
+
+  /// Lowers by one, as an unsent change: it shows at once.
+  private func lower() async {
+    said = nil
+    await session.lowerQuantity(gift: gift.id, to: gift.quantity - 1)
+  }
+
+  private func raise() async {
+    guard !isRaising else { return }
+    isRaising = true
+    said = nil
+    let outcome = await session.raiseQuantity(gift: gift.id)
+    isRaising = false
+    said = GiftWords.raiseResult(of: outcome, address: session.session.instance)
+    if let said { AccessibilityNotification.Announcement(said).post() }
+  }
+}
+
+/// A text field of a gift, From or Note, that saves when it loses focus, as an unsent change. While it has focus, it
+/// keeps what the giver types. Without focus, it shows what is saved, so a change from another window shows here.
+/// The from label stops at 60 characters, and the note at 2000.
+private struct GiftTextField: View {
+  enum Field {
+    case fromLabel, note
+  }
+
+  let field: Field
+  let giftID: String
+  let saved: String
+  let save: (String) async -> Void
+
+  @State private var draft: String
+  @FocusState private var isFocused: Bool
+  @Environment(\.dynamicTypeSize) private var size
+
+  init(field: Field, giftID: String, saved: String, save: @escaping (String) async -> Void) {
+    self.field = field
+    self.giftID = giftID
+    self.saved = saved
+    self.save = save
+    _draft = State(initialValue: saved)
+  }
+
+  var body: some View {
+    let layout =
+      size.isAccessibilitySize || field == .note
+      ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+      : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 16))
+    layout {
+      Text(label)
+        .foregroundStyle(size.isAccessibilitySize || field == .note ? .secondary : .primary)
+        .accessibilityHidden(true)
+      textField
+        .focused($isFocused)
+        .accessibilityLabel(Text(label))
+    }
+    .onChange(of: draft) {
+      let cut = GiftText.cut(draft, to: limit)
+      if cut != draft { draft = cut }
+    }
+    .onChange(of: isFocused) {
+      if !isFocused { Task { await save(draft) } }
+    }
+    .onChange(of: saved) {
+      if !isFocused { draft = saved }
+    }
+    .onChange(of: giftID) {
+      draft = saved
+    }
+    .onDisappear {
+      // A page that closes while the field has focus still saves what was typed.
+      if isFocused { Task { [draft, save] in await save(draft) } }
+    }
+  }
+
+  @ViewBuilder
+  private var textField: some View {
+    switch field {
+    case .fromLabel:
+      TextField(
+        text: $draft,
+        prompt: Text("Who it's from, if not only you", bundle: #bundle)
+      ) {
+        Text(label)
+      }
+      .multilineTextAlignment(size.isAccessibilitySize ? .leading : .trailing)
+      .submitLabel(.done)
+      .onSubmit { isFocused = false }
+    case .note:
+      TextField(text: $draft, axis: .vertical) {
+        Text(label)
+      }
+      .lineLimit(3...)
+    }
+  }
+
+  private var label: String {
+    switch field {
+    case .fromLabel: String(localized: "From", bundle: #bundle)
+    case .note: String(localized: "Note", bundle: #bundle)
+    }
+  }
+
+  private var limit: Int {
+    switch field {
+    case .fromLabel: GiftText.fromLabelLimit
+    case .note: GiftText.noteLimit
+    }
   }
 }
 

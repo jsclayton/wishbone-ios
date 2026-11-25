@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import WishboneAPI
 import WishboneSession
 import WishboneUI
 
@@ -56,5 +57,23 @@ struct GiftWordsTests {
         == "For Mom and Dad · Hidden until Dec 26")
     #expect(GiftWords.heading(recipients: nil, occasion: .named("Christmas")) == "Christmas")
     #expect(GiftWords.heading(recipients: [], occasion: .hiddenUntil(boxingDay)) == "Hidden until Dec 26")
+  }
+
+  @Test("A raise that didn't raise says why in place, and the stepper says when it can't go higher")
+  func raise() throws {
+    let address = try #require(InstanceAddress("https://wishbone.example.com"))
+    #expect(GiftWords.raiseResult(of: .raised, address: address) == nil)
+    #expect(GiftWords.raiseResult(of: .notOffered, address: address) == nil)
+    #expect(
+      GiftWords.raiseResult(of: .unreachable, address: address)
+        == "Can't reach https://wishbone.example.com. The number didn't change.")
+    #expect(GiftWords.raiseResult(of: .someoneElseGotIt, address: address) == "Someone else just got this.")
+    let notAllowed = APIError.Refusal(
+      route: .updateGift, status: 403, code: .quantityRaiseNotAllowed, detail: "The server's words")
+    #expect(
+      GiftWords.raiseResult(of: .refused(notAllowed), address: address)
+        == "You can only lower how many, because this list is now for you too.")
+    #expect(GiftWords.howManyValue(2, canRaise: true) == "2")
+    #expect(GiftWords.howManyValue(2, canRaise: false) == "2, can't go higher")
   }
 }
