@@ -45,6 +45,71 @@ struct OccasionsTests {
   }
 }
 
+/// A shared occasion's page counts as the web's page does: the user is left out, a gift counts only on the
+/// occasion's next date, and the days left follow Home's rule. It is pure. See `docs/screens/occasions.md`.
+@Suite("A shared occasion's people and counts", .timeLimit(.minutes(1)))
+struct SharedOccasionCountsTests {
+  static let me = HomeOccasionsTests.me
+
+  static func gift(
+    _ recipients: [String], occasion: String? = "4", on date: String = "2026-12-25"
+  ) -> SharedOccasionPage.Gift {
+    SharedOccasionPage.Gift(occasionID: occasion, occasionDate: date, recipientIDs: recipients)
+  }
+
+  @Test("The user is left out of the occasion's people, and each other user has the gifts that are for them")
+  func leavesTheUserOut() {
+    let counts = SharedOccasionPage.counts(
+      memberIDs: ["12", Self.me, "13", "14"], me: Self.me, occasionID: "4", nextDate: "2026-12-25",
+      gifts: [
+        Self.gift(["12"]), Self.gift(["12", "13"]),
+        // Another occasion, another date of this one, and an occasion the giver can't see: none counts.
+        Self.gift(["12"], occasion: "5"), Self.gift(["13"], on: "2025-12-25"), Self.gift(["13"], occasion: nil),
+      ])
+    #expect(
+      counts == [
+        .init(id: "12", fromYou: 2), .init(id: "13", fromYou: 1), .init(id: "14", fromYou: 0),
+      ])
+  }
+
+  @Test("An occasion with no next date counts no gift")
+  func noNextDate() {
+    let counts = SharedOccasionPage.counts(
+      memberIDs: ["12"], me: Self.me, occasionID: "4", nextDate: nil, gifts: [Self.gift(["12"])])
+    #expect(counts == [.init(id: "12", fromYou: 0)])
+  }
+
+  @Test("People the copy doesn't have yet are not an occasion that reaches nobody")
+  func notInTheCopyYet() {
+    let gifts = [Self.gift(["12"])]
+    #expect(
+      SharedOccasionPage.counts(memberIDs: nil, me: Self.me, occasionID: "4", nextDate: "2026-12-25", gifts: gifts)
+        == nil)
+    #expect(
+      SharedOccasionPage.counts(memberIDs: [], me: Self.me, occasionID: "4", nextDate: "2026-12-25", gifts: gifts)
+        == [])
+    // An occasion for only the user reaches nobody else.
+    #expect(
+      SharedOccasionPage.counts(
+        memberIDs: [Self.me], me: Self.me, occasionID: "4", nextDate: "2026-12-25", gifts: gifts) == [])
+  }
+
+  @Test("The days left follow Home's rule: a next date that is yesterday in the device's zone has none")
+  func daysLeft() {
+    let now = HomeOccasionsTests.now
+    let zone = HomeOccasionsTests.zone
+    #expect(SharedOccasionPage.daysLeft(until: "2026-03-01", today: now, timeZone: zone) == 0)
+    #expect(SharedOccasionPage.daysLeft(until: "2026-03-02", today: now, timeZone: zone) == 1)
+    #expect(SharedOccasionPage.daysLeft(until: "2026-12-25", today: now, timeZone: zone) == 299)
+    #expect(SharedOccasionPage.daysLeft(until: "2026-02-28", today: now, timeZone: zone) == nil)
+    #expect(SharedOccasionPage.daysLeft(until: nil, today: now, timeZone: zone) == nil)
+    #expect(SharedOccasionPage.daysLeft(until: "not a date", today: now, timeZone: zone) == nil)
+    // Home leaves the same date out of Coming up.
+    let rows = OccasionsTests.rows([HomeOccasionsTests.occasion("4", .shared, name: "Holiday", on: "2026-02-28")])
+    #expect(rows.isEmpty)
+  }
+}
+
 /// A shared occasion's page, and the Occasions screen, as the session model reads them from a copy that a real
 /// server filled. See "Shared occasions" in `docs/spec.md`, and `docs/screens/occasions.md`.
 ///
@@ -54,7 +119,8 @@ struct OccasionsTests {
 @MainActor
 struct SharedOccasionPageTests {
   /// A giver, Emma and Sam in one group, and Christmas attached to it. The giver has two open gifts for Emma on
-  /// Christmas, one for Sam on Christmas, and one for Emma on her birthday, which doesn't count.
+  /// Christmas, one for Sam on Christmas, and one for Emma on her birthday, which doesn't count. Emma's "Shared"
+  /// list has Sam as a recipient too, and the giver has a gift on it for Christmas, which counts for both.
   struct Cousins {
     let giver: Fixture.Person
     let emma: Fixture.Person
@@ -81,6 +147,10 @@ struct SharedOccasionPageTests {
     _ = try await builder.claim(puzzle, as: giver, for: christmas, isBought: true)
     _ = try await builder.claim(ball, as: giver, for: try await builder.birthday(of: emma, as: giver))
     _ = try await builder.claim(book, as: giver, for: christmas)
+    let shared = try await builder.list("Shared", of: emma)
+    try await builder.accept(try await builder.invite(sam, to: shared, as: emma))
+    let games = try await builder.item("Games", on: shared, as: emma)
+    _ = try await builder.claim(games, as: giver, for: christmas)
     return Cousins(giver: giver, emma: emma, sam: sam, group: group, christmas: christmas)
   }
 
@@ -94,22 +164,26 @@ struct SharedOccasionPageTests {
     return try #require(device.session)
   }
 
-  @Test("The page's users are the server's users of the occasion for the caller, each with the caller's own count")
+  @Test("The page's users are the server's users of the occasion but the caller, each with the caller's own count")
   func usersAndCounts() async throws {
     let instance = try await Instance()
     let cousins = try await cousins(on: instance)
     let session = try await signedIn(as: cousins.giver, on: instance)
     let id = cousins.christmas.id
     let server = try await cousins.giver.signedIn().all("/users?occasion_id=\(id)").compactMap { $0["id"].string }
+    #expect(Set(server) == [cousins.giver.id, cousins.emma.id, cousins.sam.id])
+    // The caller is on the occasion, and the page leaves them out, as the web's does.
+    let others = server.filter { $0 != cousins.giver.id }
     await until {
-      session.sharedOccasionPage(id: id)?.people.map(\.id) == server && session.giving.count == 4
+      session.sharedOccasionPage(id: id)?.people?.map(\.id) == others && session.giving.count == 5
     }
 
     let page = try #require(session.sharedOccasionPage(id: id))
-    #expect(page.people.map(\.id) == server)
-    #expect(Set(server) == [cousins.giver.id, cousins.emma.id, cousins.sam.id])
-    let counts = Dictionary(uniqueKeysWithValues: page.people.map { ($0.id, $0.fromYou) })
-    #expect(counts == [cousins.giver.id: 0, cousins.emma.id: 2, cousins.sam.id: 1])
+    let people = try #require(page.people)
+    #expect(people.map(\.id) == others)
+    let counts = Dictionary(uniqueKeysWithValues: people.map { ($0.id, $0.fromYou) })
+    // Emma: the kite, the puzzle and the games. Sam: the book and the games. Emma's birthday doesn't count.
+    #expect(counts == [cousins.emma.id: 3, cousins.sam.id: 2])
     #expect(page.name == cousins.christmas.name)
     #expect(page.date?.hasSuffix("-12-25") == true)
     #expect(page.daysLeft != nil)
@@ -119,8 +193,9 @@ struct SharedOccasionPageTests {
 
     // Someone else's counts are their own: Emma has none for anybody.
     let emma = try await signedIn(as: cousins.emma, on: instance)
-    await until { emma.sharedOccasionPage(id: id)?.people.count == 3 }
-    #expect(emma.sharedOccasionPage(id: id)?.people.map(\.fromYou) == [0, 0, 0])
+    await until { emma.sharedOccasionPage(id: id)?.people?.count == 2 }
+    #expect(emma.sharedOccasionPage(id: id)?.people?.map(\.id).contains(cousins.emma.id) == false)
+    #expect(emma.sharedOccasionPage(id: id)?.people?.map(\.fromYou) == [0, 0])
   }
 
   @Test("The Occasions screen has every occasion with a next date, the user's own and the shared one included")
@@ -158,7 +233,8 @@ struct SharedOccasionPageTests {
     let holiday = try await builder.sharedOccasion("Holiday", month: 12, day: 31, isEveryone: true)
     let session = try await signedIn(as: giver, on: instance)
     let id = holiday.id
-    await until { session.sharedOccasionPage(id: id)?.people.contains { $0.id == giver.id } == true }
+    // The user is left out of their own page, so wait for the occasion's membership itself.
+    await until { session.members(.usersOfOccasion, of: id)?.contains(giver.id) == true }
 
     let page = try #require(session.sharedOccasionPage(id: id))
     #expect(page.isEveryone)
@@ -209,12 +285,12 @@ struct SharedOccasionPageTests {
     let reunion = nobody.id
     await until {
       admin.sharedOccasionPage(id: christmas)?.groupNames.isEmpty == false
-        && admin.sharedOccasionPage(id: reunion) != nil
+        && admin.sharedOccasionPage(id: reunion)?.people != nil
     }
 
     #expect(admin.sharedOccasionPage(id: christmas)?.groupNames == [cousins.group.name])
     let page = try #require(admin.sharedOccasionPage(id: reunion))
-    #expect(page.people.isEmpty)
+    #expect(page.people == [])
     #expect(page.groupNames == [empty.name])
   }
 }
