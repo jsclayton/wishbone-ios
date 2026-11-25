@@ -188,7 +188,7 @@ struct GiftAnswersTests {
     #expect(refusal.refusal.code == .giftGiven)
     #expect(refusal.refusal.status == 403)
     #expect(refusal.refusal.route == .unclaimGift)
-    session.lateRefusalsShown()
+    session.lateRefusalsShown(in: window)
   }
 
   // MARK: - 5. OK

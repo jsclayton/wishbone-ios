@@ -76,8 +76,8 @@ extension SessionModel {
 
   /// The send: each unsent change in turn, the oldest first.
   ///
-  /// Diagnostics: a refusal is captured by its method, its path template and the server's code, except a 404, for
-  /// something deleted elsewhere, and a 400 or a 422, which the client has captured already. A journal or a copy
+  /// Diagnostics: a refusal is captured by its method, its path template and the server's code, except a 404 or a
+  /// 410, for something deleted elsewhere, and a 400 or a 422, which the client has captured already. A journal or a copy
   /// that can't be read or written is captured by the error's domain and code. An unreachable instance, a cancel,
   /// and the API's own 401 never are.
   private func sendEach() async -> PullEnd {
@@ -167,9 +167,9 @@ extension SessionModel {
   /// Shows the late refusals that wait, in the window that came to the foreground, in one alert. They leave the
   /// journal as the alert shows, so they show once, and never again.
   ///
-  /// While the alert shows in a window that is in the foreground, it stays there, and the refusals that came since
-  /// wait for it to close. An alert whose window left the foreground, or closed, before it was closed moves to this
-  /// window, with the refusals that came since, so none is lost.
+  /// While the alert shows in a window that is in the foreground, or only inactive, it stays there, and the
+  /// refusals that came since wait for it to close. An alert whose window went to the background, or closed, before
+  /// it was closed moves to this window, with the refusals that came since, so none is lost.
   func showLateRefusals(in window: UUID) async {
     guard !hasEnded, !lateRefusalAlertShows else { return }
     let refusals: [LateRefusal]
@@ -193,8 +193,10 @@ extension SessionModel {
     }
   }
 
-  /// The window's alert of late refusals has closed.
-  public func lateRefusalsShown() {
+  /// The alert of late refusals in `window` has closed. An alert that has moved to another window since stays: the
+  /// window it left may say that its own alert closed as it goes, and the refusals have left the journal already.
+  public func lateRefusalsShown(in window: UUID) {
+    guard lateRefusalAlert?.window == window else { return }
     lateRefusalAlert = nil
   }
 }

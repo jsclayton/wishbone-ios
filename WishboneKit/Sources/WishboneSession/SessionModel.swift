@@ -151,6 +151,11 @@ public final class SessionModel {
   /// The windows of the app that are in the foreground, each by the ID that the window gave.
   private var windowsInForeground: Set<UUID> = []
 
+  /// The windows of the app that came to the foreground and have neither gone to the background nor closed since:
+  /// those in the foreground, and those that are only inactive, such as under Control Center. The alert of late
+  /// refusals stays in such a window. See `lateRefusalAlertShows`.
+  private var windowsOnScreen: Set<UUID> = []
+
   /// The timer that syncs every 60 seconds, while it runs. See `updateTimer()`.
   private var timer: Task<Void, Never>?
 
@@ -714,6 +719,7 @@ public final class SessionModel {
     watchingNetwork?.cancel()
     watchingNetwork = nil
     windowsInForeground = []
+    windowsOnScreen = []
     // A send in flight is abandoned, and its answer is never written: the database is about to go.
     let sending = sending
     sending?.cancel()
@@ -765,11 +771,12 @@ public final class SessionModel {
   /// check. While any window is in the foreground, the timer syncs every 60 seconds. Only the app calls this, never
   /// an extension.
   ///
-  /// `window` is the window's own ID, the same at each call, so that `leftForeground(window:)` can say that it
-  /// left.
+  /// `window` is the window's own ID, the same at each call, so that `leftForeground(window:)` and
+  /// `wentToBackground(window:)` can say where it went.
   public func cameToForeground(window: UUID) async {
     guard !hasEnded else { return }
     windowsInForeground.insert(window)
+    windowsOnScreen.insert(window)
     updateTimer()
     await showLateRefusals(in: window)
     await checkVersion()
@@ -778,17 +785,27 @@ public final class SessionModel {
     await reportTimeZone()
   }
 
-  /// Says that the window left the foreground, or closed. When no window is in the foreground, the timer stops.
+  /// Says that the window left the foreground but is still there, inactive, such as under Control Center or the
+  /// app switcher. When no window is in the foreground, the timer stops. An alert of late refusals in the window
+  /// stays in it: when two windows come back in no fixed order, the alert doesn't move to the other one.
   public func leftForeground(window: UUID) {
     windowsInForeground.remove(window)
     updateTimer()
   }
 
-  /// Whether the alert of late refusals shows in a window that is in the foreground. An alert whose window left the
-  /// foreground, or closed, before the alert was closed doesn't show: it moves to the next window that comes to the
-  /// foreground. See `showLateRefusals(in:)`.
+  /// Says that the window went to the background, or closed. When no window is in the foreground, the timer stops.
+  /// An alert of late refusals in the window that wasn't closed moves to the next window that comes to the
+  /// foreground.
+  public func wentToBackground(window: UUID) {
+    windowsOnScreen.remove(window)
+    leftForeground(window: window)
+  }
+
+  /// Whether the alert of late refusals shows in a window that is still there: in the foreground, or only inactive.
+  /// An alert whose window went to the background, or closed, before the alert was closed doesn't show: it moves to
+  /// the next window that comes to the foreground. See `showLateRefusals(in:)`.
   var lateRefusalAlertShows: Bool {
-    lateRefusalAlert.map { windowsInForeground.contains($0.window) } ?? false
+    lateRefusalAlert.map { windowsOnScreen.contains($0.window) } ?? false
   }
 
   // MARK: - Version checks
