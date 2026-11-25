@@ -143,15 +143,15 @@ enum Audit {
   /// on the screen when it is still again. Returns the screen as the second audit read it.
   ///
   /// This is the journey's answer to the named flake "an audit's issue has no element" in `docs/development.md`.
-  /// After a change of text size while the app runs, a screen with a large title keeps its navigation bar at the
-  /// height of the text size before: at the largest text size, 106 points tall, where its own height is 127. The
-  /// title and every element below it show whole, each in its element's frame. The Dynamic Type check changes the
-  /// app's text size during the audit, and so makes the bar measure itself again: after the audit, the bar is 127
-  /// points tall, and the whole screen is 21 points lower. On the three screens of the Gifts tab, which have the
-  /// segmented control under the bar, the element detection check gave two issues of "Potentially inaccessible
-  /// text" with no element in the first audit, on the bar that wasn't at its own height. The audit after it, on the
-  /// bar at its own height, passed. With the Dynamic Type check first, the other checks read the screen with the bar
-  /// at its own height.
+  /// In a gate run on 2026-11-25, each screen with a large title, the first time it was audited at the largest text
+  /// size, had its navigation bar at 106 points, a height that isn't its own at that size. The bar's title, the
+  /// segmented control and the text that the journey logged below them showed whole, each in its element's frame.
+  /// The Dynamic Type check changes the app's text size during the audit, and the bar measured itself again: after
+  /// the audit, it was 127 points tall, and the screen below it 21 points lower. On the three screens of the Gifts
+  /// tab, which have the segmented control under the bar, the element detection check gave two issues of
+  /// "Potentially inaccessible text" with no element in the first audit, on the short bar. The audit after it, on
+  /// the bar at 127 points, passed. The issue most likely comes with the short bar. With the Dynamic Type check
+  /// first, the other checks read the screen with the bar at its own height.
   ///
   /// The second audit's screenshot has words after the setting, so it is not one of the screen's four in the gate's
   /// count.
