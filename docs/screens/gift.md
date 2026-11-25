@@ -34,7 +34,7 @@ One gift in full. While a gift is open, its giver marks it bought here, changes 
 4. For its giver only: the bought mark and the private note, as they were.
 5. For a recipient, or a recipient's parent: **I didn't get this** and **Add again**.
 
-**Provisional.** Plain default: a system form. The image and title are the header, the flags are the first section, and each field is a row. The buttons at the foot are full-width rows.
+**Provisional.** Plain default: a system form. The image and title are the header, the flags are the first section, and each field is a row. The buttons at the foot are full-width rows. Return in the Note adds a line, so a Done key above the keyboard ends its editing.
 
 ## States
 
@@ -63,8 +63,8 @@ One gift in full. While a gift is open, its giver marks it bought here, changes 
 | Mark bought | The Bought toggle, from `can_edit`. Also on the row in Giving | Sets or clears the giver's private mark |
 | Change how many | A stepper, from `can_edit`. Raising needs `can_raise_quantity` | Lowers at once. Raises after the server answers |
 | Pick the occasion | The Occasion row, from `can_edit` | A menu of the occasions that the giver can use, soonest first |
-| Set the from label | The From field, from `can_edit` | Saves when the field loses focus |
-| Write the note | The Note field, from `can_edit` | Saves when the field loses focus |
+| Set the from label | The From field, from `can_edit` | Saves once when the field loses focus, or when the page closes while it has focus. The field then shows the label as it was saved |
+| Write the note | The Note field, from `can_edit`. Done above the keyboard ends the editing | Saves as the From field does |
 | OK | A button on a flag, from `can_acknowledge` | Clears that flag |
 | Keep it | A button on the "removed" flag | Clears the flag. The gift is given at its reveal |
 | Get another for a different occasion | A row, from the item's `can_claim`, when the giver has no gift on the item for some other occasion they can pick | Claims one for the soonest such occasion, after the server answers. The new gift's page is pushed |
@@ -88,6 +88,7 @@ Decided, as the web app has them: "I won't get this", "I didn't get this", "Add 
 | Fields | "Bought", "How many", "Occasion", "From", "Note", and "Given" on a given gift |
 | From, prompt | "Who it's from, if not only you" |
 | Note, footer | "Only you see this note." |
+| Note, above the keyboard | "Done" |
 | A change | "Title: {old} → {new}", "Price: {old} → {new}", "Price: {old} → none", "The photo changed", "{store}: {old} → {new}", "{store} was removed", "Wants: {old} → {new}", "Now always wanted", "No longer always wanted", "The notes changed" |
 | Bought, read | "Yes", "No" |
 | Flag: removed | "This was removed from the list. You can still give it." |

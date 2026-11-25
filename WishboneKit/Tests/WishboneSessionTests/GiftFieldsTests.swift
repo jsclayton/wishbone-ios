@@ -196,15 +196,17 @@ struct GiftFieldsTests {
     let session = try await signedIn(as: seeded.giver, with: seeded.gift)
     let id = seeded.gift.id
 
-    // The lower waits, held at its request.
-    let lowering = instance.conditioner.hold(Self.patchGift, at: .request)
+    // The lower waits in the journal: its send failed, and no sync runs. Only the raise can send it now.
+    instance.conditioner.dropEverything()
     await session.lowerQuantity(gift: id, to: 1)
-    await lowering.waitUntilHeld()
+    await until { session.isInstanceUnreachable && !session.isSyncing }
     #expect(session.gift(id: id)?.quantity == 1)
-    let raise = Task { await session.raiseQuantity(gift: id) }
-    lowering.release()
+    #expect(session.unsentChangeCount == 1)
+    #expect(try patches(of: seeded.gift).isEmpty)
 
-    let outcome = await raise.value
+    // A raise that went straight to the server would send 2 first, and the lower would then end at 1.
+    instance.conditioner.passEverything()
+    let outcome = await session.raiseQuantity(gift: id)
     #expect(outcome == .raised, "\(outcome)")
     #expect(session.gift(id: id)?.quantity == 2)
     #expect(try await onServer(seeded.gift)["quantity"].number == 2)
@@ -226,9 +228,9 @@ struct GiftFieldsTests {
 
     instance.conditioner.passEverything()
     await session.syncNow()
-    #expect(session.unsentChangeCount == 0)
     #expect(try await onServer(seeded.gift)["quantity"].number == 1)
-    #expect(session.gift(id: id)?.quantity == 1)
+    #expect(try patches(of: seeded.gift).isEmpty)
+    await until { session.unsentChangeCount == 0 && session.gift(id: id)?.quantity == 1 }
   }
 
   // MARK: - 6. Someone else got the rest
