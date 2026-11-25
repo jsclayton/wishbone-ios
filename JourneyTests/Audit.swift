@@ -142,19 +142,25 @@ enum Audit {
 
   /// Reads the app's whole accessibility tree, and returns the screen when it is still again, in the setting.
   ///
-  /// This is the cure for the named flake "an audit's issue has no element" in `docs/development.md`. On 2026-11-25,
-  /// in two gate runs in a row, the first audit at the largest text size of Giving, Gifts, and the unreachable view
-  /// gave two issues of the element detection check, "Potentially inaccessible text", with no element: text that
-  /// the check found on the screen and couldn't match to an element. Each screen passed when the audit ran again a
-  /// few seconds later, after the journey's reads of the first audit's issues. With this read before each audit, the
-  /// next run gave none. A read changed no pixel of those screens, so it is the tree, not the screen, that wasn't
-  /// up to date after the change of text size. When the screen does move here, the log says so, and the journey
-  /// audits the screen as it is then.
+  /// This is the journey's answer to the named flake "an audit's issue has no element" in `docs/development.md`. On
+  /// 2026-11-25, in two gate runs in a row, the first audit at the largest text size of Giving, Gifts, and the
+  /// unreachable view gave two issues of the element detection check, "Potentially inaccessible text", with no
+  /// element: text that the check found on the screen and couldn't match to an element. Each screen passed when the
+  /// audit ran again a few seconds later, after the journey's reads of the first audit's issues. A read changed no
+  /// pixel of those screens, so the most likely cause is a tree, not a screen, that wasn't up to date after the
+  /// change of text size. That was not proved: in the next two runs, with this read before each audit, no audit ran
+  /// again. When the screen does move here, the log says so, and the journey audits the screen as it is then.
+  ///
+  /// The audits of a scrolled screen, and a run with no helper, don't come through here.
   private static func screenAfterReadingElements(
     of app: XCUIApplication, _ screen: String, in setting: Setting,
     shown: (screenshot: XCUIScreenshot, pixels: Data)
   ) async throws -> (screenshot: XCUIScreenshot, pixels: Data) {
-    _ = try app.snapshot()
+    do {
+      _ = try app.snapshot()
+    } catch {
+      throw AuditError("The journey couldn't read the elements of \(screen), in \(setting.label): \(error)")
+    }
     let now = try await settledScreen(of: app, screen, in: setting, where: { _ in true })
     if now.pixels != shown.pixels {
       print("The screen of \(screen), in \(setting.label) moved when the journey read its elements.")
@@ -266,10 +272,11 @@ enum Audit {
       tries += 1
       // An issue with no element has no place, so a screenshot just after the audit shows what was on the screen
       // when the journey read it: on 2026-11-23, the Family heading under the tab bar. Its name doesn't end with
-      // the setting, so it is not one of the screen's four in the gate's count.
-      if lostElements > 0 {
-        let shown = "\(audited), at an issue with no element (try \(tries))"
-        let attachment = XCTAttachment(screenshot: try await Screenshot.take(of: app, showing: shown).screenshot)
+      // the setting, so it is not one of the screen's four in the gate's count. It is a diagnostic only, so a
+      // screenshot that XCTest doesn't get never fails the run.
+      let shown = "\(audited), at an issue with no element (try \(tries))"
+      if lostElements > 0, let taken = try? await Screenshot.take(of: app, showing: shown) {
+        let attachment = XCTAttachment(screenshot: taken.screenshot)
         attachment.name = shown
         attachment.lifetime = .keepAlways
         test.add(attachment)
