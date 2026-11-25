@@ -128,6 +128,18 @@ struct NetworkConditionerTests {
     case passEverything
   }
 
+  @Test("A wait for more than one held request returns when the hold has held them all")
+  func waitsForEveryHeldRequest() async throws {
+    let hold = conditioner.hold(Route("GET", "/health"), at: .request)
+    async let first = TestHTTP.send("GET", conditioner.url("/health"))
+    async let second = TestHTTP.send("GET", conditioner.url("/health"))
+    async let third = TestHTTP.send("GET", conditioner.url("/health"))
+    await hold.waitUntilHeld(3)
+    #expect(conditioner.requests.count == 3)
+    hold.release()
+    #expect(try await [first.status, second.status, third.status] == [200, 200, 200])
+  }
+
   @Test("A released hold is over: it holds nothing more, and an older canned answer for its route shows again")
   func releasedHoldIsOver() async throws {
     conditioner.answer(Route("GET", "/health"), with: .init(status: 503))
@@ -201,19 +213,24 @@ struct NetworkConditionerTests {
   /// way then. A forward that had made its session, and not yet its task, when a stop invalidated that session
   /// raised `Task created in a session that has been invalidated`, which aborts the test process. Seen on CI on
   /// 2026-11-23 (run 45131695827 attempt 1). The released requests race the stop, so each round puts some of them
-  /// in a forward as the stop comes.
+  /// in a forward as the stop comes. Before the fix, the abort came in a round that differed from run to run (1, 5,
+  /// 70, 99 and 116 in five of eight runs), so the test needs every round.
+  ///
+  /// The rounds wait only on the conditioner and the server. A round sends its requests on sessions of its own, not
+  /// through `TestHTTP`, whose few slots every test in the process shares: the round held 8 of them until all 8
+  /// arrived, so it waited on the other tests' requests, and they on its. A request goes to the round's own new
+  /// listener, so the listen queue that the slots guard is not in its way.
   @Test("A stop while requests are on their way to the server ends them, and the test process goes on")
   func stopDuringForwards() async throws {
     let requests = 8
     for round in 0..<120 {
       let conditioner = try await NetworkConditioner(to: server.address)
       let hold = conditioner.hold(Route("GET", "/health"), at: .request)
+      let url = Self.alone(conditioner.url("/health"))
       let sent = (0..<requests).map { _ in
-        Task { try? await TestHTTP.send("GET", conditioner.url("/health")).status }
+        Task { try? await Self.status(of: url) }
       }
-      while conditioner.requests.count < requests {
-        try await Task.sleep(for: .milliseconds(5))
-      }
+      await hold.waitUntilHeld(requests)
       hold.release()
       // The stop comes a little later in each round, so in some round it finds the forwards at each of their steps.
       for _ in 0..<round { await Task.yield() }
@@ -223,6 +240,24 @@ struct NetworkConditionerTests {
         if let status = await request.value { #expect(status == 200) }
       }
     }
+  }
+
+  /// The URL at `127.0.0.1`, where the conditioner listens, so that a new session doesn't look up `localhost`.
+  private static func alone(_ url: URL) -> URL {
+    var parts = URLComponents(url: url, resolvingAgainstBaseURL: false)
+    parts?.host = "127.0.0.1"
+    return parts?.url ?? url
+  }
+
+  /// The status of a GET, on a session of its own. A session opens at most 6 connections to a host at once, so
+  /// requests that share one would wait for each other, and the 7th would never reach the hold.
+  private static func status(of url: URL) async throws -> Int {
+    let session = URLSession(configuration: .ephemeral)
+    defer { session.finishTasksAndInvalidate() }
+    var request = URLRequest(url: url)
+    request.setValue("close", forHTTPHeaderField: "Connection")
+    let (_, response) = try await session.data(for: request)
+    return (response as? HTTPURLResponse)?.statusCode ?? 0
   }
 
   @Test("A route matches its method, and its path under /api/v2 with any ID")

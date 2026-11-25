@@ -172,7 +172,8 @@ public final class NetworkConditioner: Sendable {
   /// A hold on the requests of one route. The test releases it.
   ///
   /// It holds every request on the route that comes before the release, and `waitUntilHeld()` returns when it
-  /// holds the first one. A released hold is over: to hold a later request, make a new hold.
+  /// holds the first one, or `waitUntilHeld(_:)` when it holds that many. A released hold is over: to hold a later
+  /// request, make a new hold.
   public final class Hold: Sendable {
     /// Where a request is held.
     public enum Point: Sendable {
@@ -188,8 +189,9 @@ public final class NetworkConditioner: Sendable {
       var held = 0
       var isReleased = false
       var nextWaiter = 0
-      /// The callers of `waitUntilHeld()` that still wait, each by its own number.
-      var arrivals: [Int: CheckedContinuation<Void, Never>] = [:]
+      /// The callers of `waitUntilHeld(_:)` that still wait, each by its own number, with how many requests it
+      /// waits for.
+      var arrivals: [Int: (count: Int, continuation: CheckedContinuation<Void, Never>)] = [:]
       var releases: [CheckedContinuation<Void, Never>] = []
     }
 
@@ -210,6 +212,12 @@ public final class NetworkConditioner: Sendable {
     /// It also returns when its task is cancelled. So the time limit of a test ends a wait for a request that
     /// never comes, and the test fails by its name.
     public func waitUntilHeld() async {
+      await waitUntilHeld(1)
+    }
+
+    /// Returns when the conditioner holds `count` requests, or has held that many, as `waitUntilHeld()` does for
+    /// one.
+    public func waitUntilHeld(_ count: Int) async {
       let waiter = state.withLock { state in
         defer { state.nextWaiter += 1 }
         return state.nextWaiter
@@ -218,14 +226,14 @@ public final class NetworkConditioner: Sendable {
         await withCheckedContinuation { continuation in
           let isOver = state.withLock { state in
             // A cancel that came before this point found no one to wake.
-            if state.held > 0 || Task.isCancelled { return true }
-            state.arrivals[waiter] = continuation
+            if state.held >= count || Task.isCancelled { return true }
+            state.arrivals[waiter] = (count, continuation)
             return false
           }
           if isOver { continuation.resume() }
         }
       } onCancel: {
-        state.withLock { $0.arrivals.removeValue(forKey: waiter) }?.resume()
+        state.withLock { $0.arrivals.removeValue(forKey: waiter) }?.continuation.resume()
       }
     }
 
@@ -244,9 +252,11 @@ public final class NetworkConditioner: Sendable {
       await withCheckedContinuation { continuation in
         let (arrivals, isReleased) = state.withLock { state in
           state.held += 1
-          defer { state.arrivals = [:] }
+          let held = state.held
+          let arrived = state.arrivals.filter { $0.value.count <= held }
+          arrived.keys.forEach { state.arrivals.removeValue(forKey: $0) }
           if !state.isReleased { state.releases.append(continuation) }
-          return (Array(state.arrivals.values), state.isReleased)
+          return (arrived.values.map(\.continuation), state.isReleased)
         }
         arrivals.forEach { $0.resume() }
         if isReleased { continuation.resume() }
