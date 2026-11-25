@@ -280,4 +280,38 @@ struct GiftAnswersTests {
     try await untilInStep(session, as: seeded.giver)
     #expect(session.giftsBadge == nil)
   }
+
+  // MARK: - 8. Given soon
+
+  @Test("A gift that isn't bought and is given within 14 days still needs attention after its changed flag is answered")
+  func givenSoon() async throws {
+    let builder = instance.builder
+    let robin = try await builder.person("Robin")
+    let morgan = try await builder.person("Morgan")
+    let family = try await builder.group("Family", users: [robin, morgan])
+    let soon = try await occasion("Soon", inDays: 5, groups: [family])
+    let list = try await builder.list("Wishes", of: morgan)
+    let kite = try await builder.item("Kite", on: list, as: morgan)
+    let gift = try await builder.claim(kite, as: robin, for: soon)
+    try await morgan.signedIn().send("PATCH", "/items/\(kite.id)", json: ["title": "Red kite"]).expecting(200)
+    let session = try await signedIn(as: robin)
+    #expect(session.gift(id: gift.id)?.needsAttention == .shown(true))
+    #expect(session.giftsBadge == 1)
+
+    // Offline, so what shows comes from the change alone.
+    instance.conditioner.dropEverything()
+    await session.answer(.changed, ofGift: gift.id)
+    #expect(session.gift(id: gift.id)?.flags.value?.isEmpty == true)
+    #expect(session.gift(id: gift.id)?.needsAttention == .shown(true))
+    #expect(session.giftsBadge == 1)
+
+    // The server agrees, once the answer is sent.
+    instance.conditioner.passEverything()
+    await session.syncNow()
+    await until { session.unsentChangeCount == 0 }
+    try await untilInStep(session, as: robin)
+    #expect(try await flagsOnServer(gift).isEmpty)
+    #expect(session.gift(id: gift.id)?.needsAttention == .shown(true))
+    #expect(session.giftsBadge == 1)
+  }
 }

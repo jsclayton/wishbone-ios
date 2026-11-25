@@ -222,20 +222,18 @@ private struct QuantityStepper: View {
   }
 }
 
-/// A text field of a gift, From or Note, that saves when it loses focus, as an unsent change. While it has focus, it
-/// keeps what the giver types. Without focus, it shows what is saved, so a change from another window shows here.
-/// The from label stops at 60 characters, and the note at 2000.
+/// A text field of a gift, From or Note, that saves once when it loses focus, as an unsent change. `GiftFieldDraft`
+/// holds what it shows and when it saves. The from label stops at 60 characters, and the note at 2000. The note's
+/// Return adds a line, so a Done key above the keyboard ends its editing.
 private struct GiftTextField: View {
-  enum Field {
-    case fromLabel, note
-  }
+  typealias Field = GiftFieldDraft.Field
 
   let field: Field
   let giftID: String
   let saved: String
   let save: (String) async -> Void
 
-  @State private var draft: String
+  @State private var draft: GiftFieldDraft
   @FocusState private var isFocused: Bool
   @Environment(\.dynamicTypeSize) private var size
 
@@ -244,7 +242,7 @@ private struct GiftTextField: View {
     self.giftID = giftID
     self.saved = saved
     self.save = save
-    _draft = State(initialValue: saved)
+    _draft = State(initialValue: GiftFieldDraft(field, saved: saved))
   }
 
   var body: some View {
@@ -260,23 +258,25 @@ private struct GiftTextField: View {
         .focused($isFocused)
         .accessibilityLabel(Text(label))
     }
-    .onChange(of: draft) {
-      let cut = GiftText.cut(draft, to: limit)
-      if cut != draft { draft = cut }
-    }
     .onChange(of: isFocused) {
-      if !isFocused { Task { await save(draft) } }
+      if isFocused { draft.began() } else { saveIfEdited() }
     }
     .onChange(of: saved) {
-      if !isFocused { draft = saved }
+      draft.savedChanged(to: saved)
     }
     .onChange(of: giftID) {
-      draft = saved
+      draft.reset(to: saved)
     }
     .onDisappear {
-      // A page that closes while the field has focus still saves what was typed.
-      if isFocused { Task { [draft, save] in await save(draft) } }
+      // A page that closes while the field has focus still saves what was typed. When the focus change saved it
+      // first, this saves nothing.
+      saveIfEdited()
     }
+  }
+
+  private func saveIfEdited() {
+    guard let text = draft.ended() else { return }
+    Task { [save] in await save(text) }
   }
 
   @ViewBuilder
@@ -284,7 +284,7 @@ private struct GiftTextField: View {
     switch field {
     case .fromLabel:
       TextField(
-        text: $draft,
+        text: $draft.text,
         prompt: Text("Who it's from, if not only you", bundle: #bundle)
       ) {
         Text(label)
@@ -293,10 +293,22 @@ private struct GiftTextField: View {
       .submitLabel(.done)
       .onSubmit { isFocused = false }
     case .note:
-      TextField(text: $draft, axis: .vertical) {
+      TextField(text: $draft.text, axis: .vertical) {
         Text(label)
       }
       .lineLimit(3...)
+      .toolbar {
+        ToolbarItemGroup(placement: .keyboard) {
+          if isFocused {
+            Spacer()
+            Button {
+              isFocused = false
+            } label: {
+              Text("Done", bundle: #bundle)
+            }
+          }
+        }
+      }
     }
   }
 
@@ -304,13 +316,6 @@ private struct GiftTextField: View {
     switch field {
     case .fromLabel: String(localized: "From", bundle: #bundle)
     case .note: String(localized: "Note", bundle: #bundle)
-    }
-  }
-
-  private var limit: Int {
-    switch field {
-    case .fromLabel: GiftText.fromLabelLimit
-    case .note: GiftText.noteLimit
     }
   }
 }
