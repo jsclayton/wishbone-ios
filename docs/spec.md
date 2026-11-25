@@ -810,7 +810,7 @@ Screens: the states in [What every screen shares](screens/README.md#what-every-s
 - The app keeps a local copy of everything the user can see, in one database. Screens read only that copy. The API only feeds it.
 - At launch, screens show what is saved at once, and a sync updates it under them, with no spinner over saved data.
 - **When the instance can't be reached**, every screen shows what is saved, under the line "Can't reach {address}", which blocks nothing. A page with no rows yet shows the unreachable state with Try again, never an empty state.
-- **When the first sync fails**, because the instance answered but the sync couldn't finish (an answer that the app can't read, a stray 404, or a copy that the app can't write, such as on a full disk), a page with no rows yet shows the error state, "Couldn't load your lists from {address}", with Try again. It is never Loading forever, and never an empty state. Try again syncs at once, and the page shows the progress indicator while it runs. The app keeps its sync schedule meanwhile, so the page fills by itself when a sync succeeds. The API's own 401 and the version blocks apply as they always do, not this state. No connection, and a 5xx, are unreachable. A sync that a sign-out stops, or that iOS cuts short in the background, is not a failure. A failed sync after one succeeded changes nothing: what is saved shows.
+- **When the first sync fails**, because the sync couldn't finish (an answer that the app can't read, a stray 404, or a copy that the app can't read or write, such as on a full disk), a page with no rows yet shows the error state, "Couldn't load your lists from {address}", with Try again. It is never Loading forever, and never an empty state. Try again syncs at once, and the page shows the progress indicator while it runs. The app keeps its sync schedule meanwhile, so the page fills by itself when a sync succeeds. The API's own 401 and the version blocks apply as they always do, not this state. No connection, and a 5xx, are unreachable. A sync that a sign-out stops, or that iOS cuts short in the background, is not a failure. A failed sync after one succeeded changes nothing: what is saved shows.
 - The app never says how old the data is. A row that went away on the server stays until the next successful sync removes it. A tap on it meanwhile gives the one "not found" page.
 - The copy can be dropped and rebuilt at any time, an app update included. The unsent changes cannot.
 
@@ -950,7 +950,7 @@ Every new error type picks its side: captured, a breadcrumb, or never.
 - **Captured** (the app's own faults, by code only):
   - the local database will not open
   - a migration drops the copy
-  - a sync can't read or write the copy (the error's domain and code, never for a cancel)
+  - the app can't read or write the copy, or its journal of unsent changes, while it syncs or sends (the error's domain and code, never for a cancel)
   - a response that the client can't decode (the path template and the key path that failed, never a value), except `GET /health`, where an answer that can't be decoded means no Wishbone is there (the same as an answer that isn't the API's)
   - an unsent change refused late, or any 400 or 422 refusal of a write that the app sent (the method, the path template, and the server's error code, never the body)
   - an error code that is not in the app's list (the code only)
