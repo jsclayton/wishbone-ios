@@ -102,9 +102,12 @@ nonisolated final class DropGiftJourney: JourneyTestCase {
     // After the confirmation, the page closes back to Giving, which is now empty, and never shows "not found".
     foot.tap()
     try confirm(in: app, with: wontGetThis)
-    let empty = app.staticTexts[
-      Audit.words("You aren't getting anything yet. Open someone on Home and tap I'll get this.")
-    ]
+    // By the start of its words, which are the same in the double-length pseudo-language. There, a query by the
+    // whole doubled line failed an assertion inside XCUI (`-[XCUIElementQuery _predicateWithType:identifier:]`),
+    // which stopped the test runner.
+    let empty = app.staticTexts.matching(
+      NSPredicate(format: "label BEGINSWITH %@", "You aren't getting anything yet.")
+    ).firstMatch
     XCTAssertTrue(empty.waitForExistence(timeout: 10), "The page didn't close back to an empty Giving.")
     XCTAssertFalse(app.navigationBars[Audit.words("Gift")].exists, "The gift's page is still open.")
     XCTAssertFalse(
@@ -130,8 +133,9 @@ nonisolated final class DropGiftJourney: JourneyTestCase {
   /// Whether the element goes, within a while.
   @MainActor
   private func gone(_ element: XCUIElement) -> Bool {
-    let isGone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: element)
-    return XCTWaiter().wait(for: [isGone], timeout: 10) == .completed
+    // XCUI's own wait. A predicate expectation on `exists` crashed the test runner in a gate run, in XCUI's
+    // query (`-[XCUIElementQuery _predicateWithType:identifier:]`), when the element had just gone.
+    element.waitForNonExistence(timeout: 10)
   }
 
   /// Whether the server has no open gift of the giver's on the item. The app sends I won't get this behind the
