@@ -8,6 +8,9 @@ public enum ScreenState: Sendable, Equatable {
   case loading
   /// No rows yet, and the instance can't be reached: the unreachable state, with Try again. Never an empty state.
   case cantReach
+  /// No rows yet, and the first sync reached the instance but failed: the error state, with Try again. Never Loading
+  /// forever, and never an empty state. The app goes on syncing on its schedule.
+  case firstSyncFailed
   /// No rows, after a sync that succeeded found nothing: the screen's own empty state.
   case empty
 }

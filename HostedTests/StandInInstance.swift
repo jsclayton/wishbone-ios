@@ -3,7 +3,8 @@ import Network
 import Synchronization
 
 /// A stand-in for an instance with nothing in it: a small HTTP server on the loopback that answers as the API does
-/// for the version check and the versions, and counts the requests for the versions. Any other request gets a 404.
+/// for the version check and the versions, and counts the requests for the versions. Any other request gets a 404,
+/// and so do the versions while it refuses them.
 ///
 /// The hosted test bundle can't link `TestSupport`, so this is its own.
 nonisolated final class StandInInstance: Sendable {
@@ -11,6 +12,7 @@ nonisolated final class StandInInstance: Sendable {
   private let queue = DispatchQueue(label: "StandInInstance")
   private let pulls = Mutex(0)
   private let away = Mutex(false)
+  private let refusing = Mutex(false)
 
   /// The port it listens on.
   let port: UInt16
@@ -27,6 +29,12 @@ nonisolated final class StandInInstance: Sendable {
   var isAway: Bool {
     get { away.withLock { $0 } }
     set { away.withLock { $0 = newValue } }
+  }
+
+  /// Whether it refuses the versions: it answers them with a 404, as something in front of the instance can.
+  var isRefusing: Bool {
+    get { refusing.withLock { $0 } }
+    set { refusing.withLock { $0 = newValue } }
   }
 
   /// Starts a stand-in on a free port of the loopback.
@@ -99,15 +107,19 @@ nonisolated final class StandInInstance: Sendable {
       return Self.answer("200 OK", type: "application/json", body: #"{"status":"ok","version":"dev","commit":"0"}"#)
     case "/api/v2/versions":
       pulls.withLock { $0 += 1 }
+      if isRefusing { return Self.notFound }
       // Nothing is in it, and nothing changes: the versions of nothing, and a 304 once the device keeps the ETag.
       if hasETag { return Self.answer("304 Not Modified", headers: #"ETag: "v1""#) }
       return Self.answer("200 OK", type: "application/json", headers: #"ETag: "v1""#, body: #"{"data":[]}"#)
     default:
-      return Self.answer(
-        "404 Not Found", type: "application/problem+json",
-        body: #"{"status":404,"title":"Not Found","code":"not_found","detail":""}"#)
+      return Self.notFound
     }
   }
+
+  /// The API's own 404.
+  private static let notFound = answer(
+    "404 Not Found", type: "application/problem+json",
+    body: #"{"status":404,"title":"Not Found","code":"not_found","detail":""}"#)
 
   private static func answer(_ status: String, type: String? = nil, headers: String? = nil, body: String = "") -> Data {
     var head = "HTTP/1.1 \(status)\r\nConnection: close\r\nContent-Length: \(body.utf8.count)\r\n"

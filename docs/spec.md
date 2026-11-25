@@ -810,13 +810,14 @@ Screens: the states in [What every screen shares](screens/README.md#what-every-s
 - The app keeps a local copy of everything the user can see, in one database. Screens read only that copy. The API only feeds it.
 - At launch, screens show what is saved at once, and a sync updates it under them, with no spinner over saved data.
 - **When the instance can't be reached**, every screen shows what is saved, under the line "Can't reach {address}", which blocks nothing. A page with no rows yet shows the unreachable state with Try again, never an empty state.
+- **When the first sync fails**, because the instance answered but the sync couldn't finish (an answer that the app can't read, or a stray 404), a page with no rows yet shows the error state, "Couldn't load your lists from {address}", with Try again. It is never Loading forever, and never an empty state. Try again syncs at once, and the page shows the progress indicator while it runs. The app keeps its sync schedule meanwhile, so the page fills by itself when a sync succeeds. The API's own 401 and the version blocks apply as they always do, not this state. No connection, and a 5xx, are unreachable. A failed sync after one succeeded changes nothing: what is saved shows.
 - The app never says how old the data is. A row that went away on the server stays until the next successful sync removes it. A tap on it meanwhile gives the one "not found" page.
 - The copy can be dropped and rebuilt at any time, an app update included. The unsent changes cannot.
 
 ### What the copy holds
 
 - Everything a `GET` shows this user: people (summaries, and full records where allowed), lists and their recipients, items and store links, their gifts (Giving, Given, Received, and a parent's Received for a child), occasions, groups, invitations, and the blocked stores for the admin.
-- The first sync after sign-in fetches all of it: Home's data first, then the user's own lists, then everyone else's. Screens fill as rows arrive.
+- The first sync after sign-in fetches all of it: Home's data first, then the user's own lists, then everyone else's. Screens fill as rows arrive. A first sync that fails shows the error state (see [Screens read a local copy](#screens-read-a-local-copy)).
 - It never holds sessions or passkeys. The Sign-in and devices screen fetches them each time it opens, because an old answer there is a risk: a person who checks whether a lost device is still signed in must see the truth. With no connection, that screen shows no list.
 - It is family-sized, a few megabytes, with no limit and no pruning. Given and Received keep their whole history. Images are not in it.
 

@@ -2,11 +2,12 @@ import SwiftUI
 import WishboneAPI
 import WishboneSession
 
-/// The states that every screen behind the tabs shares: Loading, Can't reach, and Empty, with the line "Can't reach
-/// {address}" above saved rows. See "What every screen shares" in `docs/screens/README.md`.
+/// The states that every screen behind the tabs shares: Loading, Can't reach, the first sync's error, and Empty, with
+/// the line "Can't reach {address}" above saved rows. See "What every screen shares" in `docs/screens/README.md`.
 ///
-/// **Provisional.** Plain default: the line is a row pinned under the navigation bar, the unreachable state and each
-/// empty state use the system's unavailable-content view, and Try again is its button.
+/// **Provisional.** Plain default: the line is a row pinned under the navigation bar, the unreachable state, the
+/// first sync's error state, and each empty state use the system's unavailable-content view, and Try again is its
+/// button.
 extension View {
   /// Shows the screen's state over the screen, which holds the rows: the session model decides it from whether the
   /// screen has rows. `empty` is the screen's own empty state, in its own words.
@@ -15,10 +16,10 @@ extension View {
   ) -> some View {
     sharedStates(
       session.screenState(hasRows: hasRows), address: session.session.instance,
-      unsentChanges: session.unsentChangeCount, tryAgain: { await session.syncNow() }, empty: empty)
+      unsentChanges: session.unsentChangeCount, tryAgain: { await session.tryAgain() }, empty: empty)
   }
 
-  /// Shows the state over the screen. Try again runs `tryAgain`, which is Sync now. While unsent changes wait, the
+  /// Shows the state over the screen. Try again runs `tryAgain`, which is the session's Try again. While unsent changes wait, the
   /// line "Can't reach {address}" says how many.
   public func sharedStates(
     _ state: ScreenState, address: InstanceAddress, unsentChanges: Int = 0,
@@ -55,6 +56,16 @@ public enum CantReach {
   }
 }
 
+/// The words of the error state of a screen with no rows, after a first sync that reached the instance and failed:
+/// "Couldn't load your lists from {address}". See "What every screen shares" in `docs/screens/README.md`.
+///
+/// **Provisional.** The words.
+public enum FirstSyncFailed {
+  public static func words(for address: InstanceAddress) -> String {
+    String(localized: "Couldn't load your lists from \(address.text)", bundle: #bundle)
+  }
+}
+
 private struct SharedStates<Empty: View>: ViewModifier {
   let state: ScreenState
   let address: InstanceAddress
@@ -73,7 +84,11 @@ private struct SharedStates<Empty: View>: ViewModifier {
         switch state {
         case .saved: EmptyView()
         case .loading: ProgressView()
-        case .cantReach: CantReachView(address: address, tryAgain: tryAgain)
+        case .cantReach:
+          TryAgainView(words: CantReach.words(for: address), systemImage: "wifi.slash", tryAgain: tryAgain)
+        case .firstSyncFailed:
+          TryAgainView(
+            words: FirstSyncFailed.words(for: address), systemImage: "exclamationmark.triangle", tryAgain: tryAgain)
         case .empty: empty
         }
       }
@@ -106,12 +121,14 @@ private struct CantReachLine: View {
   }
 }
 
-/// The unreachable state of a screen with no rows yet: never an empty state. Try again is Sync now.
+/// The unreachable state, or the first sync's error state, of a screen with no rows yet: never an empty state. Try
+/// again is the session's Try again, one Sync now.
 ///
 /// As the version block does, the view grows to its words in a scroll view, and Try again is under it: the
 /// unavailable view's own actions cut a larger text short.
-private struct CantReachView: View {
-  let address: InstanceAddress
+private struct TryAgainView: View {
+  let words: String
+  let systemImage: String
   let tryAgain: @MainActor () async -> Void
 
   var body: some View {
@@ -120,9 +137,9 @@ private struct CantReachView: View {
         VStack(spacing: 16) {
           ContentUnavailableView {
             Label {
-              Text(CantReach.words(for: address))
+              Text(words)
             } icon: {
-              Image(systemName: "wifi.slash")
+              Image(systemName: systemImage)
             }
           }
           .fixedSize(horizontal: false, vertical: true)

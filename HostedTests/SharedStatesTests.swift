@@ -81,6 +81,34 @@ struct SharedStatesTests {
       #expect(!window.showsProgress, "\(title)")
     }
   }
+
+  @Test("After a refused first sync, a screen with no rows shows the error view, never the progress indicator")
+  func refusedFirstSync() async throws {
+    let instance = try await StandInInstance.start()
+    let device = try signedInDevice(on: instance)
+    let session = try #require(device.session)
+    let window = try FrameWindow(session: session)
+    await until { window.tabs?.selectedTab?.title == "Home" && window.showsProgress }
+
+    // The instance refuses the versions: the error view, with no progress indicator and no line above it.
+    instance.isRefusing = true
+    #expect(await session.syncNow() == .stopped)
+    #expect(session.screenState(hasRows: false) == .firstSyncFailed)
+    for (tab, title) in Self.tabs {
+      if window.place.tab != tab { window.place.select(tab) }
+      await until { window.tabs?.selectedTab?.title == title && !window.showsProgress }
+    }
+
+    // Try again, once the instance answers, gives each screen its empty view.
+    instance.isRefusing = false
+    #expect(await session.tryAgain() == .succeeded)
+    #expect(session.screenState(hasRows: false) == .empty)
+    for (tab, title) in Self.tabs {
+      if window.place.tab != tab { window.place.select(tab) }
+      await until { window.tabs?.selectedTab?.title == title }
+      #expect(!window.showsProgress, "\(title)")
+    }
+  }
 }
 
 /// A window that shows a list under the shared states, at a state that the test owns, with no navigation bar.

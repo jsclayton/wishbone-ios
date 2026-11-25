@@ -96,6 +96,17 @@ public final class SessionModel {
   /// screens are back at Loading or Can't reach until a sync succeeds. See `screenState(hasRows:)`.
   public private(set) var hasSynced = false
 
+  /// Whether the first sync failed: no sync has succeeded since this session model began, and the last sync reached
+  /// the instance and was refused, such as with a 404 or an answer that can't be decoded. A screen with no rows then
+  /// shows the error state with Try again, never Loading forever. The timer keeps its schedule, and the next sync
+  /// that succeeds clears it. A sync that can't reach the instance clears it too: the unreachable state shows. See
+  /// `screenState(hasRows:)`, and "Screens read a local copy" in `docs/spec.md`.
+  public private(set) var firstSyncFailed = false
+
+  /// How many Try again taps wait for their sync. While one waits, a screen whose first sync failed shows Loading
+  /// again. See `tryAgain()`.
+  private var tryingAgain = 0
+
   /// Whether a sync runs now.
   public var isSyncing: Bool { running != nil }
 
@@ -358,11 +369,24 @@ public final class SessionModel {
   /// - A screen with rows shows them, under the line "Can't reach {address}" while the last sync found the instance
   ///   unreachable. The line blocks nothing.
   /// - A screen with no rows shows Can't reach while the instance can't be reached, with Try again.
+  /// - It shows the error state, with Try again, while the first sync failed, and Loading again while Try again's
+  ///   sync runs.
   /// - Otherwise it shows its empty state only after a sync that succeeded, and Loading until one has.
   public func screenState(hasRows: Bool) -> ScreenState {
     if hasRows { return .saved(cantReach: isInstanceUnreachable) }
     if isInstanceUnreachable { return .cantReach }
-    return hasSynced ? .empty : .loading
+    if hasSynced { return .empty }
+    return firstSyncFailed && tryingAgain == 0 ? .firstSyncFailed : .loading
+  }
+
+  /// Try again, from the unreachable state or the error state of a screen with no rows: one Sync now. While it
+  /// runs, a screen whose first sync failed shows Loading again, and a screen that can't reach the instance stays as
+  /// it is. It returns the sync's outcome.
+  @discardableResult
+  public func tryAgain() async -> SyncOutcome {
+    tryingAgain += 1
+    defer { tryingAgain -= 1 }
+    return await syncNow()
   }
 
   // MARK: - Sync now
@@ -476,8 +500,9 @@ public final class SessionModel {
     }
   }
 
-  /// Where every sync ends, and gets its outcome. It publishes whether the instance could be reached, and starts or
-  /// stops the timer. Work that follows a sync that succeeded goes here. An ended session model does nothing here.
+  /// Where every sync ends, and gets its outcome. It publishes whether the instance could be reached and whether the
+  /// first sync failed, and starts or stops the timer. Work that follows a sync that succeeded goes here. An ended
+  /// session model does nothing here.
   private func syncEnded(_ end: PullEnd) -> SyncOutcome {
     let outcome: SyncOutcome =
       switch end {
@@ -490,8 +515,15 @@ public final class SessionModel {
     case .succeeded:
       isInstanceUnreachable = false
       hasSynced = true
-    case .refused: isInstanceUnreachable = false
-    case .unreachable: isInstanceUnreachable = true
+      firstSyncFailed = false
+    case .refused:
+      isInstanceUnreachable = false
+      // Before any sync has succeeded, a refusal leaves nothing to show. After one, the saved rows show, as they
+      // were. A version block shows in place of every screen, so it is not this state.
+      firstSyncFailed = !hasSynced && versionBlock == nil
+    case .unreachable:
+      isInstanceUnreachable = true
+      firstSyncFailed = false
     // A fault of the copy says nothing of the instance. So the line about it stays as it was.
     case .faulted, .endedByServer: break
     }
