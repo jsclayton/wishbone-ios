@@ -31,6 +31,7 @@ struct GiftPageScreen: View {
   /// The width of the window, for the list's column of readable width.
   @State private var width: CGFloat = 0
   @ScaledMetric(relativeTo: .body) private var readableWidth: CGFloat = 640
+  @Environment(\.dynamicTypeSize) private var size
 
   var body: some View {
     let gift = page.gift
@@ -83,7 +84,6 @@ struct GiftPageScreen: View {
             if case .named = page.occasion {
               Text(GiftWords.hiddenUntil(gift.revealAt))
                 .font(.footnote)
-                .foregroundStyle(.secondary)
             }
           }
         }
@@ -100,6 +100,12 @@ struct GiftPageScreen: View {
                 .foregroundStyle(.secondary)
             }
           }
+        }
+      } footer: {
+        // At the largest text sizes, a field's prompt doesn't fit on its one line, so the From field's prompt is
+        // the section's footer, whole.
+        if gift.canEdit && size.isAccessibilitySize {
+          Text("Who it's from, if not only you", bundle: #bundle)
         }
       }
       Section {
@@ -178,7 +184,6 @@ private struct QuantityStepper: View {
             .accessibilityHidden(true)
         }
         Text(gift.quantity.formatted())
-          .foregroundStyle(.secondary)
           .monospacedDigit()
       }
     }
@@ -224,7 +229,10 @@ private struct QuantityStepper: View {
 
 /// A text field of a gift, From or Note, that saves once when it loses focus, as an unsent change. `GiftFieldDraft`
 /// holds what it shows and when it saves. The from label stops at 60 characters, and the note at 2000. The note's
-/// Return adds a line, so a Done key above the keyboard ends its editing.
+/// Return adds a line, so a Done key above the keyboard ends its editing. The from label wraps, so its words are
+/// never cut short at a larger text size, and its Return ends the editing.
+///
+/// The label shows, and is paired with the field for accessibility, so VoiceOver reads the field by its label.
 private struct GiftTextField: View {
   typealias Field = GiftFieldDraft.Field
 
@@ -236,6 +244,7 @@ private struct GiftTextField: View {
   @State private var draft: GiftFieldDraft
   @FocusState private var isFocused: Bool
   @Environment(\.dynamicTypeSize) private var size
+  @Namespace private var pair
 
   init(field: Field, giftID: String, saved: String, save: @escaping (String) async -> Void) {
     self.field = field
@@ -252,11 +261,11 @@ private struct GiftTextField: View {
       : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 16))
     layout {
       Text(label)
-        .foregroundStyle(size.isAccessibilitySize || field == .note ? .secondary : .primary)
-        .accessibilityHidden(true)
+        .accessibilityLabeledPair(role: .label, id: field, in: pair)
       textField
         .focused($isFocused)
         .accessibilityLabel(Text(label))
+        .accessibilityLabeledPair(role: .content, id: field, in: pair)
     }
     .onChange(of: isFocused) {
       if isFocused { draft.began() } else { saveIfEdited() }
@@ -284,11 +293,15 @@ private struct GiftTextField: View {
     switch field {
     case .fromLabel:
       TextField(
-        text: $draft.text,
-        prompt: Text("Who it's from, if not only you", bundle: #bundle)
+        text: oneLine,
+        // A prompt stays on one line, so at the largest text sizes it is the section's footer instead.
+        prompt: size.isAccessibilitySize
+          ? Text(verbatim: "") : Text("Who it's from, if not only you", bundle: #bundle),
+        axis: .vertical
       ) {
         Text(label)
       }
+      .lineLimit(1...3)
       .multilineTextAlignment(size.isAccessibilitySize ? .leading : .trailing)
       .submitLabel(.done)
       .onSubmit { isFocused = false }
@@ -309,6 +322,20 @@ private struct GiftTextField: View {
           }
         }
       }
+    }
+  }
+
+  /// The from label's text, on one line. The field wraps, so Return would add a line: instead, it ends the editing.
+  private var oneLine: Binding<String> {
+    Binding {
+      draft.text
+    } set: { text in
+      guard text.contains(where: \.isNewline) else {
+        draft.text = text
+        return
+      }
+      draft.text = String(text.filter { !$0.isNewline })
+      isFocused = false
     }
   }
 
@@ -408,7 +435,6 @@ struct FieldRow<Value: View>: View {
       if size.isAccessibilitySize {
         VStack(alignment: .leading, spacing: 4) {
           Text(label)
-            .foregroundStyle(.secondary)
           value
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -418,7 +444,6 @@ struct FieldRow<Value: View>: View {
           Spacer(minLength: 16)
           value
             .multilineTextAlignment(.trailing)
-            .foregroundStyle(.secondary)
         }
       }
     }
