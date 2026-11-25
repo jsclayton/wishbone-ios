@@ -9,8 +9,8 @@ import WishboneAPI
 ///    version, is fetched.
 /// 3. A thing is fetched from its own address, or from its collection when that takes fewer requests.
 /// 4. Each row is saved with the version that its own answer carried, and never with the one that the entry named.
-/// 5. The answer's `ETag` is kept only when every fetch gave the version that its entry named. Otherwise none is
-///    kept, and the next pull compares again.
+/// 5. The answer's `ETag` is kept only when every fetch gave the version that its entry named, and no answer of a
+///    write came during the pull. Otherwise none is kept, and the next pull compares again.
 ///
 /// **What the copy holds:** every user, group, occasion, list, list recipient, item, store link, gift and
 /// invitation that the session's user can see, and the memberships that the user can read: every kind that the

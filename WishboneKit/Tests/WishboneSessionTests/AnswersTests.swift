@@ -45,6 +45,24 @@ struct AnswersTests {
     #expect(try await stores(in: database) == ["kept"])
   }
 
+  @Test("A pull that an answer came during keeps no ETag, so the next pull compares again")
+  func noETag() async throws {
+    let database = try LocalDatabase.inMemory()
+    let quiet = database.keepingAnswers(after: database.answers.mark())
+    try await quiet.keep(etag: "\"quiet\"")
+    #expect(try await database.keptETag() == "\"quiet\"")
+
+    let pull = database.keepingAnswers(after: database.answers.mark())
+    try await database.saveBlockedStore(try store("late"))
+    try await pull.keep(etag: "\"during\"")
+    #expect(try await database.keptETag() == nil)
+
+    // The next pull asks after the answer, and keeps its ETag.
+    let next = database.keepingAnswers(after: database.answers.mark())
+    try await next.keep(etag: "\"after\"")
+    #expect(try await database.keptETag() == "\"after\"")
+  }
+
   @Test("A change that is no pull's takes no mark: an answer never keeps a row from it")
   func noMark() async throws {
     let database = try LocalDatabase.inMemory()

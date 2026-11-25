@@ -11,8 +11,9 @@ import Synchronization
 /// back the rows that an answer saved or removed after that mark, as the answer left them (see
 /// `LocalDatabase.change`). The pull never takes them away, not even for a moment.
 ///
-/// The next pull takes a mark after the answer, and the server is the authority again: the write's own rows are no
-/// longer kept from it. The session model still runs one more sync after a sync that a write came during (see
+/// A pull that an answer came during keeps no `ETag` of `GET /versions`, because the copy holds the answer's rows where
+/// the pull's answer named others. The next pull takes a mark after the answer, and the server is the authority
+/// again: the write's own rows are no longer kept from it. The session model still runs one more sync after a sync that a write came during (see
 /// `SessionModel.syncAgainIfSyncing()`), so a row that the pull left as the answer had it is fetched again.
 ///
 /// The record is in memory only: a pull never outlives the app. Every copy of a `LocalDatabase` shares it. It holds

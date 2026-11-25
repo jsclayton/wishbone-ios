@@ -378,9 +378,14 @@ struct LocalDatabase: Sendable {
   }
 
   /// Keeps the `ETag` of an answer of `GET /versions` that the copy agrees with now. Nil keeps none.
+  ///
+  /// A pull that an answer came during keeps none either: the copy holds that answer's rows where the pull's answer
+  /// named others, which can be newer. So the next pull compares again, and fetches what differs (see `Answers`).
   func keep(etag: String?) async throws {
+    let answers = answers
+    let mark = answeredAfter
     try await change { database in
-      guard let etag else { return }
+      guard let etag, mark.map({ answers.rows(after: $0).isEmpty }) ?? true else { return }
       try database.execute(sql: "INSERT INTO \(Self.keptETagTable) (etag) VALUES (?)", arguments: [etag])
     }
   }
