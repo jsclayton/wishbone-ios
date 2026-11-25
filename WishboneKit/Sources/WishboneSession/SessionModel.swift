@@ -1,5 +1,4 @@
 import Foundation
-import GRDB
 import Observation
 import WishboneAPI
 
@@ -139,7 +138,7 @@ public final class SessionModel {
   private(set) var hasEnded = false
 
   /// Stops when the session model goes.
-  private var observation: AnyDatabaseCancellable?
+  private var observation: CopyObserver?
   private var checkingVersion: Task<Void, Never>?
 
   /// The sync that runs. One sync runs at a time.
@@ -222,16 +221,9 @@ public final class SessionModel {
     reminderSettings = reminderSettingsFile.read()
     self.endedByServer = endedByServer
     // The first snapshot comes at once, so a screen shows what is saved before anything is asked of the instance.
-    observation = LocalDatabase.snapshots(ofUser: session.userID).start(
-      in: database.writer,
-      scheduling: .immediate,
-      onError: { error in
-        Log.fault(.session, "The copy can't be read.", detail: "\(error)")
-      },
-      onChange: { [weak self] snapshot in
-        self?.publish(snapshot)
-      }
-    )
+    observation = database.observeSnapshots(ofUser: session.userID) { [weak self] snapshot in
+      self?.publish(snapshot)
+    }
     // The stream starts now, so a change that comes before the task reads it is not lost.
     let changes = network.changes()
     watchingNetwork = Task { [weak self] in
