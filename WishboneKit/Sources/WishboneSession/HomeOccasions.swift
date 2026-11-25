@@ -218,8 +218,7 @@ public struct HomeOccasions: Equatable, Sendable {
     var rows: [HomeOccasion] = []
     for occasion in occasions {
       guard let text = occasion.nextDate, let date = day(of: text, in: calendar),
-        let daysLeft = calendar.dateComponents([.day], from: start, to: date).day,
-        daysLeft >= 0, days.map({ daysLeft <= $0 }) ?? true
+        let daysLeft = daysLeft(until: date, from: start, in: calendar), days.map({ daysLeft <= $0 }) ?? true
       else { continue }
 
       let whose: HomeOccasion.Whose
@@ -261,6 +260,14 @@ public struct HomeOccasions: Equatable, Sendable {
       first.element.daysLeft != second.element.daysLeft
         ? first.element.daysLeft < second.element.daysLeft : first.offset < second.offset
     }.map(\.element)
+  }
+
+  /// How many days from the start of today to the start of the date's day, in the calendar's zone: 0 is today. Nil
+  /// for a date before today, which has no time left: the occasion's next date is in its own zone, so in the
+  /// device's zone it can be yesterday. Home and a shared occasion's page both count with it.
+  static func daysLeft(until date: Date, from start: Date, in calendar: Calendar) -> Int? {
+    guard let days = calendar.dateComponents([.day], from: start, to: date).day, days >= 0 else { return nil }
+    return days
   }
 
   /// The start of the day of a `YYYY-MM-DD` date, in the calendar's zone. Nil for text that is not such a date.

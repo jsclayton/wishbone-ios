@@ -28,7 +28,7 @@ Every occasion the user can see, soonest first. For the admin, it is also where 
 The same for everyone, pushed from the countdown ("See who's on it"), from Coming up, and from this screen.
 
 1. The occasion's name, its date, and the days left. One that is for everyone says "Everyone". The admin also sees the names of its groups, which the server gives to nobody else.
-2. The users it applies to whom the user can see, by name. Each is marked with how many open gifts the user has for them on this occasion, or "Nothing yet". Each row pushes that user's page.
+2. The users it applies to whom the user can see, by name, never the user, as on the web. Each is marked with how many open gifts the user has for them on the occasion's next date, or "Nothing yet". With no next date, none counts. Each row pushes that user's page.
 3. For the admin: **Edit** and **Delete**.
 
 **Provisional.** Plain default: a system list. Edit is a toolbar button, and Delete is a row at the foot.
@@ -50,6 +50,7 @@ The app attaches the groups after the create, and names any group that failed. O
 - **Nothing coming up:** the first part says so. This is rare, because every user has a birthday.
 - **No shared occasions**, for the admin: the part says so, and points to the plus.
 - **A shared occasion that reaches nobody the user sees:** its page says so.
+- **A shared occasion's users not in the copy yet:** its page says nothing about them until a sync brings them, and never says it reaches nobody.
 - **Every write to a shared occasion waits for the server.** With no connection, the form says "Can't reach {address}", and stays open.
 - **A group didn't attach:** the occasion is still made, and its page names the group.
 - **Gone:** a shared occasion that was deleted shows the [not-found](not-found.md) page.
@@ -80,7 +81,7 @@ Decided in the spec, marked as drafts there: "Shared occasions", "New shared occ
 |---|---|
 | Title | "Occasions" |
 | A row | "Emma's birthday", "Emma's graduation", "Christmas", "Your birthday" |
-| The time left | "in 12 days", "tomorrow", "today" |
+| The time left | "in 12 days", "tomorrow", "today". None for a date already past in the device's zone, as on Home |
 | Nothing coming up | "No occasions are coming up." |
 | No shared occasions | "No shared occasions yet. Tap the plus to add one, such as Christmas." |
 | Reaches nobody you see | "Nobody you can see is on this occasion." |

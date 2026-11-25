@@ -35,14 +35,17 @@ struct SharedOccasionScreen: View {
       Section {
         header(page)
       }
-      Section {
-        if page.people.isEmpty {
-          Text("Nobody you can see is on this occasion.", bundle: #bundle)
-            .foregroundStyle(.secondary)
-        }
-        ForEach(page.people) { person in
-          NavigationLink(value: Page.user(id: person.user.id)) {
-            PersonRow(person: person)
+      // With no people in the copy yet, the page says nothing about them until the next sync brings them.
+      if let people = page.people {
+        Section {
+          if people.isEmpty {
+            Text("Nobody you can see is on this occasion.", bundle: #bundle)
+              .foregroundStyle(.secondary)
+          }
+          ForEach(people) { person in
+            NavigationLink(value: Page.user(id: person.user.id)) {
+              PersonRow(person: person)
+            }
           }
         }
       }
