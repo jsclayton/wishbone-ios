@@ -22,7 +22,7 @@ One gift in full. While a gift is open, its giver marks it bought here, changes 
 4. **How many**, when the giver can change it.
 5. **Occasion**, with the reveal date under it.
 6. **From**: the from label, at most 60 characters.
-7. **Note**: the giver's private note.
+7. **Note**: the giver's private note, at most 2000 characters.
 8. **Get another for a different occasion**, when the item can still be claimed and another occasion is free.
 9. **I won't get this**.
 

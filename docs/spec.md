@@ -835,6 +835,7 @@ Screens: the states in [What every screen shares](screens/README.md#what-every-s
 - Each create carries its own `Idempotency-Key`, so a resend after a lost answer can't make it twice.
 - A create that later changes refer to gets a local stand-in ID. When the create's answer comes, the app puts the server's ID in its place.
 - A late refusal rolls the change back in the copy, and shows once (see [Late refusals](#late-refusals)).
+- An unclaim that the server answers with 404 (the gift is already gone) counts as done: no rollback and no alert.
 - Sign-out and the API's own 401 discard every unsent change. A write in flight is abandoned, and its answer is never written into a cleared database.
 - An answer in flight wins over a pull for the same thing. After it, the server is the authority again.
 
