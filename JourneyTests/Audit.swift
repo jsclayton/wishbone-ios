@@ -108,20 +108,16 @@ enum Audit {
     // still. Between two settings, the simulator goes back to the default. So the audit never reads a screen that
     // is still on its way from one setting to the next, and each change is of one setting only.
     try await apply(settings[0], helper: helper)
-    var current = try await screenAfterReadingElements(
-      of: app, screen, in: settings[0],
-      shown: try await settledScreen(of: app, screen, in: settings[0], where: { _ in true }))
+    var current = try await settledScreen(of: app, screen, in: settings[0], where: { _ in true })
     try await audit(
       app, screen, in: settings[0].label, screenshot: current.screenshot, rows: rowsThatLeaveTheScreen, test: test)
     for setting in settings.dropFirst() {
       try await apply(setting, helper: helper)
       let toSetting = Change(from: settings[0], before: current.pixels, helper: helper)
-      var shown = try await screenAfterReadingElements(
-        of: app, screen, in: setting, shown: try await settledScreen(of: app, screen, in: setting, after: toSetting))
-      // The largest text size gets no rows, so it checks Dynamic Type on every row that shows. See above.
-      let rows = setting.name == largestText.name ? [] : rowsThatLeaveTheScreen
-      try await audit(app, screen, in: setting.label, screenshot: shown.screenshot, rows: rows, test: test)
+      var shown = try await settledScreen(of: app, screen, in: setting, after: toSetting)
       if setting.name == largestText.name {
+        // The largest text size gets no rows, so it checks Dynamic Type on every row that shows. See above.
+        shown = try await auditAtLargestText(app, screen, shown: shown, test: test)
         for row in rowsToScrollTo {
           guard let top = try await scroll(app, to: row, in: screen) else { continue }
           let scrolled = try await settledScreen(of: app, screen, in: setting, where: { _ in true })
@@ -133,6 +129,9 @@ enum Audit {
             types: [.dynamicType, .textClipped], underTheBar: top, test: test)
           shown = scrolled
         }
+      } else {
+        try await audit(
+          app, screen, in: setting.label, screenshot: shown.screenshot, rows: rowsThatLeaveTheScreen, test: test)
       }
       try await apply(settings[0], helper: helper)
       let toDefault = Change(from: setting, before: shown.pixels, helper: helper)
@@ -140,32 +139,33 @@ enum Audit {
     }
   }
 
-  /// Reads the app's whole accessibility tree, and returns the screen when it is still again, in the setting.
+  /// Audits the screen at the largest text size: first the Dynamic Type check on its own, then every other check,
+  /// on the screen when it is still again. Returns the screen as the second audit read it.
   ///
-  /// This is the journey's answer to the named flake "an audit's issue has no element" in `docs/development.md`. On
-  /// 2026-11-25, in two gate runs in a row, the first audit at the largest text size of Giving, Gifts, and the
-  /// unreachable view gave two issues of the element detection check, "Potentially inaccessible text", with no
-  /// element: text that the check found on the screen and couldn't match to an element. Each screen passed when the
-  /// audit ran again a few seconds later, after the journey's reads of the first audit's issues. A read changed no
-  /// pixel of those screens, so the most likely cause is a tree, not a screen, that wasn't up to date after the
-  /// change of text size. That was not proved: in the next two runs, with this read before each audit, no audit ran
-  /// again. When the screen does move here, the log says so, and the journey audits the screen as it is then.
+  /// This is the journey's answer to the named flake "an audit's issue has no element" in `docs/development.md`.
+  /// After a change of text size while the app runs, a screen with a large title keeps its navigation bar at the
+  /// height of the text size before: at the largest text size, 106 points tall, where its own height is 127. The
+  /// title and every element below it show whole, each in its element's frame. The Dynamic Type check changes the
+  /// app's text size during the audit, and so makes the bar measure itself again: after the audit, the bar is 127
+  /// points tall, and the whole screen is 21 points lower. On the three screens of the Gifts tab, which have the
+  /// segmented control under the bar, the element detection check gave two issues of "Potentially inaccessible
+  /// text" with no element in the first audit, on the bar that wasn't at its own height. The audit after it, on the
+  /// bar at its own height, passed. With the Dynamic Type check first, the other checks read the screen with the bar
+  /// at its own height.
   ///
-  /// The audits of a scrolled screen, and a run with no helper, don't come through here.
-  private static func screenAfterReadingElements(
-    of app: XCUIApplication, _ screen: String, in setting: Setting,
-    shown: (screenshot: XCUIScreenshot, pixels: Data)
+  /// The second audit's screenshot has words after the setting, so it is not one of the screen's four in the gate's
+  /// count.
+  private static func auditAtLargestText(
+    _ app: XCUIApplication, _ screen: String, shown: (screenshot: XCUIScreenshot, pixels: Data), test: XCTestCase
   ) async throws -> (screenshot: XCUIScreenshot, pixels: Data) {
-    do {
-      _ = try app.snapshot()
-    } catch {
-      throw AuditError("The journey couldn't read the elements of \(screen), in \(setting.label): \(error)")
-    }
-    let now = try await settledScreen(of: app, screen, in: setting, where: { _ in true })
-    if now.pixels != shown.pixels {
-      print("The screen of \(screen), in \(setting.label) moved when the journey read its elements.")
-    }
-    return now
+    try await audit(
+      app, screen, in: largestText.label, screenshot: shown.screenshot, rows: [], types: .dynamicType, test: test)
+    let settled = try await settledScreen(of: app, screen, in: largestText, where: { _ in true })
+    try await audit(
+      app, screen, in: largestText.label, screenshot: settled.screenshot, rows: [],
+      types: XCUIAccessibilityAuditType.all.subtracting(.dynamicType), test: test,
+      attachedAs: "\(screen), in \(largestText.label), after the Dynamic Type check")
+    return settled
   }
 
   /// How many drags may bring a row on the screen.
@@ -244,10 +244,11 @@ enum Audit {
 
   private static func audit(
     _ app: XCUIApplication, _ screen: String, in setting: String, screenshot: XCUIScreenshot, rows: [String],
-    types: XCUIAccessibilityAuditType = .all, underTheBar contentTop: CGFloat? = nil, test: XCTestCase
+    types: XCUIAccessibilityAuditType = .all, underTheBar contentTop: CGFloat? = nil, test: XCTestCase,
+    attachedAs name: String? = nil
   ) async throws {
     let attachment = XCTAttachment(screenshot: screenshot)
-    attachment.name = "\(screen), in \(setting)"
+    attachment.name = name ?? "\(screen), in \(setting)"
     attachment.lifetime = .keepAlways
     test.add(attachment)
     // Every issue on the screen, so one run reports all of them, not only the first. An audit that ran out of time
