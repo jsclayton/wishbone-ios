@@ -398,7 +398,7 @@
       "localizations" : {
         "en" : {
           "stringUnit" : {
-            "state" : "new",
+            "state" : "translated",
             "value" : "Adding %1$@: %2$@"
           }
         }
@@ -1528,7 +1528,7 @@
       "localizations" : {
         "en" : {
           "stringUnit" : {
-            "state" : "new",
+            "state" : "translated",
             "value" : "Your photo for %1$@: %2$@"
           }
         }
