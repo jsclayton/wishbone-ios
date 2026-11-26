@@ -105,12 +105,15 @@ struct AddFormScreen: View {
       }
       if let hint = session.duplicateHint(for: draft) {
         Section {
-          DuplicateHintRow(hint: hint)
+          DuplicateHintRow(hint: hint, session: session)
         }
       }
     }
     .navigationTitle(Text("Add item", bundle: #bundle))
     .navigationBarBackButtonHidden(hasChanges)
+    // In a list's sheet, a swipe down doesn't close the sheet while the form has typed changes: Back asks first.
+    // On the Add screen's place, there is no sheet, and this does nothing.
+    .interactiveDismissDisabled(hasChanges)
     .disabled(isAdding)
     .toolbar {
       if hasChanges {
@@ -159,7 +162,7 @@ struct AddFormScreen: View {
     .disabled(!draft.hasTitle || isAdding)
     .accessibilityHint(
       draft.hasTitle
-        ? Text("Adds the item to your list.", bundle: #bundle) : Text("Give the item a title.", bundle: #bundle))
+        ? Text("Adds the item to the list.", bundle: #bundle) : Text("Give the item a title.", bundle: #bundle))
   }
 
   /// Price and Up to, side by side, and stacked at the largest text sizes.
@@ -315,14 +318,21 @@ private struct AddToPicker: View {
   }
 }
 
-/// "Already on this list: {title}". On the Add screen it pushes the item's page. In a sheet it is text, because a
-/// sheet never opens a second sheet. It never blocks the add.
+/// "Already on this list: {title}". On the Add screen it pushes the item's page over the form, so Back returns to
+/// the form with its changes. In a sheet it is text, because a sheet never opens a second sheet. It never blocks the
+/// add.
 private struct DuplicateHintRow: View {
   let hint: DuplicateHint
+  let session: SessionModel
 
   var body: some View {
     if hint.opensItem {
-      NavigationLink(value: Page.item(id: hint.itemID)) {
+      // The page is pushed by view, not by value. The Add screen pushes the form by view, and the stack keeps the
+      // pages pushed by view on top of its path, so a page pushed by value would go under the form. The item's
+      // page has no window pages of its own here, and a link on it that pushes by value goes under the form too.
+      NavigationLink {
+        PageScreen(page: .item(id: hint.itemID), session: session, pages: .constant([]))
+      } label: {
         words
       }
     } else {
