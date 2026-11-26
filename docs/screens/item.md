@@ -39,7 +39,7 @@ A sheet with the fields that the add form has, and the ones it leaves out:
 4. **Notes**.
 5. **Store links**: each with its price to edit and Remove, and **Add link**, which takes a pasted web address and reads it.
 
-**Provisional.** Plain default: a system form in a sheet, in the order above.
+**Provisional.** Plain default: a system form in a sheet, in the order above, with Cancel and Save in the toolbar. Each photo is a row with its picture, "Primary photo" or Make primary, and Remove, in the order they were added. A photo whose upload waits is a row too, with its picture from the device. Take a photo and Choose a photo are rows under them, and at 5 photos they can't be used, and the section says why. How many is a stepper under the Always wanted switch, which hides it.
 
 ## States
 
@@ -96,6 +96,14 @@ Decided, as the web app has them: "I'll get this", "{n} of {m} still wanted", "A
 | Edit, how many | "How many", with the switch "Always wanted" |
 | Add link, prompt | "Paste a store's web address" |
 | Delete, confirmation | "Delete {title}? This can't be undone.", with the button "Delete {title}" |
+| Delete, the menu item | "Delete". Its label reads the action in full: "Delete {title}" |
+| Edit item, the sheet | "Photos", "Title", "Price", "Up to", "Notes", "Cancel", "Save" |
+| Edit item, a photo | "Photo {n}", "Primary photo", "Make primary", "Remove", "Take a photo", "Choose a photo" |
+| Edit item, at 5 photos | The words for `too_many_images` |
+| Edit item, no title | "Give the item a title." |
+| Edit item, Cancel with typed changes | "Discard your changes?", with "Discard" and "Keep editing" |
+| A late refusal of Edit | "Editing {title}: {reason}" |
+| A late refusal of Delete | "Deleting {title}: {reason}" |
 | Move to…, title | "Move to…" |
 | Refresh prices, done | "Prices checked." |
 

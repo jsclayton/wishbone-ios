@@ -104,6 +104,18 @@ struct UnsentChangeWordsTests {
         == "Deleting Cousins: Cousins has other recipients now, so it can't be deleted. You can leave it.")
   }
 
+  @Test("A late refusal of Edit item or Delete names the item, with the words for too_many_images and forbidden")
+  func lateRefusalsOfItems() {
+    let tooMany = APIError.Refusal(route: .updateItem, status: 422, code: .tooManyImages, detail: "The server's words")
+    let forbidden = APIError.Refusal(route: .deleteItem, status: 403, code: .forbidden, detail: "The server's words")
+    let edit = LateRefusal(
+      id: 1, action: .editItem(itemID: "4", changes: ItemChanges(title: "Box kite")), title: "Kite",
+      refusal: tooMany)
+    let delete = LateRefusal(id: 2, action: .deleteItem(itemID: "4", listID: "9"), title: "Kite", refusal: forbidden)
+    #expect(LateRefusalWords.line(edit) == "Editing Kite: An item can have 5 photos.")
+    #expect(LateRefusalWords.line(delete) == "Deleting Kite: You can't do this any more.")
+  }
+
   @Test("A late refusal of Decline names the list")
   func lateRefusalOfDecline() {
     let forbidden = APIError.Refusal(

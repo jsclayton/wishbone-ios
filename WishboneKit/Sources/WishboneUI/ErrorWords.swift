@@ -7,6 +7,11 @@ import WishboneAPI
 ///
 /// Each ticket adds the codes that its screens meet.
 public enum ErrorWords {
+  /// The words of `too_many_images`, which the Edit item sheet also shows when the item has 5 photos.
+  static var tooManyImages: String {
+    String(localized: "An item can have 5 photos.", bundle: #bundle)
+  }
+
   /// The words for a refusal. Nil for a code that counts as success, which shows nothing. For a code that the app
   /// doesn't know, they are the server's `detail`.
   public static func words(for refusal: APIError.Refusal) -> String? {
@@ -21,7 +26,7 @@ public enum ErrorWords {
     case .imageFetchFailed:
       return imageLeftOut
     case .tooManyImages:
-      return String(localized: "An item can have 5 photos.", bundle: #bundle)
+      return tooManyImages
     case .tooManyStoreLinks:
       return String(localized: "An item can have 10 store links.", bundle: #bundle)
     case .invalidInput:

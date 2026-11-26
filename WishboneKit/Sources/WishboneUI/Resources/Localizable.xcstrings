@@ -514,17 +514,26 @@
         }
       }
     },
+    "Delete" : {
+
+    },
+    "Delete %@" : {
+
+    },
     "Delete %@ and its items" : {
 
     },
     "Delete %@ and its items?" : {
 
     },
+    "Delete %@?" : {
+
+    },
     "Delete list" : {
 
     },
     "Deleting %@: %@" : {
-      "comment" : "A late refusal of Delete list: the list's name, then why the change wasn't saved",
+      "comment" : "A late refusal of Delete list or Delete item: the list's name or the item's title, then why the change wasn't saved",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -552,11 +561,17 @@
     "Done" : {
 
     },
+    "Edit" : {
+
+    },
+    "Edit item" : {
+
+    },
     "Edit list" : {
 
     },
     "Editing %@: %@" : {
-      "comment" : "A late refusal of Edit list: the list's name, then why the change wasn't saved",
+      "comment" : "A late refusal of Edit list or Edit item: the list's name or the item's title, then why the change wasn't saved",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -813,6 +828,9 @@
         }
       }
     },
+    "Make primary" : {
+
+    },
     "Mark bought" : {
 
     },
@@ -1016,6 +1034,9 @@
     "Photo" : {
 
     },
+    "Photo %lld" : {
+
+    },
     "Photo %lld of %lld" : {
       "localizations" : {
         "en" : {
@@ -1030,6 +1051,9 @@
 
     },
     "Photo, %@" : {
+
+    },
+    "Photos" : {
 
     },
     "Point the camera at the QR code of your login link." : {
@@ -1048,6 +1072,9 @@
           }
         }
       }
+    },
+    "Primary photo" : {
+
     },
     "Privacy policy" : {
 
@@ -1073,6 +1100,9 @@
     "Reminders show on the Lock Screen." : {
 
     },
+    "Remove" : {
+
+    },
     "Remove photo" : {
 
     },
@@ -1086,6 +1116,9 @@
 
     },
     "Save" : {
+
+    },
+    "Saves the item." : {
 
     },
     "Saves the list." : {
