@@ -393,6 +393,17 @@
     "Added by %@" : {
 
     },
+    "Adding %@: %@" : {
+      "comment" : "A late refusal of an item added by hand: the item's title, then why it wasn't added",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Adding %1$@: %2$@"
+          }
+        }
+      }
+    },
     "Adding to %@" : {
 
     },
@@ -1511,6 +1522,17 @@
     },
     "Your photo" : {
 
+    },
+    "Your photo for %@: %@" : {
+      "comment" : "A late refusal of the photo of an item added by hand: the item's title, then why it wasn't saved",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Your photo for %1$@: %2$@"
+          }
+        }
+      }
     },
     "example.com, or paste a link" : {
 
