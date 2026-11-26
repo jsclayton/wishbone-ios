@@ -15,6 +15,9 @@ public struct AddTo: Equatable, Sendable {
   public struct Target: Equatable, Sendable, Identifiable {
     public let list: ListRow
 
+    /// Whether the session's user is one of the list's recipients.
+    public let isMine: Bool
+
     /// The names of the list's recipients, in the order they became recipients, when the session's user is not a
     /// recipient: "Lego · Emma". Empty for a list of the user's own.
     public let recipientNames: [String]
@@ -57,14 +60,20 @@ public struct DuplicateHint: Equatable, Sendable {
 
 extension SessionModel {
   /// Every list that the user can edit, for Add to: the Lists tab's lists, with only the ones that the user can
-  /// edit. A deactivated child's lists can't be edited, so that child has no part.
+  /// edit. A list is offered once, so a child whose every list that the user can edit was offered under an earlier
+  /// child has no part: in the standard family, the deactivated child shares a list with the first child.
+  ///
+  /// A list for someone else whose recipients' names aren't in the copy is left out, so it never looks like one of
+  /// the user's own lists.
   public var addTo: AddTo {
     let tab = listsTab
     var offered = Set<String>()
     func targets(_ lists: [ListRow]) -> [AddTo.Target] {
       lists.filter(\.canEdit).compactMap { list in
+        let target = target(list)
+        guard target.isMine || !target.recipientNames.isEmpty else { return nil }
         guard offered.insert(list.id).inserted else { return nil }
-        return target(list)
+        return target
       }
     }
     let yours = targets(tab.yourLists)
@@ -112,7 +121,7 @@ extension SessionModel {
   private func target(_ list: ListRow) -> AddTo.Target {
     let isMine = list.recipientIDs.contains(session.userID)
     return AddTo.Target(
-      list: list, recipientNames: isMine ? [] : list.recipientIDs.compactMap { user(id: $0)?.name })
+      list: list, isMine: isMine, recipientNames: isMine ? [] : list.recipientIDs.compactMap { user(id: $0)?.name })
   }
 }
 

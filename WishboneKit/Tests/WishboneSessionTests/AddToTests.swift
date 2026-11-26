@@ -67,12 +67,13 @@ struct AddToTests {
     let addTo = try #require(session.addTo(for: draft))
 
     #expect(addTo.yourLists.map(\.id) == [parentPrimary.id, family.parentList.id, zebra.id])
-    #expect(addTo.yourLists.allSatisfy { $0.recipientNames.isEmpty })
-    // The deactivated child's lists can't be edited, so the child has no part. The list that the two children
-    // share is offered once, under the child who can still edit.
+    #expect(addTo.yourLists.allSatisfy { $0.isMine && $0.recipientNames.isEmpty })
+    // The deactivated child's lists can't be edited, but the list that the two children share can. It is offered
+    // once, under the first child, so the deactivated child has no part.
     #expect(addTo.children.map(\.child.id) == [family.child.id])
     let part = try #require(addTo.children.first)
     #expect(part.targets.map(\.id) == [childPrimary.id, books.id, family.sharedList.id])
+    #expect(part.targets.allSatisfy { !$0.isMine })
     #expect(part.targets[0].recipientNames == [family.child.name])
     #expect(Set(part.targets[2].recipientNames) == [family.child.name, family.deactivatedChild.name])
     // Every list offered is one the user can edit, and no other list that the user can edit is left out.
@@ -265,6 +266,7 @@ struct AddToTests {
 
     // The parent edits the list, as a giver: the server hides the claimed bike, so the hint is silent.
     #expect(session.list(id: childPrimary.id)?.canEdit == true)
+    #expect(session.item(id: bike.id) == nil)
     let bikeForm = try form("Bike", state: &state)
     #expect(session.duplicateHint(for: bikeForm) == nil)
     // An item that the parent sees gets the hint.
