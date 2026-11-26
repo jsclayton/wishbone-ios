@@ -218,6 +218,13 @@ struct AddScreen: View {
           fillItInMyself
         }
       }
+    case .unreadablePhoto:
+      // As for a photo that the server can't use: no Fill it in myself, and the words say to choose another.
+      Section {
+        if let words = words(for: state.phase) {
+          Text(words)
+        }
+      }
     }
   }
 
@@ -263,6 +270,8 @@ struct AddScreen: View {
       return ErrorWords.blocked(store)
     case .refused(_, let refusal):
       return ErrorWords.words(for: refusal)
+    case .unreadablePhoto:
+      return ErrorWords.notAnImage
     }
   }
 
@@ -280,9 +289,15 @@ struct AddScreen: View {
     run(started)
   }
 
-  /// Searches a photo that the user took or chose. The text in the field stays.
-  private func search(_ photo: Photo) {
-    run(state.startSearch(.photo(photo)))
+  /// Searches a photo that the user took or chose. The text in the field stays. A file that the device couldn't
+  /// read as an image (nil) sends nothing, and the line says why.
+  private func search(_ photo: Photo?) {
+    guard let started = state.startSearch(ofPhoto: photo) else {
+      searching?.cancel()
+      searching = nil
+      return
+    }
+    run(started)
   }
 
   /// Try again, after the instance couldn't be reached: the same link, words, or photo.
@@ -322,8 +337,8 @@ struct AddScreen: View {
   #endif
 
   /// The photo of the file, as a JPEG under the server's limit, made away from the main actor. Its title, when no
-  /// guess comes back, names the day it was taken.
-  @concurrent nonisolated private static func photo(of file: Data) async -> Photo {
+  /// guess comes back, names the day it was taken. Nil when the device can't read the file as an image.
+  @concurrent nonisolated private static func photo(of file: Data) async -> Photo? {
     Photo(file: file) { date in
       String(localized: "Photo from \(date.formatted(date: .abbreviated, time: .omitted))", bundle: #bundle)
     }

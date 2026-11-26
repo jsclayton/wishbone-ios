@@ -33,7 +33,7 @@ public enum ErrorWords {
     case .requestTooLarge, .imageTooLarge:
       return String(localized: "That photo is too large. Choose a smaller one.", bundle: #bundle)
     case .imageInvalid:
-      return String(localized: "Wishbone can't use that file. Choose a JPEG, PNG, GIF, or WebP photo.", bundle: #bundle)
+      return notAnImage
     case .birthdayRequired:
       return String(localized: "A birthday is required.", bundle: #bundle)
     case .adminHasNoParents:
@@ -65,6 +65,12 @@ public enum ErrorWords {
       // These count as success: see above.
       return nil
     }
+  }
+
+  /// The words for a file that isn't an image that Wishbone can use: `image_invalid`. A photo that the device
+  /// itself can't read gets them too, with nothing sent.
+  public static var notAnImage: String {
+    String(localized: "Wishbone can't use that file. Choose a JPEG, PNG, GIF, or WebP photo.", bundle: #bundle)
   }
 
   /// The words for an item added without a picture that the server couldn't save: `image_fetch_failed`.

@@ -36,16 +36,17 @@ final class PhotoAddingTests {
     return (session, person)
   }
 
-  /// The search of the photo, as the Add screen starts it and takes its answer. The form to push, or nil.
-  private func search(_ photo: Photo, in session: SessionModel, state: inout AddScreenState) async -> ItemDraft? {
-    let started = state.startSearch(.photo(photo))
+  /// The search of the photo, as the Add screen starts it and takes its answer. The form to push, or nil. A photo
+  /// that the device couldn't read (nil) starts no search, as on the screen.
+  private func search(_ photo: Photo?, in session: SessionModel, state: inout AddScreenState) async -> ItemDraft? {
+    guard let started = state.startSearch(ofPhoto: photo) else { return nil }
     let outcome = await session.search(started.input)
     return state.searchEnded(started.id, with: outcome)
   }
 
   /// A photo as the camera or the picker gives it: a small PNG, encoded as the app sends it.
   private func photo(now: Date = .now) throws -> Photo {
-    Photo(file: try Self.image(width: 64, height: 48, as: .png), now: now, untitled: Self.untitled)
+    try #require(Photo(file: try Self.image(width: 64, height: 48, as: .png), now: now, untitled: Self.untitled))
   }
 
   @Test("A photo, on a server with a model, gives the guessed title and the photo, and Add saves it as the image")
@@ -138,7 +139,40 @@ final class PhotoAddingTests {
     #expect(diagnostics.faults.isEmpty, "\(diagnostics.faults)")
   }
 
-  @Test("A file that is too large, and one that is not an image, are refused with their codes, and open no form")
+  @Test("A file that the device can't read as an image sends nothing, and the line has the words of image_invalid")
+  // The words of the phase are `ErrorWords.notAnImage`, which the hosted `ErrorWordsTests` holds to image_invalid's.
+  func unreadableFile() async throws {
+    let instance = try await Instance()
+    let diagnostics = RecordingDiagnostics()
+    let (session, _) = try await signedIn(on: instance, diagnostics: diagnostics)
+    var state = AddScreenState(text: "kept")
+
+    // A photo whose search is still running when the user chooses a file that isn't an image.
+    let hold = instance.conditioner.hold(Self.search, at: .request)
+    let first = state.startSearch(.photo(try photo()))
+    let reading = Task { await session.search(first.input) }
+    await hold.waitUntilHeld()
+    let sent = instance.conditioner.requests.filter { $0.isOn(Self.search) || $0.isOn(Self.upload) }.count
+
+    let notAnImage = Photo(file: Data("not a photo".utf8), untitled: Self.untitled)
+    #expect(notAnImage == nil)
+    #expect(await search(notAnImage, in: session, state: &state) == nil)
+    #expect(state.phase == .unreadablePhoto)
+    #expect(state.searching == nil)
+    #expect(state.text == "kept")
+    // Nothing of the file went to the instance: no search, and no upload.
+    #expect(instance.conditioner.requests.filter { $0.isOn(Self.search) || $0.isOn(Self.upload) }.count == sent)
+
+    // The search that ran was stopped: its late answer changes nothing.
+    hold.release()
+    let late = await reading.value
+    #expect(state.searchEnded(first.id, with: late) == nil)
+    #expect(state.phase == .unreadablePhoto)
+    // Nothing is captured.
+    #expect(diagnostics.faults.isEmpty, "\(diagnostics.faults)")
+  }
+
+  @Test("A file that is too large, and one that the server can't use, are refused with their codes, and open no form")
   // The words for each code are the hosted `ErrorWordsTests`'.
   func refusedFiles() async throws {
     let instance = try await Instance()
@@ -146,9 +180,9 @@ final class PhotoAddingTests {
     let (session, _) = try await signedIn(on: instance, diagnostics: diagnostics)
     var state = AddScreenState()
 
-    // A file that the device can't read goes as it is, and the server says why.
-    let notAnImage = Photo(file: Data("not a photo".utf8), untitled: Self.untitled)
-    #expect(notAnImage.data == Data("not a photo".utf8))
+    // The app sends only a JPEG that it made, so the server refuses one as image_invalid only if it can't read the
+    // JPEG. These bytes stand in for that.
+    let notAnImage = Photo(data: Data("not a photo".utf8), untitled: "Photo")
     #expect(await search(notAnImage, in: session, state: &state) == nil)
     guard case .refused(.photo(notAnImage), let invalid) = state.phase else {
       Issue.record("The search ended with \(state.phase)")
@@ -164,8 +198,7 @@ final class PhotoAddingTests {
       return
     }
     #expect([ErrorCode.imageTooLarge, .requestTooLarge].contains(large.code))
-    // No new error type is captured. A 422 of a write is captured as it always is (section 11): a file that the
-    // device couldn't read as an image either. A 413 is not.
+    // No new error type is captured. A 422 of a write is captured as it always is (section 11). A 413 is not.
     #expect(diagnostics.faults == [.refusedWrite(.search, code: "image_invalid")])
   }
 
@@ -228,7 +261,7 @@ final class PhotoAddingTests {
     #expect(original[kCGImagePropertyGPSDictionary] != nil)
     #expect((original[kCGImagePropertyTIFFDictionary] as? [CFString: Any])?[kCGImagePropertyTIFFMake] != nil)
 
-    let photo = Photo(file: heic, now: .distantPast, untitled: Self.untitled)
+    let photo = try #require(Photo(file: heic, now: .distantPast, untitled: Self.untitled))
 
     #expect(photo.data.count <= Photo.byteLimit)
     let source = try #require(CGImageSourceCreateWithData(photo.data as CFData, nil))

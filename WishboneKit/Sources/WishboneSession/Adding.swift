@@ -341,6 +341,10 @@ public struct AddScreenState: Sendable, Equatable {
 
     /// The server refused the search, with its words.
     case refused(SearchInput, APIError.Refusal)
+
+    /// The device couldn't make a JPEG of the file that the user took or chose, so nothing was sent. The line has
+    /// the words of `image_invalid`. No form opens.
+    case unreadablePhoto
   }
 
   /// The text in the field.
@@ -384,6 +388,17 @@ public struct AddScreenState: Sendable, Equatable {
     return (id, input)
   }
 
+  /// A search of a photo that the user took or chose starts. Nil when the device couldn't read the file as an
+  /// image (`Photo(file:)` gave nil): nothing is sent, the line says why, and a search that runs is stopped.
+  public mutating func startSearch(ofPhoto photo: Photo?) -> (id: UUID, input: SearchInput)? {
+    guard let photo else {
+      searching = nil
+      phase = .unreadablePhoto
+      return nil
+    }
+    return startSearch(.photo(photo))
+  }
+
   /// The search's answer. The form to push, or nil. The answer of a search that was stopped changes nothing.
   public mutating func searchEnded(_ id: UUID, with outcome: SearchOutcome) -> ItemDraft? {
     guard id == searching, case .reading(let input) = phase else { return nil }
@@ -410,7 +425,7 @@ public struct AddScreenState: Sendable, Equatable {
     let input: SearchInput? =
       switch phase {
       case .reading(let input), .cantReach(let input), .refused(let input, _), .blocked(let input, _): input
-      case .empty: SearchInput(text)
+      case .empty, .unreadablePhoto: SearchInput(text)
       }
     searching = nil
     phase = .empty

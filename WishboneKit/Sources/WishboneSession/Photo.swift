@@ -8,8 +8,8 @@ import UniformTypeIdentifiers
 ///
 /// The server takes a JPEG, PNG, GIF, or WebP of at most 10 MiB, and keeps at most 1200 px on the longest side. A
 /// photo from the camera or the library is often HEIC, and larger. So the app sends a JPEG of at most 2400 px, under
-/// the limit, with none of the original's metadata. A file that the device can't read as an image goes as it is,
-/// and the server's answer says why it can't be used.
+/// the limit, with none of the original's metadata. A file that the device can't make that JPEG of is not a photo:
+/// nothing of it is sent, so no file with its metadata ever leaves the device.
 public struct Photo: Sendable, Equatable, Identifiable {
   /// The most bytes that the server takes in one image.
   public static let byteLimit = 10 << 20
@@ -19,7 +19,7 @@ public struct Photo: Sendable, Equatable, Identifiable {
 
   public let id: UUID
 
-  /// The bytes that are sent: a JPEG, or the file as it was when the device can't read it.
+  /// The bytes that are sent. From a file, always the JPEG that the device made of it.
   public let data: Data
 
   /// The title when no guess comes back: "Photo from {date}". The words come from the String Catalog, in
@@ -34,9 +34,11 @@ public struct Photo: Sendable, Equatable, Identifiable {
   }
 
   /// The photo of a file from the camera or the photo picker, as a JPEG under the limit. `untitled` gets the date
-  /// that the photo was taken, from its metadata, or now.
-  public init(file: Data, now: Date = .now, untitled: (Date) -> String) {
-    self.init(data: Self.jpeg(of: file) ?? file, untitled: untitled(Self.dateTaken(of: file) ?? now))
+  /// that the photo was taken, from its metadata, or now. Nil when the device can't make the JPEG: the file is
+  /// never sent as it is.
+  public init?(file: Data, now: Date = .now, untitled: (Date) -> String) {
+    guard let jpeg = Self.jpeg(of: file) else { return nil }
+    self.init(data: jpeg, untitled: untitled(Self.dateTaken(of: file) ?? now))
   }
 
   /// Two photos are the same photo when they are one pick: the form compares them on every change.

@@ -45,6 +45,9 @@ struct ErrorWordsTests {
     #expect(words("a_code_from_a_later_server", detail: "Something new happened.") == "Something new happened.")
     #expect(words("parent_loop", detail: "Robin can't be their own parent.") == "Robin can't be their own parent.")
 
+    // A photo that the device itself can't read gets the words of `image_invalid`, with nothing sent.
+    #expect(ErrorWords.notAnImage == words("image_invalid"))
+
     // The codes whose words name a list or a person: the screen that meets them gives the name.
     #expect(
       ErrorWords.lastRecipient(of: "Our house")
