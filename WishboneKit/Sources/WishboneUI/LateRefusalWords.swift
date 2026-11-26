@@ -20,12 +20,18 @@ public enum LateRefusalWords {
     let reason =
       switch (refusal.refusal.code, refusal.action) {
       case (.listHasOtherRecipients, _): ErrorWords.otherRecipients(of: refusal.title)
+      case (.cannotEditTargetList, .moveItem(let move)): ErrorWords.cannotAddTo(move.toListName)
       // An item filled in by hand keeps the link that the user gave as its store link.
       case (.storeBlocked, .createItem(let item)) where !item.storeLinks.isEmpty:
         ErrorWords.blocked(item.storeLinks[0].store)
       default: ErrorWords.words(for: refusal.refusal) ?? ErrorWords.fault
       }
     switch refusal.action {
+    // A refused move: "{title} couldn't be moved.", then the words for the code. No word about gifts.
+    case .moveItem:
+      return String(
+        localized: "\(refusal.title) couldn't be moved. \(reason)", bundle: #bundle,
+        comment: "A late refusal of Move to…: the item's title, then why the item wasn't moved")
     case .createItem:
       return String(
         localized: "Adding \(refusal.title): \(reason)", bundle: #bundle,

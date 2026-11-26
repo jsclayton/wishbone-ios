@@ -7,13 +7,14 @@ import WishboneSession
 ///
 /// Claim state shows only as the server sends it, and the page never says who else claimed. For a giver, I'll get
 /// this claims one at once, and waits for the server: see `ClaimSection`. For a user who can edit, Edit opens the
-/// Edit item sheet, and Delete asks first. Each is an unsent change: it shows at once, in every window. After a
-/// delete, the page closes in this window, and any other window that shows it shows the "not found" page. Refresh
-/// prices waits for the server, and says what happened under the store links.
+/// Edit item sheet, Move to… opens its picker, and Delete asks first. Each is an unsent change: it shows at once, in
+/// every window. After a move, the page stays, with the new list's name, because the item's address has no list.
+/// After a delete, the page closes in this window, and any other window that shows it shows the "not found" page.
+/// Refresh prices waits for the server, and says what happened under the store links.
 ///
 /// **Provisional.** Plain default: a system list, one column at every size. The images are a row that pages
-/// sideways, the title is large text under it, and each part is a section. Edit is a toolbar button, and Copy link,
-/// Refresh prices and Delete are in the toolbar's menu. The Delete confirmation is an alert.
+/// sideways, the title is large text under it, and each part is a section. Edit is a toolbar button, and Move to…,
+/// Copy link, Refresh prices and Delete are in the toolbar's menu. The Delete confirmation is an alert.
 struct ItemPageScreen: View {
   let page: ItemPage
   let session: SessionModel
@@ -26,6 +27,9 @@ struct ItemPageScreen: View {
 
   /// Whether the confirmation of Delete shows.
   @State private var isConfirmingDelete = false
+
+  /// Whether the Move to… sheet shows.
+  @State private var isMoving = false
 
   /// Whether Refresh prices waits for the server.
   @State private var isRefreshing = false
@@ -92,6 +96,9 @@ struct ItemPageScreen: View {
     .sheet(isPresented: $isEditing) {
       EditItemSheet(item: page.item, session: session)
     }
+    .sheet(isPresented: $isMoving) {
+      MoveToSheet(itemID: page.item.id, session: session)
+    }
     .alert(DeleteItemWords.title(item: page.item.title), isPresented: $isConfirmingDelete) {
       Button(role: .destructive) {
         Task { await delete() }
@@ -119,9 +126,12 @@ struct ItemPageScreen: View {
           }
         }
       }
-      if page.copyLink != nil || page.item.canDelete || offersRefresh {
+      if offersMove || page.copyLink != nil || page.item.canDelete || offersRefresh {
         ToolbarItem(placement: .primaryAction) {
           Menu {
+            if offersMove {
+              MoveToButton { isMoving = true }
+            }
             if let copyLink = page.copyLink {
               CopyLinkButton(url: copyLink)
             }
@@ -163,6 +173,11 @@ struct ItemPageScreen: View {
 }
 
 extension ItemPageScreen {
+  /// Whether the menu offers Move to…: from `can_edit`, when another list can take the item.
+  private var offersMove: Bool {
+    session.moveTargets(ofItem: page.item.id) != nil
+  }
+
   /// Whether the menu offers Refresh prices: from `can_refresh_prices`, once the server has the item.
   private var offersRefresh: Bool {
     session.offersRefreshPrices(onItem: page.item.id)

@@ -478,6 +478,16 @@ enum Audit {
       {
         return true
       }
+      // Cancel in the Move to… picker's bar is the same: the system's own bar button, on the system's glass. The
+      // exception is for that button only, while the picker shows: the element must be the picker bar's Cancel
+      // itself. A Cancel in any other bar is audited, until someone looks at it and adds its bar here.
+      if [.contrast, .dynamicType].contains(issue.auditType), let button = element,
+        button.elementType == .button, button.label == words("Cancel"),
+        case let bar = app.navigationBars[words("Move to…")], bar.exists,
+        case let barCancel = bar.buttons[words("Cancel")], barCancel.exists, barCancel.frame == button.frame
+      {
+        return true
+      }
       // Sign out and Continue in the profile gate's bar are the same: the system's own bar buttons, on the system's
       // glass, where the screenshot shows black text on near-white glass, and white on dark glass in dark mode.
       // The exception is for those buttons only. Continue reads "Try again" after the instance couldn't be reached.

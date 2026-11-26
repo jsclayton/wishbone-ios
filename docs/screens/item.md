@@ -107,6 +107,7 @@ Decided, as the web app has them: "I'll get this", "{n} of {m} still wanted", "A
 | A late refusal of Edit | "Editing {title}: {reason}" |
 | A late refusal of Delete | "Deleting {title}: {reason}" |
 | Move to…, title | "Move to…" |
+| A late refusal of Move to… | "{title} couldn't be moved.", then the words for the code, as on the [list's page](list.md#words) |
 | Refresh prices, done | "Prices checked." |
 
 ## Accessibility

@@ -28,10 +28,11 @@ extension LocalDatabase {
       ///
       /// The items, the store links and the recipient rows are only those of the lists in the copy, so they read
       /// the lists too, and the store links read the items. The lists, the items, the store links, the invitations
-      /// and the gifts show each unsent change over its row, so they read the journal too.
+      /// and the gifts show each unsent change over its row, so they read the journal too. The lists read the items,
+      /// because a waiting delete or move counts only where the items' overlay applies it.
       var tables: Set<String> {
         switch self {
-        case .lists: [ListRow.databaseTableName, UnsentChangeRow.databaseTableName]
+        case .lists: [ListRow.databaseTableName, ItemRow.databaseTableName, UnsentChangeRow.databaseTableName]
         case .items: [ItemRow.databaseTableName, ListRow.databaseTableName, UnsentChangeRow.databaseTableName]
         case .storeLinks:
           [
@@ -95,9 +96,18 @@ extension LocalDatabase {
       switch part {
       case .lists:
         // An edit shows over the pulled row, and a deleted list is left out, until the server accepts or refuses it.
+        // A delete and a move of an item count only where the item's overlay applies them, so the lists read where
+        // the items are, while such a change waits.
+        let unsent = try LocalDatabase.unsentChanges(in: database)
+        let countsItems = unsent.contains { change in
+          switch change.action {
+          case .deleteItem, .moveItem: true
+          default: false
+          }
+        }
         lists = LocalDatabase.applying(
-          try LocalDatabase.unsentChanges(in: database),
-          to: try ListRow.order(Column("name"), Column("id")).fetchAll(database))
+          unsent, to: try ListRow.order(Column("name"), Column("id")).fetchAll(database),
+          itemLists: countsItems ? try LocalDatabase.itemLists(in: database) : [:])
       case .items:
         // An item that a create adds shows at the end of its list, until the server accepts or refuses it.
         items = LocalDatabase.applying(

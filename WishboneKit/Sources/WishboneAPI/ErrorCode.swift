@@ -44,6 +44,7 @@ public enum ErrorCode: Sendable, Hashable {
   case tooManyImages
   case tooManyStoreLinks
   case giftGiven
+  case cannotEditTargetList
   case unknown(String)
 
   private static let known: [String: ErrorCode] = [
@@ -87,6 +88,7 @@ public enum ErrorCode: Sendable, Hashable {
     "too_many_images": .tooManyImages,
     "too_many_store_links": .tooManyStoreLinks,
     "gift_given": .giftGiven,
+    "cannot_edit_target_list": .cannotEditTargetList,
   ]
 
   /// The server's text for the code, such as `login_link_invalid`.

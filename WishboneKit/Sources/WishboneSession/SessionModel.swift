@@ -154,7 +154,7 @@ public final class SessionModel {
   private var waiting: Task<SyncOutcome, Never>?
 
   /// The windows of the app that are in the foreground, each by the ID that the window gave.
-  private var windowsInForeground: Set<UUID> = []
+  private(set) var windowsInForeground: Set<UUID> = []
 
   /// The windows of the app that came to the foreground and have neither gone to the background nor closed since:
   /// those in the foreground, and those that are only inactive, such as under Control Center. The alert of late

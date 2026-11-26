@@ -116,6 +116,26 @@ struct UnsentChangeWordsTests {
     #expect(LateRefusalWords.line(delete) == "Deleting Kite: You can't do this any more.")
   }
 
+  @Test(
+    "A refused move names the item, and the list it was to for cannot_edit_target_list, with no word about gifts"
+  )
+  func lateRefusalsOfMoves() {
+    let move = UnsentChange.Action.moveItem(
+      ItemMove(itemID: "4", fromListID: "9", toListID: "12", toListName: "Lego"))
+    let target = APIError.Refusal(
+      route: .updateItem, status: 403, code: .cannotEditTargetList, detail: "The server's words")
+    let gone = APIError.Refusal(route: .updateItem, status: 404, code: .notFound, detail: "The server's words")
+    let refusedTarget = LateRefusal(id: 1, action: move, title: "Kite", refusal: target)
+    let refusedGone = LateRefusal(id: 2, action: move, title: "Kite", refusal: gone)
+    #expect(LateRefusalWords.line(refusedTarget) == "Kite couldn't be moved. You can't add to Lego any more.")
+    #expect(
+      LateRefusalWords.line(refusedGone) == "Kite couldn't be moved. This is gone, or it isn't shared with you.")
+    for line in [refusedTarget, refusedGone].map(LateRefusalWords.line) {
+      #expect(!line.localizedStandardContains("gift"))
+      #expect(!line.localizedStandardContains("claim"))
+    }
+  }
+
   @Test("A late refusal of a store link's price edit or its Remove names the item's edit")
   func lateRefusalsOfStoreLinks() {
     let forbidden = APIError.Refusal(
