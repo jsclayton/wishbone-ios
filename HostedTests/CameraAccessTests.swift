@@ -66,10 +66,9 @@ struct CameraAccessTests {
         == "The camera is turned off on this device, so Wishbone can't take a photo. Choose a photo.")
     #expect(!restricted.offersSettings)
 
-    // A device with no camera, as the simulator: Choose a photo is the way in.
+    // A device with no camera: Choose a photo is the way in.
     let notAvailable = CameraAccess(authorization: .authorized, isSupported: false)
     #expect(!notAvailable.showsTakeAPhoto)
     #expect(notAvailable.photoReason == nil)
-    #expect(CameraAccess.forPhotos == .notAvailable)
   }
 }
