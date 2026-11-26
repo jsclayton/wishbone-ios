@@ -120,6 +120,10 @@ final class AddByHandOfflineTests {
       #expect(page.stillWanted == nil)
       #expect(page.wanted == .count(1))
       #expect(!page.offersClaim)
+      // A stand-in never goes to the instance: a claim of it fails at once, and sends nothing.
+      let sent = requests.count
+      #expect(await session.claim(item: item.id) == .failed)
+      #expect(requests.count == sent)
       #expect(session.unsentChangeCount == 1)
       await until { session.isInstanceUnreachable }
     }
@@ -160,15 +164,26 @@ final class AddByHandOfflineTests {
     instance.conditioner.dropEverything()
     await session.syncNow()
     #expect(session.isInstanceUnreachable)
-    var draft = try await filledInByHand(.words("Socks \(instance.builder.tag)"), in: session)
-    let sent = requests.count
+    let draft = try await filledInByHand(.words("Socks \(instance.builder.tag)"), in: session)
+    // The network is back, though no sync has seen it yet. A create that reaches the instance waits there.
+    instance.conditioner.passEverything()
+    let hold = instance.conditioner.hold(Self.create, at: .request)
 
-    let item = try added(await session.add(&draft))
+    let adding = Task {
+      var draft = draft
+      return await session.add(&draft)
+    }
+    await hold.waitUntilHeld()
 
+    // The create that waits is the journal's, which the sync that the add started sends: the add itself asked the
+    // instance nothing, and the item is on the list already, by its stand-in.
+    #expect(session.unsentChangeCount == 1)
+    #expect(session.primaryListItems.contains { StandIn.isStandIn($0.id) })
+    hold.release()
+    let item = try added(await adding.value)
     #expect(StandIn.isStandIn(item.id))
-    #expect(session.item(id: item.id) != nil)
-    // The add asked the instance nothing. The sync that it started tried, and couldn't reach it.
-    #expect(requests[sent...].allSatisfy { !$0.isOn(Self.create) })
+    await until { session.unsentChangeCount == 0 }
+    #expect(requests.count { $0.isOn(Self.create) } == 1)
   }
 
   @Test("An add that a search filled in is never an unsent change: the form stays open, and nothing waits")
@@ -305,6 +320,42 @@ final class AddByHandOfflineTests {
     }
   }
 
+  @Test(
+    """
+    A parent's item on their child's list shows that nobody has claimed it. Once the server has it, the page opened \
+    by the stand-in claims it by the server's ID, and shows the claim
+    """
+  )
+  func parentClaimsByStandIn() async throws {
+    let parent = try await instance.builder.person("Robin")
+    let child = try await instance.builder.person("Kim", parents: [parent])
+    let childs = try await instance.builder.primaryList(of: child)
+    let (_, session) = try await signedIn(as: parent)
+    let title = "Puzzle \(instance.builder.tag)"
+    instance.conditioner.dropEverything()
+    var draft = try await filledInByHand(.words(title), in: session)
+    draft.listID = childs.id
+    let item = try added(await session.add(&draft))
+    let page = try #require(session.itemPage(id: item.id))
+    #expect(page.list.id == childs.id)
+    #expect(page.stillWanted == .count(1, of: 1))
+    #expect(!page.offersClaim)
+    await until { session.isInstanceUnreachable }
+
+    instance.conditioner.passEverything()
+    await session.syncNow()
+    await until { session.unsentChangeCount == 0 }
+    try await untilInStep(session, as: parent)
+    #expect(session.itemPage(id: item.id)?.offersClaim == true)
+
+    #expect(await session.claim(item: item.id) == .claimed)
+    let serverID = session.serverID(of: item.id)
+    #expect(serverID != item.id)
+    #expect(requests.contains { $0.isOn(Route("POST", "/items/\(serverID)/gifts")) })
+    #expect(session.itemPage(id: item.id)?.claims.count == 1)
+    #expect(session.itemPage(id: item.id)?.offersClaim == false)
+  }
+
   // MARK: - 4. A photo
 
   @Test("An item with a photo: the upload is sent first, then the item with that image. The file is gone after")
@@ -345,9 +396,78 @@ final class AddByHandOfflineTests {
     let body = try JSON(parsing: seen[create].body)
     #expect(body["image_ids"].array?.compactMap(\.string) == [imageID])
     #expect(body["primary_image_id"].string == imageID)
-    // The file is gone, and the item shows its image.
+    // The file is gone, and the item shows its image, which the image cache holds already.
     #expect(try file.count(of: "unsentFile") == 0)
     await until { session.item(id: item.id)?.primaryImage?.id == imageID }
+    let image = try #require(session.item(id: item.id)?.primaryImage)
+    #expect(session.images.cached(image) == photo.data)
+  }
+
+  @Test("An Add whose upload's answer is lost uploads the photo later with the same key, and adds the item once")
+  func lostUploadAnswer() async throws {
+    let person = try await instance.person("Robin")
+    let (_, session) = try await signedIn(as: person)
+    let list = try #require(session.primaryList)
+    var state = AddScreenState()
+    let started = state.startSearch(.photo(try photo()))
+    #expect(state.searchEnded(started.id, with: .unreachable) == nil)
+    let filled = state.fillItInMyself()
+    let draft = try #require(filled)
+    let title = "Teapot \(instance.builder.tag)"
+
+    // The server takes the photo, and the answer of the upload is lost.
+    let hold = instance.conditioner.hold(Self.upload, at: .answer)
+    let adding = Task {
+      var draft = draft
+      draft.title = title
+      return await session.add(&draft)
+    }
+    await hold.waitUntilHeld()
+    instance.conditioner.dropEverything()
+    _ = try added(await adding.value)
+
+    instance.conditioner.passEverything()
+    await session.syncNow()
+    await until { session.unsentChangeCount == 0 }
+    let uploads = requests.filter { $0.isOn(Self.upload) }
+    #expect(uploads.count >= 2)
+    #expect(Set(uploads.compactMap { $0.headers["idempotency-key"] }).count == 1)
+    let saved = try await onServer(title, on: list.id, as: person)
+    #expect(saved.count == 1)
+    #expect(saved.first?["images"].array?.count == 1)
+  }
+
+  @Test("An Add whose create's answer is lost, after its photo was uploaded, doesn't upload the photo again")
+  func lostCreateAnswerAfterUpload() async throws {
+    let person = try await instance.person("Robin")
+    let (_, session) = try await signedIn(as: person)
+    let list = try #require(session.primaryList)
+    var state = AddScreenState()
+    let started = state.startSearch(.photo(try photo()))
+    #expect(state.searchEnded(started.id, with: .unreachable) == nil)
+    let filled = state.fillItInMyself()
+    let draft = try #require(filled)
+    let title = "Jug \(instance.builder.tag)"
+
+    let hold = instance.conditioner.hold(Self.create, at: .answer)
+    let adding = Task {
+      var draft = draft
+      draft.title = title
+      return await session.add(&draft)
+    }
+    await hold.waitUntilHeld()
+    instance.conditioner.dropEverything()
+    _ = try added(await adding.value)
+    // Only the item waits: the photo is uploaded.
+    #expect(session.unsentChangeCount == 1)
+
+    instance.conditioner.passEverything()
+    await session.syncNow()
+    await until { session.unsentChangeCount == 0 }
+    #expect(requests.count { $0.isOn(Self.upload) } == 1)
+    let saved = try await onServer(title, on: list.id, as: person)
+    #expect(saved.count == 1)
+    #expect(saved.first?["images"].array?.count == 1)
   }
 
   @Test("A photo that the server refuses late shows once, and the item is added without it")

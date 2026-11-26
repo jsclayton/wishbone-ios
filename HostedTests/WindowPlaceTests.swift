@@ -64,6 +64,27 @@ struct WindowPlaceTests {
     #expect(place[pagesOn: .home].isEmpty)
   }
 
+  @Test("The server's ID takes the place of a stand-in in the pages of every tab, and opens no new place")
+  func standInsReplaced() {
+    var place = WindowPlace()
+    place[pagesOn: .home] = [.item(id: "stand-in-1")]
+    place.select(.lists)
+    place[pagesOn: .lists] = [.list(id: "3"), .item(id: "stand-in-1"), .item(id: "stand-in-2")]
+    let earlier = place
+
+    place.replaceStandIns(["stand-in-1": "41"])
+
+    #expect(place[pagesOn: .home] == [.item(id: "41")])
+    #expect(place[pagesOn: .lists] == [.list(id: "3"), .item(id: "41"), .item(id: "stand-in-2")])
+    #expect(place.tab == .lists)
+    #expect(place == earlier.replacingStandIns(["stand-in-1": "41"]))
+    #expect(place.opened(since: earlier.replacingStandIns(["stand-in-1": "41"])) == nil)
+    // A stand-in that no ID replaced stays, and no map changes nothing.
+    var same = place
+    same.replaceStandIns([:])
+    #expect(same == place)
+  }
+
   @Test("A tap on the selected tab pops to its first screen")
   func tapOnTheSelectedTab() {
     var place = WindowPlace()
