@@ -221,6 +221,9 @@
     "%@'s birthday is in 4 weeks" : {
 
     },
+    "%@'s list. You can edit it, but it isn't yours." : {
+      "comment" : "The New list form, for a child: the child is the list's recipient, and the user is not"
+    },
     "%@, %@" : {
       "comment" : "A list's row, as VoiceOver reads it: the list's name, then how many items it has",
       "localizations" : {
@@ -610,6 +613,9 @@
     "Finish your profile" : {
 
     },
+    "For" : {
+
+    },
     "For %@" : {
       "comment" : "Who a gift is for, on its page, by name"
     },
@@ -845,6 +851,20 @@
     "Make primary" : {
 
     },
+    "Makes the list." : {
+
+    },
+    "Making %@: %@" : {
+      "comment" : "A late refusal of New list: the list's name, then why the list wasn't made",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Making %1$@: %2$@"
+          }
+        }
+      }
+    },
     "Mark bought" : {
 
     },
@@ -901,6 +921,9 @@
 
     },
     "Needs attention" : {
+
+    },
+    "New list" : {
 
     },
     "Newest" : {
@@ -1441,6 +1464,9 @@
 
     },
     "Yes" : {
+
+    },
+    "You" : {
 
     },
     "You aren't getting anything yet. Open someone on Home and tap I'll get this." : {
