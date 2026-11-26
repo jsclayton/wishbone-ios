@@ -8,6 +8,9 @@ import WishboneSession
 /// can't be reached, and the "Added" row after an add. A search pushes the add form. The screen shows nothing from
 /// a list, and a link is read on the server, never by the app.
 ///
+/// In a list's sheet, the screen is fixed to that list: a line names the list, Cancel closes the sheet, and after Add
+/// the sheet closes.
+///
 /// Take a photo and Choose a photo come later.
 ///
 /// **Provisional.** Plain default: the system search field, and the ways in as rows of a system list under it.
@@ -17,6 +20,9 @@ struct AddScreen: View {
   /// The field's text, the line under it, and the "Added" row. The window keeps it, so the text is still there
   /// after a change of tab.
   @Binding var state: AddScreenState
+
+  /// Closes the sheet, when the screen is in a list's sheet. Nil in the screen's place.
+  var close: (() -> Void)?
 
   @FocusState private var isFieldFocused: Bool
 
@@ -31,6 +37,12 @@ struct AddScreen: View {
 
   var body: some View {
     List {
+      // The line that names the list is first, so VoiceOver reads it before the ways in.
+      if let listID = state.fixedListID, let target = session.target(ofList: listID) {
+        Section {
+          Text("Adding to \(AddTargetName.words(for: target))", bundle: #bundle)
+        }
+      }
       if let added = state.added {
         Section {
           // It pushes the item's page on this tab's stack.
@@ -63,9 +75,25 @@ struct AddScreen: View {
     .navigationDestination(isPresented: isShowingForm) {
       if let form {
         AddFormScreen(session: session, draft: form) { added in
+          if let close {
+            close()
+            return
+          }
           state.didAdd(added)
           adds += 1
           self.form = nil
+        }
+      }
+    }
+    .toolbar {
+      if let close {
+        ToolbarItem(placement: .cancellationAction) {
+          Button {
+            searching?.cancel()
+            close()
+          } label: {
+            Text("Cancel", bundle: #bundle)
+          }
         }
       }
     }

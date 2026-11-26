@@ -6,7 +6,8 @@ import WishboneSession
 /// and the items in the order that Sort sets. See `docs/screens/list.md`.
 ///
 /// Claim state shows only as the server sends it, and the page never says who claimed. Leave, and Make {child}
-/// leave, wait for the server. The other actions that change the list or its items come later.
+/// leave, wait for the server. Add item, from `can_edit`, opens the Add screen in a sheet, fixed to the list. The
+/// other actions that change the list or its items come later.
 ///
 /// **Provisional.** Plain default: a system list. The name is the navigation title, the recipients and the
 /// description are the first section, and the items are rows with the image at the leading edge. Sort is in the
@@ -48,6 +49,9 @@ struct ListPageScreen: View {
         }
         ForEach(page.items(sortedBy: sort)) { item in
           ItemRowLink(item: item, tileUserID: page.list.recipientIDs.first ?? "", session: session, pages: $pages)
+        }
+        if page.list.canEdit {
+          AddItemRow(session: session, listID: page.list.id)
         }
       }
       if page.leave != nil || !page.makeLeave.isEmpty {
