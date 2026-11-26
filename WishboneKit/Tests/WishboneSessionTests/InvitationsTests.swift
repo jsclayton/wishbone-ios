@@ -110,11 +110,13 @@ final class InvitationsTests {
   func accept() async throws {
     let builder = instance.builder
     let family = try await family()
-    _ = try await builder.item("Lamp", on: family.ourHouse, as: family.mom)
+    let lamp = try await builder.item("Lamp", on: family.ourHouse, as: family.mom)
     let invitation = try await builder.invite(family.me, to: family.ourHouse, as: family.mom)
     let session = try await signedIn(as: family.me)
     #expect(!session.listsTab.yourLists.map(\.id).contains(family.ourHouse.id))
     #expect(session.listPage(id: family.ourHouse.id)?.isRecipient == false)
+    #expect(session.itemPage(id: lamp.id)?.stillWanted != nil)
+    #expect(session.offersClaim(onItem: lamp.id))
 
     await session.acceptInvitation(invitation.id)
 
@@ -125,6 +127,9 @@ final class InvitationsTests {
     let page = try #require(session.listPage(id: family.ourHouse.id))
     #expect(page.isRecipient)
     #expect(page.items.allSatisfy { $0.claim == nil })
+    // The Lamp's row is still the giver's row until the next pull, but its page and its row offer no claim state.
+    #expect(session.itemPage(id: lamp.id)?.stillWanted == nil)
+    #expect(session.offersClaim(onItem: lamp.id) == false)
 
     await until { session.unsentChangeCount == 0 }
     #expect(try await recipients(of: family.ourHouse, as: family.mom).contains(family.me.id))

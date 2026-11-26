@@ -81,10 +81,11 @@ extension SessionModel {
 
   /// The occasion that Get another for a different occasion claims for: the soonest occasion that the giver can
   /// pick for a gift on the item's list, for which they have no open gift on the item. Nil when Get another isn't
-  /// offered: the copy doesn't hold the item, its `can_claim` is false, or no such occasion is left.
+  /// offered: the copy doesn't hold the item, its `can_claim` is false, the giver is a recipient of its list as the
+  /// copy shows it (an accept that waits), or no such occasion is left.
   public func anotherOccasion(forGift id: String) -> OccasionRow? {
     guard !hasEnded, let gift = gift(id: id), gift.state == .open, gift.giverID == session.userID,
-      let item = item(id: gift.itemID), item.canClaim
+      let item = item(id: gift.itemID), item.canClaim, !isRecipient(ofList: item.listID)
     else { return nil }
     let taken = Set(giving.filter { $0.itemID == item.id }.compactMap(\.occasion?.id))
     return pickableOccasions(onList: item.listID).first { !taken.contains($0.id) }

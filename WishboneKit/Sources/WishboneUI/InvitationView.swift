@@ -58,9 +58,7 @@ struct InvitationView: View {
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(Text(words))
     .accessibilityAddTraits(open == nil ? [] : .isLink)
-    .accessibilityAction {
-      open?()
-    }
+    .modifier(OpenAction(open: open))
     .accessibilityActions {
       if invitation.canAccept {
         Button(action: accept) {
@@ -81,6 +79,20 @@ struct InvitationView: View {
 
   private func decline() {
     Task { await session.declineInvitation(invitation.id) }
+  }
+}
+
+/// The invitation's default action: it opens the list's page. On the list's page, or when the user can't see the
+/// list, the invitation has no default action, so VoiceOver offers no double tap that does nothing.
+private struct OpenAction: ViewModifier {
+  let open: (() -> Void)?
+
+  func body(content: Content) -> some View {
+    if let open {
+      content.accessibilityAction(.default, open)
+    } else {
+      content
+    }
   }
 }
 

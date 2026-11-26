@@ -626,6 +626,8 @@ private struct AcceptancePatch: Codable {
   let listName: String
   let userID: String
   let invitedByID: String?
+  // JSONEncoder's default date form, seconds since 2001 as a number. Don't change it: a later version of the app must
+  // read the journal rows that this one wrote.
   let createdAt: Date
 
   init(_ invitation: AcceptedInvitation) {

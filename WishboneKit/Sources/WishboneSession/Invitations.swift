@@ -44,21 +44,19 @@ public struct PendingInvitation: Equatable, Sendable, Identifiable {
   }
 
   public var id: String { row.id }
-}
 
-extension SessionModel {
-  /// The pending invitations for the session's user and for their children, the oldest first. An invitation that an
-  /// unsent change answers is not among them. The invitations to the lists that the user is a recipient of, for
-  /// someone else, are not either.
-  public var pendingInvitations: [PendingInvitation] {
-    let me = session.userID
-    let children = Set(user?.record?.childIDs ?? [])
-    return invitations.compactMap { row in
-      let invited: PendingInvitation.Invited
+  /// The invitations, in their order, as the user sees them: the ones to the user, and the ones to the children
+  /// with `childIDs`. `user` gives a user's row from the copy, and `hasList` whether the copy holds a list.
+  static func pending(
+    _ invitations: [InvitationRow], userID me: String, childIDs children: Set<String>,
+    user: (String) -> UserRow?, hasList: (String) -> Bool
+  ) -> [PendingInvitation] {
+    invitations.compactMap { row in
+      let invited: Invited
       var isDeactivated = false
       if row.userID == me {
         invited = .you
-      } else if children.contains(row.userID), let child = user(id: row.userID) {
+      } else if children.contains(row.userID), let child = user(row.userID) {
         invited = .child(name: child.name)
         isDeactivated = child.isDeactivated
       } else {
@@ -67,11 +65,22 @@ extension SessionModel {
       return PendingInvitation(
         row: row,
         invited: invited,
-        inviterName: row.invitedByID.flatMap { user(id: $0)?.name },
+        inviterName: row.invitedByID.flatMap { user($0)?.name },
         canAccept: row.canAccept && !isDeactivated,
         canDecline: row.canDelete,
-        opensList: list(id: row.listID) != nil)
+        opensList: hasList(row.listID))
     }
+  }
+}
+
+extension SessionModel {
+  /// The pending invitations for the session's user and for their children, the oldest first. An invitation that an
+  /// unsent change answers is not among them. The invitations to the lists that the user is a recipient of, for
+  /// someone else, are not either.
+  public var pendingInvitations: [PendingInvitation] {
+    PendingInvitation.pending(
+      invitations, userID: session.userID, childIDs: Set(user?.record?.childIDs ?? []), user: { user(id: $0) },
+      hasList: { list(id: $0) != nil })
   }
 
   /// The pending invitations to the list for the session's user and for their children, for the top of its page.
