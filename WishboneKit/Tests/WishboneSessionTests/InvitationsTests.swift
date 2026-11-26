@@ -140,6 +140,30 @@ final class InvitationsTests {
     #expect(session.lateRefusals.isEmpty)
   }
 
+  @Test("A giver who accepts sees no claim of their own on the list's items, and no Get another, before the next pull")
+  func acceptWithAGift() async throws {
+    let builder = instance.builder
+    let family = try await family()
+    let lamp = try await builder.item("Lamp", on: family.ourHouse, as: family.mom, quantity: 3)
+    let recital = try await builder.customOccasion("Recital", of: family.mom, year: 2040, month: 6, day: 1)
+    // Another occasion, so that Get another shows. On the shared server, an occasion for everyone can come sooner.
+    _ = try await builder.customOccasion("Graduation", of: family.mom, year: 2039, month: 1, day: 1)
+    let gift = try await builder.claim(lamp, as: family.me, for: recital)
+    let invitation = try await builder.invite(family.me, to: family.ourHouse, as: family.mom)
+    let session = try await signedIn(as: family.me)
+    await until { session.anotherOccasion(forGift: gift.id) != nil }
+    #expect(session.itemPage(id: lamp.id)?.claims.map(\.id) == [gift.id])
+
+    await session.acceptInvitation(invitation.id)
+
+    // At once, while the Lamp's row and the gift are still the giver's until the next pull.
+    #expect(session.listPage(id: family.ourHouse.id)?.isRecipient == true)
+    #expect(session.itemPage(id: lamp.id)?.claims == [])
+    #expect(session.anotherOccasion(forGift: gift.id) == nil)
+    await until { session.unsentChangeCount == 0 }
+    #expect(session.lateRefusals.isEmpty)
+  }
+
   @Test("Accept for a child moves the list into the child's part")
   func acceptForChild() async throws {
     let builder = instance.builder
