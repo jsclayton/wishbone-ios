@@ -649,6 +649,9 @@
     "Lists" : {
 
     },
+    "Looking at your photo…" : {
+
+    },
     "Make %@ leave" : {
 
     },
@@ -790,6 +793,9 @@
     "Nothing could be read from %@. Fill it in yourself." : {
 
     },
+    "Nothing could be read from your photo. Give it a title." : {
+
+    },
     "Nothing from you yet" : {
 
     },
@@ -881,6 +887,9 @@
           }
         }
       }
+    },
+    "Photo from %@" : {
+
     },
     "Photo, %@" : {
 
@@ -1026,6 +1035,9 @@
 
     },
     "The camera is turned off on this device, so Wishbone can't scan. Paste a link." : {
+
+    },
+    "The camera is turned off on this device, so Wishbone can't take a photo. Choose a photo." : {
 
     },
     "The change to %@: %@" : {
@@ -1204,6 +1216,9 @@
     "Wishbone needs the camera to scan a QR code. You can turn it on in Settings, or paste a link." : {
 
     },
+    "Wishbone needs the camera to take a photo. You can turn it on in Settings, or choose a photo." : {
+
+    },
     "Wishbone sends crash and fault reports to its developer, with the versions of the app and of Wishbone, the device model, and the iOS version." : {
 
     },
@@ -1350,6 +1365,9 @@
 
     },
     "Your parents" : {
+
+    },
+    "Your photo" : {
 
     },
     "example.com, or paste a link" : {
