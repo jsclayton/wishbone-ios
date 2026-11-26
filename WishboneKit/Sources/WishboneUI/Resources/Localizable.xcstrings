@@ -377,6 +377,9 @@
     "Add item" : {
 
     },
+    "Add link" : {
+
+    },
     "Add to" : {
 
     },
@@ -1028,6 +1031,9 @@
     "Paste a link or type what you want" : {
 
     },
+    "Paste a store's web address" : {
+
+    },
     "People" : {
 
     },
@@ -1073,6 +1079,9 @@
         }
       }
     },
+    "Prices checked." : {
+
+    },
     "Primary photo" : {
 
     },
@@ -1083,6 +1092,9 @@
 
     },
     "Received" : {
+
+    },
+    "Refresh prices" : {
 
     },
     "Remind me early" : {
@@ -1185,6 +1197,9 @@
 
     },
     "Store" : {
+
+    },
+    "Store links" : {
 
     },
     "Store to block" : {

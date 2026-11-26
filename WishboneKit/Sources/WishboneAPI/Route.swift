@@ -46,6 +46,10 @@ public enum Route: String, Sendable, CaseIterable {
   case createItem
   case updateItem
   case deleteItem
+  case addStoreLink
+  case updateStoreLink
+  case deleteStoreLink
+  case refreshPrices
 
   public var method: String {
     switch self {
@@ -54,10 +58,11 @@ public enum Route: String, Sendable, CaseIterable {
       .gifts, .gift, .blockedStores:
       "GET"
     case .redeemLoginLink, .confirmProfile, .uploadImage, .blockStore, .claim, .search, .createItem, .acknowledgeGift,
-      .restoreGift, .acceptInvitation:
+      .restoreGift, .acceptInvitation, .addStoreLink, .refreshPrices:
       "POST"
-    case .updateMe, .updateGift, .updateList, .updateItem: "PATCH"
-    case .revokeCurrentSession, .unblockStore, .leaveList, .unclaimGift, .deleteList, .declineInvitation, .deleteItem:
+    case .updateMe, .updateGift, .updateList, .updateItem, .updateStoreLink: "PATCH"
+    case .revokeCurrentSession, .unblockStore, .leaveList, .unclaimGift, .deleteList, .declineInvitation, .deleteItem,
+      .deleteStoreLink:
       "DELETE"
     }
   }
@@ -103,6 +108,9 @@ public enum Route: String, Sendable, CaseIterable {
     case .confirmProfile: "/users/me/confirm-profile"
     case .uploadImage: "/images"
     case .search: "/search"
+    case .addStoreLink: "/items/{id}/store-links"
+    case .updateStoreLink, .deleteStoreLink: "/items/{id}/store-links/{store_link_id}"
+    case .refreshPrices: "/items/{id}/refresh-prices"
     }
   }
 
@@ -116,7 +124,7 @@ public enum Route: String, Sendable, CaseIterable {
       .updateGift, .unclaimGift, .acknowledgeGift, .restoreGift, .claim, .blockedStores, .blockStore, .unblockStore,
       .leaveList, .revokeCurrentSession, .confirmProfile,
       .uploadImage, .me, .search, .createItem, .updateList, .deleteList, .acceptInvitation, .declineInvitation,
-      .updateItem, .deleteItem:
+      .updateItem, .deleteItem, .addStoreLink, .updateStoreLink, .deleteStoreLink, .refreshPrices:
       false
     }
   }
@@ -138,7 +146,8 @@ public enum Route: String, Sendable, CaseIterable {
       .updateGift, .unclaimGift, .acknowledgeGift, .restoreGift, .claim, .blockStore, .unblockStore, .leaveList,
       .revokeCurrentSession,
       .confirmProfile, .uploadImage, .me,
-      .search, .createItem, .updateList, .deleteList, .acceptInvitation, .declineInvitation, .updateItem, .deleteItem:
+      .search, .createItem, .updateList, .deleteList, .acceptInvitation, .declineInvitation, .updateItem, .deleteItem,
+      .addStoreLink, .updateStoreLink, .deleteStoreLink, .refreshPrices:
       []
     }
   }
@@ -166,9 +175,14 @@ public enum Route: String, Sendable, CaseIterable {
     // so a second Add after a lost answer adds the item once. An upload of a file has a key of its own too, kept by
     // the form or by its unsent change, so a resend uploads the photo once. A download of a store's image sends none.
     case .search, .createItem, .uploadImage: ["Idempotency-Key"]
+    // Add link and Refresh prices wait for the server, which reads the store's pages. The client's one resend after a
+    // lost connection reuses the key, so it reads nothing again. Add link keeps its key across taps too, while the
+    // item and the address stay the same and nothing was added, so a second tap after a lost answer adds the link
+    // once. Refresh prices takes a new key on each tap: a second Refresh on purpose reads the pages again.
+    case .addStoreLink, .refreshPrices: ["Idempotency-Key"]
     // An unsent change keeps its key, so a resend after a lost connection, or in a later sync, is the same write.
     case .updateGift, .unclaimGift, .acknowledgeGift, .updateList, .deleteList, .acceptInvitation,
-      .declineInvitation, .updateItem, .deleteItem:
+      .declineInvitation, .updateItem, .deleteItem, .updateStoreLink, .deleteStoreLink:
       ["Idempotency-Key"]
     case .health, .redeemLoginLink, .users, .user, .groups, .group, .groupUsers, .groupGroups, .occasions, .occasion,
       .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation, .gifts, .gift,
@@ -187,6 +201,8 @@ public enum Route: String, Sendable, CaseIterable {
     case .updateGift: fields(of: GiftChanges.CodingKeys.self)
     case .updateList: fields(of: ListChanges.CodingKeys.self)
     case .updateItem: fields(of: ItemChanges.CodingKeys.self)
+    case .addStoreLink: fields(of: AddStoreLinkBody.CodingKeys.self)
+    case .updateStoreLink: fields(of: StoreLinkChanges.CodingKeys.self)
     case .acknowledgeGift: fields(of: AcknowledgeBody.CodingKeys.self)
     // A search sends a form, not JSON: its one field is the text, or the photo.
     case .search: ["text", "image"]
@@ -197,7 +213,7 @@ public enum Route: String, Sendable, CaseIterable {
     case .health, .versions, .users, .user, .groups, .group, .groupUsers, .groupGroups, .occasions, .occasion,
       .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation, .gifts, .gift,
       .blockedStores, .unblockStore, .leaveList, .revokeCurrentSession, .confirmProfile, .me, .unclaimGift,
-      .restoreGift, .deleteList, .acceptInvitation, .declineInvitation, .deleteItem:
+      .restoreGift, .deleteList, .acceptInvitation, .declineInvitation, .deleteItem, .deleteStoreLink, .refreshPrices:
       []
     }
   }
@@ -222,7 +238,8 @@ public enum Route: String, Sendable, CaseIterable {
     case .list, .updateList, .acceptInvitation: ListResource.fields
     case .listRecipients: Page<VersionedRow<Recipient>>.fields
     case .listItems: Page<VersionedRow<Item>>.fields
-    case .item, .createItem, .updateItem: Item.fields
+    case .item, .createItem, .updateItem, .refreshPrices: Item.fields
+    case .addStoreLink, .updateStoreLink: StoreLink.fields
     case .search: SearchBody.fields
     case .invitations: Page<VersionedRow<Invitation>>.fields
     case .invitation: Invitation.fields
@@ -231,7 +248,7 @@ public enum Route: String, Sendable, CaseIterable {
     case .blockedStores: Page<VersionedRow<BlockedStore>>.fields
     case .blockStore: BlockedStore.fields
     case .revokeCurrentSession, .unblockStore, .leaveList, .unclaimGift, .restoreGift, .deleteList,
-      .declineInvitation, .deleteItem:
+      .declineInvitation, .deleteItem, .deleteStoreLink:
       NoContent.fields
     }
   }
@@ -467,6 +484,39 @@ extension Endpoint where Response == Item {
   static func updateItem(_ id: String, _ changes: ItemChanges, key: String) -> Endpoint {
     Endpoint(route: .updateItem, parameters: ["id": id], body: changes, idempotencyKey: key)
   }
+
+  /// Reads each store link of the item again, with a key of its own, so that a resend after a lost connection reads
+  /// nothing again.
+  static func refreshPrices(_ id: String) -> Endpoint {
+    Endpoint(route: .refreshPrices, parameters: ["id": id], idempotencyKey: UUID().uuidString)
+  }
+}
+
+/// The body of `POST /items/{id}/store-links`: the address that the user pasted. The server reads it.
+struct AddStoreLinkBody: Encodable, Sendable {
+  let url: String
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case url
+  }
+}
+
+extension Endpoint where Response == StoreLink {
+  /// Adds a store link to the item, with the key that Add link keeps, so that a resend after a lost connection, or a
+  /// second tap after a lost answer, adds it once and reads the page once.
+  static func addStoreLink(_ url: String, toItem itemID: String, key: String) -> Endpoint {
+    Endpoint(
+      route: .addStoreLink, parameters: ["id": itemID], body: AddStoreLinkBody(url: url), idempotencyKey: key)
+  }
+
+  /// A merge patch of the store link's price, with the unsent change's own key, so that a resend of the change is the
+  /// same write. It sends no `If-Match`.
+  static func updateStoreLink(_ id: String, ofItem itemID: String, _ changes: StoreLinkChanges, key: String)
+    -> Endpoint
+  {
+    Endpoint(
+      route: .updateStoreLink, parameters: ["id": itemID, "store_link_id": id], body: changes, idempotencyKey: key)
+  }
 }
 
 extension Endpoint where Response == Invitation {
@@ -628,6 +678,11 @@ extension Endpoint where Response == NoContent {
   /// Deletes the item, with the unsent change's own key. It sends no `If-Match`.
   static func deleteItem(_ id: String, key: String) -> Endpoint {
     Endpoint(route: .deleteItem, parameters: ["id": id], idempotencyKey: key)
+  }
+
+  /// Deletes the store link, with the unsent change's own key. It sends no `If-Match`.
+  static func deleteStoreLink(_ id: String, ofItem itemID: String, key: String) -> Endpoint {
+    Endpoint(route: .deleteStoreLink, parameters: ["id": itemID, "store_link_id": id], idempotencyKey: key)
   }
 }
 

@@ -8,11 +8,12 @@ import WishboneSession
 /// Claim state shows only as the server sends it, and the page never says who else claimed. For a giver, I'll get
 /// this claims one at once, and waits for the server: see `ClaimSection`. For a user who can edit, Edit opens the
 /// Edit item sheet, and Delete asks first. Each is an unsent change: it shows at once, in every window. After a
-/// delete, the page closes in this window, and any other window that shows it shows the "not found" page.
+/// delete, the page closes in this window, and any other window that shows it shows the "not found" page. Refresh
+/// prices waits for the server, and says what happened under the store links.
 ///
 /// **Provisional.** Plain default: a system list, one column at every size. The images are a row that pages
-/// sideways, the title is large text under it, and each part is a section. Edit is a toolbar button, and Copy link
-/// and Delete are in the toolbar's menu. The Delete confirmation is an alert.
+/// sideways, the title is large text under it, and each part is a section. Edit is a toolbar button, and Copy link,
+/// Refresh prices and Delete are in the toolbar's menu. The Delete confirmation is an alert.
 struct ItemPageScreen: View {
   let page: ItemPage
   let session: SessionModel
@@ -25,6 +26,12 @@ struct ItemPageScreen: View {
 
   /// Whether the confirmation of Delete shows.
   @State private var isConfirmingDelete = false
+
+  /// Whether Refresh prices waits for the server.
+  @State private var isRefreshing = false
+
+  /// What the last Refresh prices said: "Prices checked.", or why not.
+  @State private var refreshed: String?
 
   var body: some View {
     List {
@@ -51,10 +58,17 @@ struct ItemPageScreen: View {
             .fixedSize(horizontal: false, vertical: true)
         }
       }
-      if !page.storeLinks.isEmpty {
+      if !page.storeLinks.isEmpty || isRefreshing || refreshed != nil {
         Section {
           ForEach(page.storeLinks) { link in
             StoreLinkLine(link: link)
+          }
+          if isRefreshing {
+            ProgressView {
+              Text("Refresh prices", bundle: #bundle)
+            }
+          } else if let refreshed {
+            Text(refreshed)
           }
         }
       }
@@ -71,6 +85,10 @@ struct ItemPageScreen: View {
       }
     }
     .cantReachLine(of: session)
+    // A new item in the same window starts with nothing said.
+    .onChange(of: page.item.id) {
+      refreshed = nil
+    }
     .sheet(isPresented: $isEditing) {
       EditItemSheet(item: page.item, session: session)
     }
@@ -101,11 +119,23 @@ struct ItemPageScreen: View {
           }
         }
       }
-      if page.copyLink != nil || page.item.canDelete {
+      if page.copyLink != nil || page.item.canDelete || offersRefresh {
         ToolbarItem(placement: .primaryAction) {
           Menu {
             if let copyLink = page.copyLink {
               CopyLinkButton(url: copyLink)
+            }
+            if offersRefresh {
+              Button {
+                Task { await refreshPrices() }
+              } label: {
+                Label {
+                  Text("Refresh prices", bundle: #bundle)
+                } icon: {
+                  Image(systemName: "arrow.clockwise")
+                }
+              }
+              .disabled(isRefreshing)
             }
             if page.item.canDelete {
               Button(role: .destructive) {
@@ -133,6 +163,29 @@ struct ItemPageScreen: View {
 }
 
 extension ItemPageScreen {
+  /// Whether the menu offers Refresh prices: from `can_refresh_prices`, once the server has the item.
+  private var offersRefresh: Bool {
+    session.offersRefreshPrices(onItem: page.item.id)
+  }
+
+  /// Reads the store links' prices again, and waits for the server. The words say what happened, and are announced.
+  private func refreshPrices() async {
+    guard !isRefreshing else { return }
+    isRefreshing = true
+    refreshed = nil
+    let outcome = await session.refreshPrices(ofItem: page.item.id)
+    isRefreshing = false
+    let words =
+      switch outcome {
+      case .checked: String(localized: "Prices checked.", bundle: #bundle)
+      case .unreachable: CantReach.words(for: session.session.instance)
+      case .refused(let refusal): ErrorWords.words(for: refusal) ?? ErrorWords.fault
+      case .failed: ErrorWords.fault
+      }
+    refreshed = words
+    AccessibilityNotification.Announcement(words).post()
+  }
+
   /// Deletes the item, as an unsent change. It leaves the copy at once, and the page closes in this window, which
   /// shows what was under it. Every other window that shows the page shows the "not found" page.
   private func delete() async {

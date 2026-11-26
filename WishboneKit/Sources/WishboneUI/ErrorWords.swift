@@ -12,6 +12,11 @@ public enum ErrorWords {
     String(localized: "An item can have 5 photos.", bundle: #bundle)
   }
 
+  /// The words of `too_many_store_links`, which the Edit item sheet also shows when the item has 10 store links.
+  static var tooManyStoreLinks: String {
+    String(localized: "An item can have 10 store links.", bundle: #bundle)
+  }
+
   /// The words for a refusal. Nil for a code that counts as success, which shows nothing. For a code that the app
   /// doesn't know, they are the server's `detail`.
   public static func words(for refusal: APIError.Refusal) -> String? {
@@ -19,7 +24,8 @@ public enum ErrorWords {
     switch refusal.code {
     case .loginLinkInvalid:
       return linkInvalid
-    case .rateLimited where refusal.route == .search:
+    // The hourly limit of reading links and photos: a search, Add link, and Refresh prices each read a store's page.
+    case .rateLimited where [.search, .addStoreLink, .refreshPrices].contains(refusal.route):
       return String(localized: "You've read 30 links and photos in the last hour. Try again later.", bundle: #bundle)
     case .rateLimited:
       return String(localized: "Too many tries. Wait a minute, then try again.", bundle: #bundle)
@@ -28,7 +34,7 @@ public enum ErrorWords {
     case .tooManyImages:
       return tooManyImages
     case .tooManyStoreLinks:
-      return String(localized: "An item can have 10 store links.", bundle: #bundle)
+      return tooManyStoreLinks
     case .invalidInput:
       return String(localized: "Some fields need another look.", bundle: #bundle)
     case .notFound, .referenceNotFound:

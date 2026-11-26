@@ -99,6 +99,39 @@ public struct UnsentChange: Sendable, Equatable, Identifiable {
     /// Delete item: `DELETE /items/{id}`. The item leaves the copy at once, and its list counts one fewer. An item
     /// that a create in the journal makes is named by its stand-in ID, as for an edit.
     case deleteItem(itemID: String, listID: String)
+
+    /// A price edit of a store link, in the Edit item sheet: `PATCH /items/{id}/store-links/{store_link_id}` with
+    /// only `price_minor`. A nil price clears it. The link shows the new price at once, read when the change was made.
+    case editStoreLink(StoreLinkEdit)
+
+    /// Remove, of a store link in the Edit item sheet: `DELETE /items/{id}/store-links/{store_link_id}`. The link
+    /// leaves the copy at once. The item keeps its price.
+    case deleteStoreLink(itemID: String, storeLinkID: String)
+  }
+}
+
+/// A price edit of a store link, with what the link shows until the server answers. See "Edit item" in
+/// `docs/screens/item.md`.
+public struct StoreLinkEdit: Sendable, Equatable {
+  /// The item, by the server's ID: the request's path names it.
+  public let itemID: String
+
+  /// The store link, by the server's ID. A store link of an item that waits to be created is never edited: see
+  /// `ItemEditDraft.StoreLinkEntry.canEdit`.
+  public let storeLinkID: String
+
+  /// The price, in the link's currency's minor unit. Nil clears it, and its currency with it.
+  public let priceMinor: Int?
+
+  /// When the user saved the change: when the link's price shows as read until the server answers, as the server
+  /// sets it to now.
+  public let editedAt: Date
+
+  public init(itemID: String, storeLinkID: String, priceMinor: Int?, editedAt: Date) {
+    self.itemID = itemID
+    self.storeLinkID = storeLinkID
+    self.priceMinor = priceMinor
+    self.editedAt = editedAt
   }
 }
 
@@ -237,6 +270,9 @@ extension UnsentChange {
     /// The answer of a create: the item, by the server's ID.
     case item(Versioned<Item>)
 
+    /// The answer of a price edit: the store link as the server has it now.
+    case storeLink(Versioned<StoreLink>)
+
     /// No answer to keep: an unclaim, a delete, or an answer that the app couldn't read. The next pull brings the
     /// row.
     case none
@@ -254,7 +290,7 @@ extension UnsentChange {
       switch self {
       case .image(let image): image.id
       case .item(let item): item.resource.id
-      case .gift, .list, .none: nil
+      case .gift, .list, .storeLink, .none: nil
       }
     }
   }
@@ -347,6 +383,8 @@ struct UnsentChangeRow: Codable, Sendable, FetchableRecord, MutablePersistableRe
     case createItem
     case editItem
     case deleteItem
+    case editStoreLink
+    case deleteStoreLink
   }
 
   mutating func didInsert(_ inserted: InsertionSuccess) {
@@ -541,11 +579,14 @@ extension LocalDatabase {
   /// An unclaim has no answer: the gift leaves the copy with the change. A list's answer is the list, and a delete
   /// has none: the list leaves the copy with its items and its recipient rows. An accept's answer is the list too,
   /// and a decline has none. Either way, the invitation leaves the copy. An item's edit has the item as its answer,
-  /// and a delete has none: the item leaves the copy with its store links.
+  /// and a delete has none: the item leaves the copy with its store links. A store link's price edit has the link as
+  /// its answer, which takes the place of its row, and a Remove has none: the link leaves the copy. The item's own
+  /// row waits for the next pull, which the send comes before.
   func accept(_ change: UnsentChange, answer: UnsentChange.Answer) async throws {
     let gift = answer.gift.map { GiftRow($0) }
     let list = answer.list.map { ListRow($0) }
     let item: Versioned<Item>? = if case .item(let item) = answer { item } else { nil }
+    let storeLink: Versioned<StoreLink>? = if case .storeLink(let link) = answer { link } else { nil }
     try await self.change { database in
       _ = try UnsentChangeRow.deleteOne(database, key: change.id)
       switch change.action {
@@ -557,6 +598,8 @@ extension LocalDatabase {
       case .uploadImage(let id): _ = try UnsentFileRow.deleteOne(database, key: id)
       case .createItem, .editItem: try item.map { try Self.saveAnswered($0, in: database) }
       case .deleteItem(let id, _): try Self.removeItems([id], in: database)
+      case .editStoreLink: try storeLink.map { try Self.saveAnswered($0, in: database) }
+      case .deleteStoreLink(_, let id): _ = try StoreLinkRow.deleteOne(database, key: id)
       default: break
       }
       if let serverID = answer.createdID {
@@ -632,6 +675,13 @@ extension LocalDatabase {
     for (position, link) in item.resource.storeLinks.enumerated() {
       try StoreLinkRow(link, ofItem: item.resource.id, at: position, version: "").save(database)
     }
+  }
+
+  /// Saves the store link that a price edit's answer gave, in the place of its row, where the copy still holds it. No
+  /// body carries a store link's version, so the next pull compares it.
+  private static func saveAnswered(_ link: Versioned<StoreLink>, in database: Database) throws {
+    guard let row = try StoreLinkRow.fetchOne(database, key: link.resource.id) else { return }
+    try StoreLinkRow(link.resource, ofItem: row.itemID, at: row.position, version: "").save(database)
   }
 
   /// Every stand-in ID that the server's ID took the place of, with that ID.
@@ -731,7 +781,8 @@ extension LocalDatabase {
   }
 
   /// The store links, with the store links of each item that a create adds, in the order that the user gave them,
-  /// and without those of an item that a delete takes out.
+  /// and without those of an item that a delete takes out. A price edit shows over its link's row, and a Remove takes
+  /// the link out.
   static func applying(_ changes: [UnsentChange], to storeLinks: [StoreLinkRow]) -> [StoreLinkRow] {
     var rows = storeLinks
     for change in changes {
@@ -742,6 +793,11 @@ extension LocalDatabase {
         }
       case .deleteItem(let id, _):
         rows.removeAll { $0.itemID == id }
+      case .editStoreLink(let edit):
+        guard let index = rows.firstIndex(where: { $0.id == edit.storeLinkID }) else { continue }
+        rows[index] = rows[index].with(edit)
+      case .deleteStoreLink(_, let id):
+        rows.removeAll { $0.id == id }
       default:
         continue
       }
@@ -771,7 +827,7 @@ extension LocalDatabase {
       case .unclaim: rows.remove(at: index)
       case .acknowledge(_, let flag): rows[index] = gift.answering(flag, now: now)
       case .editList, .deleteList, .acceptInvitation, .declineInvitation, .uploadImage, .createItem, .editItem,
-        .deleteItem:
+        .deleteItem, .editStoreLink, .deleteStoreLink:
         continue
       case .setOccasion(_, let occasion):
         picked = true
@@ -817,14 +873,19 @@ extension UnsentChange.Action {
       item.id
     case .editItem(let id, _), .deleteItem(let id, _):
       id
+    case .editStoreLink(let edit):
+      edit.storeLinkID
+    case .deleteStoreLink(_, let id):
+      id
     }
   }
 
-  /// Whether the change is to a gift. Otherwise it is to a list, to an invitation, to an item, or a create.
+  /// Whether the change is to a gift. Otherwise it is to a list, to an invitation, to an item or a store link, or a
+  /// create.
   var isToAGift: Bool {
     switch self {
     case .editList, .deleteList, .acceptInvitation, .declineInvitation, .uploadImage, .createItem, .editItem,
-      .deleteItem:
+      .deleteItem, .editStoreLink, .deleteStoreLink:
       false
     default: true
     }
@@ -849,7 +910,7 @@ extension UnsentChange.Action {
     case .lowerQuantity(_, let quantity): GiftChanges(quantity: quantity)
     case .setOccasion(_, let occasion): GiftChanges(occasionID: occasion.id)
     case .unclaim, .acknowledge, .editList, .deleteList, .acceptInvitation, .declineInvitation, .uploadImage,
-      .createItem, .editItem, .deleteItem:
+      .createItem, .editItem, .deleteItem, .editStoreLink, .deleteStoreLink:
       GiftChanges()
     }
   }
@@ -871,6 +932,8 @@ extension UnsentChange.Action {
     case .createItem: .createItem
     case .editItem: .editItem
     case .deleteItem: .deleteItem
+    case .editStoreLink: .editStoreLink
+    case .deleteStoreLink: .deleteStoreLink
     }
   }
 
@@ -878,7 +941,8 @@ extension UnsentChange.Action {
   /// of the occasion keeps what it shows too, and an unclaim keeps an empty object. An accept sends no body, and
   /// keeps what the list shows until the server answers. A create keeps its body and what its row shows, and an
   /// upload keeps an empty object: its bytes wait beside it. An item's edit keeps its body, and a delete keeps the
-  /// item's list, which counts one fewer until the server answers.
+  /// item's list, which counts one fewer until the server answers. A store link's price edit keeps its item, the
+  /// price, and when it was made, and a Remove keeps its item: the request's path names both.
   fileprivate func patch() throws -> String {
     let data =
       switch self {
@@ -889,6 +953,8 @@ extension UnsentChange.Action {
       case .createItem(let item): try JSONEncoder().encode(CreationPatch(item))
       case .editItem(_, let changes): try JSONEncoder().encode(changes)
       case .deleteItem(_, let listID): try JSONEncoder().encode(DeletionPatch(listID: listID))
+      case .editStoreLink(let edit): try JSONEncoder().encode(StoreLinkEditPatch(edit))
+      case .deleteStoreLink(let itemID, _): try JSONEncoder().encode(StoreLinkDeletionPatch(itemID: itemID))
       default: try JSONEncoder().encode(giftChanges)
       }
     return String(decoding: data, as: UTF8.self)
@@ -941,6 +1007,16 @@ extension UnsentChange.Action {
       guard let patch = try? JSONDecoder().decode(DeletionPatch.self, from: Data(patch.utf8)) else { return nil }
       self = .deleteItem(itemID: targetID, listID: patch.listID)
       return
+    case .editStoreLink:
+      guard let patch = try? JSONDecoder().decode(StoreLinkEditPatch.self, from: Data(patch.utf8)) else { return nil }
+      self = .editStoreLink(patch.edit(targetID))
+      return
+    case .deleteStoreLink:
+      guard let patch = try? JSONDecoder().decode(StoreLinkDeletionPatch.self, from: Data(patch.utf8)) else {
+        return nil
+      }
+      self = .deleteStoreLink(itemID: patch.itemID, storeLinkID: targetID)
+      return
     case .markBought, .setFromLabel, .setNote, .lowerQuantity:
       break
     }
@@ -959,7 +1035,7 @@ extension UnsentChange.Action {
       guard let quantity = changes.quantity else { return nil }
       self = .lowerQuantity(giftID: targetID, quantity: quantity)
     case .unclaim, .acknowledge, .setOccasion, .editList, .deleteList, .acceptInvitation, .declineInvitation,
-      .uploadImage, .createItem, .editItem, .deleteItem:
+      .uploadImage, .createItem, .editItem, .deleteItem, .editStoreLink, .deleteStoreLink:
       return nil
     }
   }
@@ -1026,6 +1102,33 @@ private struct AcceptancePatch: Codable {
 /// The delete sends none of it.
 private struct DeletionPatch: Codable {
   let listID: String
+}
+
+/// A price edit of a store link, as the journal keeps it: the item, which the request's path names, the price that it
+/// sends, and when it was made, which the link shows as read until the server answers.
+private struct StoreLinkEditPatch: Codable {
+  let itemID: String
+
+  /// Absent clears the price.
+  let priceMinor: Int?
+  // JSONEncoder's default date form, seconds since 2001 as a number. Don't change it: a later version of the app must
+  // read the journal rows that this one wrote.
+  let editedAt: Date
+
+  init(_ edit: StoreLinkEdit) {
+    itemID = edit.itemID
+    priceMinor = edit.priceMinor
+    editedAt = edit.editedAt
+  }
+
+  func edit(_ storeLinkID: String) -> StoreLinkEdit {
+    StoreLinkEdit(itemID: itemID, storeLinkID: storeLinkID, priceMinor: priceMinor, editedAt: editedAt)
+  }
+}
+
+/// A Remove of a store link, as the journal keeps it: the item, which the request's path names. It sends no body.
+private struct StoreLinkDeletionPatch: Codable {
+  let itemID: String
 }
 
 /// A create of an item, as the journal keeps it: the body that it sends, and what its row shows until the server
@@ -1229,6 +1332,19 @@ extension StoreLinkRow {
       id: "\(item.id)-link-\(position)", itemID: item.id, position: position, url: link.url, store: link.store,
       priceMinor: link.priceMinor, currency: link.currency, capturedAt: nil, imageURL: link.imageURL,
       createdAt: item.createdAt, canEdit: false, canDelete: false, version: "")
+  }
+}
+
+extension StoreLinkRow {
+  /// The store link with a price edit over its row, until the server answers, as the server makes it: the price, in
+  /// the link's currency or in USD, read when the user saved it. A cleared price clears its currency, and is read
+  /// then too. A link with no price that the edit leaves with none keeps its date.
+  fileprivate func with(_ edit: StoreLinkEdit) -> StoreLinkRow {
+    let isRead = edit.priceMinor != nil || priceMinor != nil
+    return StoreLinkRow(
+      id: id, itemID: itemID, position: position, url: url, store: store, priceMinor: edit.priceMinor,
+      currency: edit.priceMinor == nil ? nil : currency ?? "USD", capturedAt: isRead ? edit.editedAt : capturedAt,
+      imageURL: imageURL, createdAt: createdAt, canEdit: canEdit, canDelete: canDelete, version: version)
   }
 }
 

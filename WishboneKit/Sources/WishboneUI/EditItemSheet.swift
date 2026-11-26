@@ -8,16 +8,17 @@ import WishboneSession
   import UIKit
 #endif
 
-/// The Edit item sheet: the photos, the title, the price and Up to, how many or Always wanted, and the notes. Save is
-/// an unsent change: it shows at once, in every window, and reaches the instance when it answers. A new photo is
-/// uploaded first. See "Edit item" in `docs/screens/item.md`.
+/// The Edit item sheet: the photos, the title, the price and Up to, how many or Always wanted, the notes, and the
+/// store links. Save is an unsent change: it shows at once, in every window, and reaches the instance when it
+/// answers. A new photo is uploaded first. A store link's price edit and its Remove are saved with it. Add link
+/// waits for the server, which reads the page, and isn't part of Save. See "Edit item" in `docs/screens/item.md`.
 ///
-/// Take a photo and Choose a photo open the system's own camera and photo picker, which a sheet may open. The store
-/// links come later.
+/// Take a photo and Choose a photo open the system's own camera and photo picker, which a sheet may open.
 ///
 /// **Provisional.** Plain default: a system form in a sheet, in the order of the screen's spec, with Cancel and Save
-/// in the toolbar. Each photo is a row with its picture, "Primary photo" or Make primary, and Remove. A swipe down
-/// doesn't close the sheet while it has typed changes: Cancel asks first.
+/// in the toolbar. Each photo is a row with its picture, "Primary photo" or Make primary, and Remove. Each store link
+/// is a row with its store, its price in a field, and Remove, then a field for a pasted address and Add link. A
+/// swipe down doesn't close the sheet while it has typed changes: Cancel asks first.
 ///
 /// The sheet opens with the draft that the session gives (`SessionModel.editDraft(ofItem:)`): it has the photos whose
 /// uploads wait, so the user can keep, remove or pick each one, and Save never drops one that the sheet didn't show.
@@ -59,8 +60,8 @@ private struct EditItemForm: View {
   let session: SessionModel
 
   /// The draft as the sheet opened: what Save compares with, so it sends only what the user changed, and what tells
-  /// whether the user changed something.
-  private let opened: ItemEditDraft
+  /// whether the user changed something. A store link that Add link added joins it, because the server has it.
+  @State private var opened: ItemEditDraft
 
   @State private var draft: ItemEditDraft
   @State private var isConfirmingDiscard = false
@@ -79,7 +80,7 @@ private struct EditItemForm: View {
   init(item: ItemRow, opened: ItemEditDraft, session: SessionModel) {
     self.item = item
     self.session = session
-    self.opened = opened
+    _opened = State(initialValue: opened)
     _draft = State(initialValue: opened)
   }
 
@@ -128,6 +129,7 @@ private struct EditItemForm: View {
         } header: {
           Text("Notes", bundle: #bundle)
         }
+        StoreLinksSection(item: item, session: session, opened: $opened, draft: $draft)
       }
       .navigationTitle(Text("Edit item", bundle: #bundle))
       #if os(iOS)
@@ -371,5 +373,157 @@ private struct PhotoRow: View {
 
   @concurrent nonisolated private static func preview(of photo: Photo) async -> CGImage? {
     photo.preview(longestSide: 168)
+  }
+}
+
+/// The store links of the Edit item sheet: each with its price to edit and Remove, then Add link, which takes a pasted
+/// web address. A price edit and a Remove wait for Save. Add link waits for the server's answer, and a link that it
+/// adds is in the item at once: Cancel doesn't take it away. What Add link said shows under the section.
+///
+/// A link of an item that waits to be created shows its price, with no field and no Remove, until the server has the
+/// item. At 10 links, Add link can't be used, and the section says why.
+private struct StoreLinksSection: View {
+  let item: ItemRow
+  let session: SessionModel
+  @Binding var opened: ItemEditDraft
+  @Binding var draft: ItemEditDraft
+
+  /// The address that the user pasted or typed, for Add link.
+  @State private var address = ""
+  @State private var isAdding = false
+
+  /// What the last Add link said, when it added nothing.
+  @State private var said: String?
+
+  /// Add link's key, kept between taps while the address stays the same and nothing was added.
+  @State private var key = AddLinkKey()
+
+  var body: some View {
+    Section {
+      ForEach($draft.storeLinks) { $link in
+        StoreLinkEditRow(link: $link) { draft.removeStoreLink(link.id) }
+      }
+      addLink
+    } header: {
+      Text("Store links", bundle: #bundle)
+    } footer: {
+      if !draft.canAddStoreLink {
+        Text(ErrorWords.tooManyStoreLinks)
+      } else if let said {
+        Text(said)
+      }
+    }
+  }
+
+  /// The field for a pasted address, and Add link, which shows progress while the server reads the page.
+  private var addLink: some View {
+    HStack {
+      TextField(text: $address, prompt: Text("Paste a store's web address", bundle: #bundle)) {
+        Text("Paste a store's web address", bundle: #bundle)
+      }
+      #if os(iOS)
+        .keyboardType(.URL)
+        .textInputAutocapitalization(.never)
+      #endif
+      .textContentType(.URL)
+      .autocorrectionDisabled()
+      .onSubmit { Task { await add() } }
+      .disabled(isAdding || !draft.canAddStoreLink)
+      Button {
+        Task { await add() }
+      } label: {
+        if isAdding {
+          ProgressView {
+            Text("Add link", bundle: #bundle)
+          }
+        } else {
+          Text("Add link", bundle: #bundle)
+        }
+      }
+      .buttonStyle(.borderless)
+      .disabled(!canAdd)
+    }
+  }
+
+  /// Whether Add link can go: the field has a web address, the item has fewer than 10 links, and no add waits.
+  private var canAdd: Bool {
+    guard !isAdding, draft.canAddStoreLink, case .link? = SearchInput(address) else { return false }
+    return true
+  }
+
+  /// Adds the link, and waits for the server. A link that the server added joins the sheet, and the field empties.
+  /// An item with no price takes the link's, in the sheet too, unless the user typed one. Anything else says why
+  /// nothing was added, and keeps the address in the field.
+  private func add() async {
+    guard canAdd else { return }
+    isAdding = true
+    said = nil
+    let outcome = await session.addStoreLink(address, toItem: item.id, key: key.key(for: address, toItem: item.id))
+    isAdding = false
+    switch outcome {
+    case .added(let link):
+      key.added()
+      opened.added(link)
+      draft.added(link)
+      if opened.priceMinor == nil, let took = session.item(id: item.id), let price = took.priceMinor,
+        let currency = took.currency
+      {
+        opened.itemTookPrice(price, currency: currency)
+        draft.itemTookPrice(price, currency: currency)
+      }
+      address = ""
+      return
+    case .unreachable:
+      said = CantReach.words(for: session.session.instance)
+    case .blocked(let store):
+      said = ErrorWords.blocked(store)
+    case .refused(let refusal):
+      said = ErrorWords.words(for: refusal) ?? ErrorWords.fault
+    case .failed:
+      said = ErrorWords.fault
+    }
+    if let said { AccessibilityNotification.Announcement(said).post() }
+  }
+}
+
+/// A store link of the Edit item sheet: its store, its price in a field, and Remove. VoiceOver reads the field as the
+/// store and its price. A link whose price can't be edited shows the price as words, and one that can't be removed
+/// has no Remove. At the largest text sizes, the price moves under the store's name.
+private struct StoreLinkEditRow: View {
+  @Binding var link: ItemEditDraft.StoreLinkEntry
+  let remove: () -> Void
+
+  @Environment(\.dynamicTypeSize) private var size
+
+  var body: some View {
+    HStack(spacing: 12) {
+      let layout =
+        size.isAccessibilitySize
+        ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4)) : AnyLayout(HStackLayout(spacing: 8))
+      layout {
+        Text(link.store)
+          .accessibilityHidden(link.canEdit)
+        if link.canEdit {
+          PriceField(priceMinor: $link.priceMinor, currency: link.currency, label: Text(link.store))
+        } else {
+          Text(price)
+            .foregroundStyle(.secondary)
+        }
+      }
+      if link.canDelete {
+        Spacer(minLength: 0)
+        Button(role: .destructive, action: remove) {
+          Text("Remove", bundle: #bundle)
+        }
+        .buttonStyle(.borderless)
+        .accessibilityHint(Text(link.store))
+      }
+    }
+  }
+
+  /// The price, or "no price".
+  private var price: String {
+    PriceWords.storeLink(priceMinor: link.priceMinor, currency: link.currency)
+      ?? String(localized: "no price", bundle: #bundle)
   }
 }
