@@ -88,4 +88,19 @@ struct UnsentChangeWordsTests {
       LateRefusalWords.line(pick)
         == "The occasion of Kite: That occasion can't be used for this gift. Pick another.")
   }
+
+  @Test("A late refusal of Edit list or Delete list names the list, with the words for list_has_other_recipients")
+  func lateRefusalsOfLists() {
+    let forbidden = APIError.Refusal(route: .updateList, status: 403, code: .forbidden, detail: "The server's words")
+    let others = APIError.Refusal(
+      route: .deleteList, status: 403, code: .listHasOtherRecipients, detail: "The server's words")
+    let edit = LateRefusal(
+      id: 1, action: .editList(listID: "9", changes: ListChanges(name: "Road trip")), title: "Trip",
+      refusal: forbidden)
+    let delete = LateRefusal(id: 2, action: .deleteList(listID: "9"), title: "Cousins", refusal: others)
+    #expect(LateRefusalWords.line(edit) == "Editing Trip: You can't do this any more.")
+    #expect(
+      LateRefusalWords.line(delete)
+        == "Deleting Cousins: Cousins has other recipients now, so it can't be deleted. You can leave it.")
+  }
 }

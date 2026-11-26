@@ -740,7 +740,7 @@ struct LocalDatabase: Sendable {
   }
 
   /// Removes the lists, with their items, the items' store links, and the lists' recipient rows.
-  private static func removeLists(_ ids: [String], in database: Database) throws {
+  static func removeLists(_ ids: [String], in database: Database) throws {
     guard !ids.isEmpty else { return }
     try ListRow.deleteAll(database, keys: ids)
     try RecipientRow.filter(ids.contains(Column("listID"))).deleteAll(database)

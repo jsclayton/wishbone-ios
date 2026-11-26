@@ -65,6 +65,33 @@ public struct UnsentChange: Sendable, Equatable, Identifiable {
     /// Pick the occasion: `PATCH /gifts/{id}` with only `occasion_id`. When the giver has another open gift on the
     /// item for that occasion, the server merges the two, and its answer is the gift that stays.
     case setOccasion(giftID: String, occasion: PickedOccasion)
+
+    /// Edit list: a new name or description, `PATCH /lists/{id}` with only the fields that change. An empty
+    /// description clears it.
+    case editList(listID: String, changes: ListChanges)
+
+    /// Delete list: `DELETE /lists/{id}`. The list and its items leave the copy at once.
+    case deleteList(listID: String)
+  }
+}
+
+extension UnsentChange {
+  /// What the server answered an unsent change with: the thing as it has it now, or nothing.
+  enum Answer: Sendable {
+    case gift(Versioned<Gift>)
+    case list(Versioned<ListResource>)
+
+    /// No answer to keep: an unclaim, a delete, or an answer that the app couldn't read. The next pull brings the
+    /// row.
+    case none
+
+    var gift: Versioned<Gift>? {
+      if case .gift(let gift) = self { gift } else { nil }
+    }
+
+    var list: Versioned<ListResource>? {
+      if case .list(let list) = self { list } else { nil }
+    }
   }
 }
 
@@ -147,6 +174,8 @@ struct UnsentChangeRow: Codable, Sendable, FetchableRecord, MutablePersistableRe
     case unclaim
     case acknowledge
     case setOccasion
+    case editList
+    case deleteList
   }
 
   mutating func didInsert(_ inserted: InsertionSuccess) {
@@ -253,15 +282,22 @@ extension LocalDatabase {
   ///
   /// The answer is the thing as the server has it now, with the version that the answer carried. A gift that a
   /// change of occasion merged into another is the gift that stays, so the one with the change's ID leaves the copy.
-  /// An unclaim has no answer: the gift leaves the copy with the change.
-  func accept(_ change: UnsentChange, answer gift: Versioned<Gift>?) async throws {
-    let row = gift.map { GiftRow($0) }
+  /// An unclaim has no answer: the gift leaves the copy with the change. A list's answer is the list, and a delete
+  /// has none: the list leaves the copy with its items and its recipient rows.
+  func accept(_ change: UnsentChange, answer: UnsentChange.Answer) async throws {
+    let gift = answer.gift.map { GiftRow($0) }
+    let list = answer.list.map { ListRow($0) }
     try await self.change { database in
       _ = try UnsentChangeRow.deleteOne(database, key: change.id)
-      if case .unclaim(let id) = change.action { _ = try GiftRow.deleteOne(database, key: id) }
-      guard let row else { return }
-      if row.id != change.action.targetID { _ = try GiftRow.deleteOne(database, key: change.action.targetID) }
-      try row.save(database)
+      switch change.action {
+      case .unclaim(let id): _ = try GiftRow.deleteOne(database, key: id)
+      case .deleteList(let id): try Self.removeLists([id], in: database)
+      default: break
+      }
+      try list?.save(database)
+      guard let gift else { return }
+      if gift.id != change.action.targetID { _ = try GiftRow.deleteOne(database, key: change.action.targetID) }
+      try gift.save(database)
     }
   }
 
@@ -285,6 +321,31 @@ extension LocalDatabase {
 
   // MARK: - Over the copy
 
+  /// The lists, each with the unsent changes to it applied in order over its row, by name. A deleted list is left
+  /// out, and so are its items and recipient rows, which the snapshot shows only for the lists that it has.
+  static func applying(_ changes: [UnsentChange], to lists: [ListRow]) -> [ListRow] {
+    var rows = lists
+    var renamed = false
+    for change in changes {
+      switch change.action {
+      case .editList(let id, let changes):
+        guard let index = rows.firstIndex(where: { $0.id == id }) else { continue }
+        rows[index] = rows[index].with(changes)
+        renamed = renamed || changes.name != nil
+      case .deleteList(let id):
+        rows.removeAll { $0.id == id }
+      default:
+        continue
+      }
+    }
+    // A new name moves the list, as the copy orders the lists: by name, as SQLite compares text, then by ID.
+    guard renamed else { return rows }
+    return rows.sorted { first, second in
+      guard first.name != second.name else { return first.id.utf8.lexicographicallyPrecedes(second.id.utf8) }
+      return first.name.utf8.lexicographicallyPrecedes(second.name.utf8)
+    }
+  }
+
   /// The gifts, each with the unsent changes to it applied in order over its row. An unclaimed gift is left out.
   /// `now` is when a gift is said to be given within 14 days, for `needs_attention` after an answer to a flag or a
   /// pick of the occasion.
@@ -296,7 +357,7 @@ extension LocalDatabase {
     guard !changes.isEmpty else { return gifts }
     var rows = gifts
     var picked = false
-    for change in changes {
+    for change in changes where change.action.isToAGift {
       guard let index = rows.firstIndex(where: { $0.id == change.action.targetID }) else { continue }
       let gift = rows[index]
       switch change.action {
@@ -306,6 +367,8 @@ extension LocalDatabase {
       case .lowerQuantity(_, let quantity): rows[index] = gift.with(quantity: quantity)
       case .unclaim: rows.remove(at: index)
       case .acknowledge(_, let flag): rows[index] = gift.answering(flag, now: now)
+      case .editList, .deleteList:
+        continue
       case .setOccasion(_, let occasion):
         picked = true
         if let staying = rows.firstIndex(where: { gift.mergesInto($0, for: occasion.id) }) {
@@ -339,8 +402,16 @@ extension UnsentChange.Action {
   var targetID: String {
     switch self {
     case .markBought(let id, _), .setFromLabel(let id, _), .setNote(let id, _), .lowerQuantity(let id, _),
-      .unclaim(let id), .acknowledge(let id, _), .setOccasion(let id, _):
+      .unclaim(let id), .acknowledge(let id, _), .setOccasion(let id, _), .editList(let id, _), .deleteList(let id):
       id
+    }
+  }
+
+  /// Whether the change is to a gift. Otherwise it is to a list.
+  var isToAGift: Bool {
+    switch self {
+    case .editList, .deleteList: false
+    default: true
     }
   }
 
@@ -354,7 +425,7 @@ extension UnsentChange.Action {
     case .setNote(_, let note): GiftChanges(note: note ?? "")
     case .lowerQuantity(_, let quantity): GiftChanges(quantity: quantity)
     case .setOccasion(_, let occasion): GiftChanges(occasionID: occasion.id)
-    case .unclaim, .acknowledge: GiftChanges()
+    case .unclaim, .acknowledge, .editList, .deleteList: GiftChanges()
     }
   }
 
@@ -367,6 +438,8 @@ extension UnsentChange.Action {
     case .unclaim: .unclaim
     case .acknowledge: .acknowledge
     case .setOccasion: .setOccasion
+    case .editList: .editList
+    case .deleteList: .deleteList
     }
   }
 
@@ -377,6 +450,7 @@ extension UnsentChange.Action {
       switch self {
       case .acknowledge(_, let flag): try JSONEncoder().encode(FlagAnswer(codes: [flag]))
       case .setOccasion(_, let occasion): try JSONEncoder().encode(OccasionPick(occasion))
+      case .editList(_, let changes): try JSONEncoder().encode(changes)
       default: try JSONEncoder().encode(giftChanges)
       }
     return String(decoding: data, as: UTF8.self)
@@ -398,6 +472,14 @@ extension UnsentChange.Action {
       guard let pick = try? JSONDecoder().decode(OccasionPick.self, from: Data(patch.utf8)) else { return nil }
       self = .setOccasion(giftID: targetID, occasion: pick.occasion)
       return
+    case .editList:
+      guard let changes = try? JSONDecoder().decode(ListChanges.self, from: Data(patch.utf8)), !changes.isEmpty
+      else { return nil }
+      self = .editList(listID: targetID, changes: changes)
+      return
+    case .deleteList:
+      self = .deleteList(listID: targetID)
+      return
     case .markBought, .setFromLabel, .setNote, .lowerQuantity:
       break
     }
@@ -415,7 +497,7 @@ extension UnsentChange.Action {
     case .lowerQuantity:
       guard let quantity = changes.quantity else { return nil }
       self = .lowerQuantity(giftID: targetID, quantity: quantity)
-    case .unclaim, .acknowledge, .setOccasion:
+    case .unclaim, .acknowledge, .setOccasion, .editList, .deleteList:
       return nil
     }
   }
@@ -491,6 +573,18 @@ extension LateRefusalRow {
       id: nil, kind: change.action.kind, targetID: change.action.targetID, patch: try change.action.patch(),
       title: change.title, route: refusal.route.rawValue, status: refusal.status, code: refusal.code.text,
       detail: refusal.detail)
+  }
+}
+
+extension ListRow {
+  /// The list with its name or description changed, as an unsent change shows it over the row. An empty
+  /// description clears it.
+  fileprivate func with(_ changes: ListChanges) -> ListRow {
+    let description = changes.description.map { $0.isEmpty ? nil : $0 } ?? self.description
+    return ListRow(
+      id: id, name: changes.name ?? name, description: description, isPrimary: isPrimary, recipientIDs: recipientIDs,
+      itemCount: itemCount, createdAt: createdAt, canEdit: canEdit, canDelete: canDelete, canInvite: canInvite,
+      canLeave: canLeave, version: version)
   }
 }
 

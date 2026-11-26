@@ -27,6 +27,7 @@ public enum ErrorCode: Sendable, Hashable {
   case resourceChanged
   case lastRecipient
   case primaryList
+  case listHasOtherRecipients
   case alreadyClaimed
   case alreadyInvited
   case alreadyRecipient
@@ -69,6 +70,7 @@ public enum ErrorCode: Sendable, Hashable {
     "resource_changed": .resourceChanged,
     "last_recipient": .lastRecipient,
     "primary_list": .primaryList,
+    "list_has_other_recipients": .listHasOtherRecipients,
     "already_claimed": .alreadyClaimed,
     "already_invited": .alreadyInvited,
     "already_recipient": .alreadyRecipient,

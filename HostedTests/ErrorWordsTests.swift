@@ -53,6 +53,9 @@ struct ErrorWordsTests {
       ErrorWords.lastRecipient(of: "Our house")
         == "You're the only recipient of Our house, so you can't leave it. You can delete it.")
     #expect(
+      ErrorWords.otherRecipients(of: "Cousins")
+        == "Cousins has other recipients now, so it can't be deleted. You can leave it.")
+    #expect(
       ErrorWords.deactivated("Sam")
         == "Only the admin can reactivate Sam. Until then, you can't change anything for Sam.")
 

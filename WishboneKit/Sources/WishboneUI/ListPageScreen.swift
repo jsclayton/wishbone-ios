@@ -6,12 +6,14 @@ import WishboneSession
 /// and the items in the order that Sort sets. See `docs/screens/list.md`.
 ///
 /// Claim state shows only as the server sends it, and the page never says who claimed. Leave, and Make {child}
-/// leave, wait for the server. Add item, from `can_edit`, opens the Add screen in a sheet, fixed to the list. The
-/// other actions that change the list or its items come later.
+/// leave, wait for the server. Edit list and Delete list are unsent changes: each shows at once, in every window.
+/// Add item, from `can_edit`, opens the Add screen in a sheet, fixed to the list. The other actions that change the
+/// list or its items come later.
 ///
 /// **Provisional.** Plain default: a system list. The name is the navigation title, the recipients and the
-/// description are the first section, and the items are rows with the image at the leading edge. Sort is in the
-/// toolbar's menu.
+/// description are the first section, and the items are rows with the image at the leading edge. Edit list and Sort
+/// are in the toolbar's menu. Leave, Make {child} leave and Delete list are destructive rows in the last section, and
+/// each confirmation is an alert.
 struct ListPageScreen: View {
   let page: ListPage
   let session: SessionModel
@@ -30,6 +32,12 @@ struct ListPageScreen: View {
 
   /// The words of the last leave that didn't end in a leave.
   @State private var leaveMessage: String?
+
+  /// Whether the Edit list sheet shows.
+  @State private var isEditing = false
+
+  /// Whether the confirmation of Delete list shows.
+  @State private var isConfirmingDelete = false
 
   var body: some View {
     List {
@@ -54,7 +62,7 @@ struct ListPageScreen: View {
           AddItemRow(session: session, listID: page.list.id)
         }
       }
-      if page.leave != nil || !page.makeLeave.isEmpty {
+      if page.leave != nil || !page.makeLeave.isEmpty || page.canDelete {
         Section {
           if let leave = page.leave {
             leaveRow(leave)
@@ -65,10 +73,31 @@ struct ListPageScreen: View {
           if let leaveMessage {
             Text(leaveMessage)
           }
+          if page.canDelete {
+            deleteRow
+          }
         }
       }
     }
     .cantReachLine(of: session)
+    .sheet(isPresented: $isEditing) {
+      EditListSheet(list: page.list, session: session)
+    }
+    .alert(
+      DeleteListWords.title(list: page.list.name), isPresented: $isConfirmingDelete
+    ) {
+      Button(role: .destructive) {
+        Task { await delete() }
+      } label: {
+        DeleteListWords.action(list: page.list.name)
+      }
+      Button(role: .cancel) {
+      } label: {
+        Text("Cancel", bundle: #bundle)
+      }
+    } message: {
+      DeleteListWords.message
+    }
     .alert(
       confirming.map { LeaveWords.title(of: $0, list: page.list.name) } ?? Text(String()),
       isPresented: Binding {
@@ -97,6 +126,17 @@ struct ListPageScreen: View {
     .toolbar {
       ToolbarItem(placement: .primaryAction) {
         Menu {
+          if page.list.canEdit {
+            Button {
+              isEditing = true
+            } label: {
+              Label {
+                Text("Edit list", bundle: #bundle)
+              } icon: {
+                Image(systemName: "pencil")
+              }
+            }
+          }
           Picker(selection: $sort) {
             ForEach(ListSort.allCases) { sort in
               // The tag is the order itself. The ForEach's own tag is the order's ID, a string, which never matches
@@ -140,6 +180,26 @@ extension ListPageScreen {
     }
     .disabled(leaving != nil)
     .accessibilityLabel(LeaveWords.action(of: leaver, list: page.list.name))
+  }
+
+  /// The Delete list row. Its label reads the action in full. It asks for a confirmation first.
+  private var deleteRow: some View {
+    Button(role: .destructive) {
+      isConfirmingDelete = true
+    } label: {
+      Text("Delete list", bundle: #bundle)
+    }
+    .disabled(leaving != nil)
+    .accessibilityLabel(DeleteListWords.action(list: page.list.name))
+  }
+
+  /// Deletes the list, as an unsent change. It leaves the copy at once, and the page closes in this window, which
+  /// shows what was under it. Every other window that shows the page shows the "not found" page.
+  private func delete() async {
+    let id = page.list.id
+    await session.deleteList(id)
+    guard session.list(id: id) == nil, let index = pages.lastIndex(of: .list(id: id)) else { return }
+    pages.removeSubrange(index...)
   }
 
   /// Leaves, and waits for the server. After a leave, the page closes in this window, which shows what was under
@@ -215,6 +275,25 @@ enum LeaveWords {
     case .userDeactivated: ErrorWords.deactivated(leaver.user.name)
     default: ErrorWords.words(for: refusal) ?? ErrorWords.fault
     }
+  }
+}
+
+/// The words of Delete list: the confirmation, and its button, which the row's label reads too. Nothing here depends
+/// on the list's gifts, because that would show a recipient that something is claimed.
+enum DeleteListWords {
+  /// What the action does, named in full: "Delete Cousins and its items".
+  static func action(list: String) -> Text {
+    Text("Delete \(list) and its items", bundle: #bundle)
+  }
+
+  /// The confirmation's title.
+  static func title(list: String) -> Text {
+    Text("Delete \(list) and its items?", bundle: #bundle)
+  }
+
+  /// The confirmation's message.
+  static var message: Text {
+    Text("This can't be undone.", bundle: #bundle)
   }
 }
 

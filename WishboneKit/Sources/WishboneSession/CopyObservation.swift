@@ -27,11 +27,11 @@ extension LocalDatabase {
       /// The tables that the part reads. A change to any of them reads the part again.
       ///
       /// The items, the store links and the recipient rows are only those of the lists in the copy, so they read
-      /// the lists too, and the store links read the items. The gifts show each unsent change over its row, so they
-      /// read the journal too.
+      /// the lists too, and the store links read the items. The lists and the gifts show each unsent change over its
+      /// row, so they read the journal too.
       var tables: Set<String> {
         switch self {
-        case .lists: [ListRow.databaseTableName]
+        case .lists: [ListRow.databaseTableName, UnsentChangeRow.databaseTableName]
         case .items: [ItemRow.databaseTableName, ListRow.databaseTableName]
         case .storeLinks: [StoreLinkRow.databaseTableName, ItemRow.databaseTableName, ListRow.databaseTableName]
         case .recipients: [RecipientRow.databaseTableName, ListRow.databaseTableName]
@@ -87,7 +87,11 @@ extension LocalDatabase {
     /// Reads the part again.
     mutating func read(_ part: Part, in database: Database) throws {
       switch part {
-      case .lists: lists = try ListRow.order(Column("name"), Column("id")).fetchAll(database)
+      case .lists:
+        // An edit shows over the pulled row, and a deleted list is left out, until the server accepts or refuses it.
+        lists = LocalDatabase.applying(
+          try LocalDatabase.unsentChanges(in: database),
+          to: try ListRow.order(Column("name"), Column("id")).fetchAll(database))
       case .items:
         items = try ItemRow.filter(Self.listIDs.contains(Column("listID")))
           .order(Column("listID"), Column("position"), Column("id")).fetchAll(database)

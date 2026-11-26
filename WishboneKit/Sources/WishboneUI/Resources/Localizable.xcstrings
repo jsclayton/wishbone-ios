@@ -31,6 +31,9 @@
     "%@ didn't get this" : {
       "comment" : "I didn't get this, for a child: the child's name"
     },
+    "%@ has other recipients now, so it can't be deleted. You can leave it." : {
+
+    },
     "%@ hasn't added anything yet." : {
 
     },
@@ -422,6 +425,29 @@
     "Deactivated" : {
 
     },
+    "Delete %@ and its items" : {
+
+    },
+    "Delete %@ and its items?" : {
+
+    },
+    "Delete list" : {
+
+    },
+    "Deleting %@: %@" : {
+      "comment" : "A late refusal of Delete list: the list's name, then why the change wasn't saved",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deleting %1$@: %2$@"
+          }
+        }
+      }
+    },
+    "Description" : {
+
+    },
     "Diagnostics settings" : {
 
     },
@@ -431,8 +457,25 @@
     "Discard this item?" : {
 
     },
+    "Discard your changes?" : {
+
+    },
     "Done" : {
 
+    },
+    "Edit list" : {
+
+    },
+    "Editing %@: %@" : {
+      "comment" : "A late refusal of Edit list: the list's name, then why the change wasn't saved",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Editing %1$@: %2$@"
+          }
+        }
+      }
     },
     "Enter a store's address, such as example.com." : {
 
@@ -519,6 +562,9 @@
       }
     },
     "Give the item a title." : {
+
+    },
+    "Give the list a name." : {
 
     },
     "Given" : {
@@ -947,6 +993,12 @@
     "Running your own Wishbone" : {
 
     },
+    "Save" : {
+
+    },
+    "Saves the list." : {
+
+    },
     "Scan QR code" : {
 
     },
@@ -1106,6 +1158,9 @@
 
     },
     "This Wishbone needs an update" : {
+
+    },
+    "This can't be undone." : {
 
     },
     "This device doesn't trust the certificate of %@. Ask the person who runs Wishbone." : {
