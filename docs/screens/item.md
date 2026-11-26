@@ -39,7 +39,7 @@ A sheet with the fields that the add form has, and the ones it leaves out:
 4. **Notes**.
 5. **Store links**: each with its price to edit and Remove, and **Add link**, which takes a pasted web address and reads it.
 
-**Provisional.** Plain default: a system form in a sheet, in the order above, with Cancel and Save in the toolbar. Each photo is a row with its picture, "Primary photo" or Make primary, and Remove, in the order they were added. Take a photo and Choose a photo are rows under them, and at 5 photos they can't be used, and the section says why. How many is a stepper under the Always wanted switch, which hides it.
+**Provisional.** Plain default: a system form in a sheet, in the order above, with Cancel and Save in the toolbar. Each photo is a row with its picture, "Primary photo" or Make primary, and Remove, in the order they were added. A photo whose upload waits is a row too, with its picture from the device. Take a photo and Choose a photo are rows under them, and at 5 photos they can't be used, and the section says why. How many is a stepper under the Always wanted switch, which hides it.
 
 ## States
 

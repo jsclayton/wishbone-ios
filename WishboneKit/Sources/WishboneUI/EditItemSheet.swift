@@ -18,11 +18,48 @@ import WishboneSession
 /// **Provisional.** Plain default: a system form in a sheet, in the order of the screen's spec, with Cancel and Save
 /// in the toolbar. Each photo is a row with its picture, "Primary photo" or Make primary, and Remove. A swipe down
 /// doesn't close the sheet while it has typed changes: Cancel asks first.
+///
+/// The sheet opens with the draft that the session gives (`SessionModel.editDraft(ofItem:)`): it has the photos whose
+/// uploads wait, so the user can keep, remove or pick each one, and Save never drops one that the sheet didn't show.
+/// Until the draft is read, the sheet shows the system's progress indicator.
 struct EditItemSheet: View {
   let item: ItemRow
   let session: SessionModel
 
-  /// The draft as the sheet opened, to tell whether the user changed it.
+  @State private var opened: ItemEditDraft?
+
+  @Environment(\.dismiss) private var dismiss
+
+  var body: some View {
+    if let opened {
+      EditItemForm(item: item, opened: opened, session: session)
+    } else {
+      NavigationStack {
+        ProgressView()
+          .navigationTitle(Text("Edit item", bundle: #bundle))
+          #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+          #endif
+      }
+      .task {
+        // An item that left the copy meanwhile has nothing to edit.
+        guard let draft = await session.editDraft(ofItem: item.id) else {
+          dismiss()
+          return
+        }
+        opened = draft
+      }
+    }
+  }
+}
+
+/// The form of the Edit item sheet, with the draft that it opened with.
+private struct EditItemForm: View {
+  let item: ItemRow
+  let session: SessionModel
+
+  /// The draft as the sheet opened: what Save compares with, so it sends only what the user changed, and what tells
+  /// whether the user changed something.
   private let opened: ItemEditDraft
 
   @State private var draft: ItemEditDraft
@@ -39,12 +76,11 @@ struct EditItemSheet: View {
 
   @Environment(\.dismiss) private var dismiss
 
-  init(item: ItemRow, session: SessionModel) {
+  init(item: ItemRow, opened: ItemEditDraft, session: SessionModel) {
     self.item = item
     self.session = session
-    let draft = ItemEditDraft(item)
-    opened = draft
-    _draft = State(initialValue: draft)
+    self.opened = opened
+    _draft = State(initialValue: opened)
   }
 
   var body: some View {
@@ -123,7 +159,7 @@ struct EditItemSheet: View {
         ToolbarItem(placement: .confirmationAction) {
           Button {
             Task {
-              await session.editItem(item.id, draft)
+              await session.editItem(item.id, from: opened, to: draft)
               dismiss()
             }
           } label: {
@@ -161,7 +197,7 @@ struct EditItemSheet: View {
     Section {
       ForEach(Array(draft.photos.enumerated()), id: \.element.id) { index, photo in
         PhotoRow(
-          photo: photo, number: index + 1, isPrimary: photo.id == draft.primaryID,
+          photo: photo, number: index + 1, isPrimary: photo.id == draft.primaryID, session: session,
           tileUserID: session.list(id: item.listID)?.recipientIDs.first ?? "",
           makePrimary: { draft.makePrimary(photo.id) }, remove: { draft.remove(photo.id) })
       }
@@ -255,6 +291,9 @@ private struct PhotoRow: View {
   let number: Int
   let isPrimary: Bool
 
+  /// Where a photo whose upload waits gets its bytes.
+  let session: SessionModel
+
   /// The user whose color the tile takes while a saved image loads.
   let tileUserID: String
   let makePrimary: () -> Void
@@ -302,17 +341,27 @@ private struct PhotoRow: View {
     switch photo {
     case .saved(let image):
       SessionImage(image: image) { tile }
-    case .new(let photo):
-      Group {
-        if let preview {
-          Image(decorative: preview, scale: 1)
-            .resizable()
-            .scaledToFill()
-        } else {
-          tile
+    case .waiting(let id):
+      // From the journal's bytes while the upload waits. Once it is sent, the bytes are gone: the tile shows.
+      previewed
+        .task(id: id) {
+          guard let data = await session.waitingPhoto(id) else { return }
+          preview = await Self.preview(of: Photo(data: data, untitled: String()))
         }
-      }
-      .task(id: photo.id) { preview = await Self.preview(of: photo) }
+    case .new(let photo):
+      previewed
+        .task(id: photo.id) { preview = await Self.preview(of: photo) }
+    }
+  }
+
+  /// The preview of the photo's bytes, or the tile until it is made.
+  @ViewBuilder private var previewed: some View {
+    if let preview {
+      Image(decorative: preview, scale: 1)
+        .resizable()
+        .scaledToFill()
+    } else {
+      tile
     }
   }
 

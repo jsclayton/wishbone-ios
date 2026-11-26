@@ -63,9 +63,9 @@ final class ItemEditsTests {
 
   /// The draft of the item as the copy has it, as the sheet opens it.
   private func draft(of id: String, in session: SessionModel, sourceLocation: SourceLocation = #_sourceLocation)
-    throws -> ItemEditDraft
+    async throws -> ItemEditDraft
   {
-    ItemEditDraft(try #require(session.item(id: id), sourceLocation: sourceLocation))
+    try #require(await session.editDraft(ofItem: id), sourceLocation: sourceLocation)
   }
 
   // MARK: - 1. The title, the price and the notes
@@ -79,11 +79,12 @@ final class ItemEditsTests {
 
     // Held at the request, so what shows at once can't be the server's answer.
     let hold = instance.conditioner.hold(Self.update, at: .request)
-    var draft = try self.draft(of: item.id, in: session)
+    let opened = try await self.draft(of: item.id, in: session)
+    var draft = opened
     draft.title = "  A red scarf  "
     draft.priceMinor = 2499
     draft.notes = "Wool, please"
-    await session.editItem(item.id, draft)
+    await session.editItem(item.id, from: opened, to: draft)
 
     let page = try #require(session.itemPage(id: item.id))
     #expect(page.item.title == "A red scarf")
@@ -114,7 +115,8 @@ final class ItemEditsTests {
     #expect(session.item(id: item.id)?.title == "A red scarf")
 
     // A draft that changes nothing saves nothing.
-    await session.editItem(item.id, try self.draft(of: item.id, in: session))
+    let unchanged = try await self.draft(of: item.id, in: session)
+    await session.editItem(item.id, from: unchanged, to: unchanged)
     #expect(session.unsentChangeCount == 0)
     #expect(seen(Self.update).count == 1)
   }
@@ -135,9 +137,10 @@ final class ItemEditsTests {
       let session = try await signedIn(as: person, storage: .folder(folder.url))
       #expect(session.item(id: item.id)?.topPriceMinor == 3500)
       instance.conditioner.dropEverything()
-      var draft = try self.draft(of: item.id, in: session)
+      let opened = try await self.draft(of: item.id, in: session)
+      var draft = opened
       draft.priceMinor = nil
-      await session.editItem(item.id, draft)
+      await session.editItem(item.id, from: opened, to: draft)
       let shown = try #require(session.item(id: item.id))
       #expect(shown.priceMinor == nil)
       #expect(shown.topPriceMinor == nil)
@@ -175,26 +178,29 @@ final class ItemEditsTests {
     let item = try #require(session.primaryListItems.first)
     #expect(session.itemPage(id: item.id)?.wanted == .count(1))
 
-    var draft = try self.draft(of: item.id, in: session)
+    var opened = try await self.draft(of: item.id, in: session)
+    var draft = opened
     draft.quantity = 3
-    await session.editItem(item.id, draft)
+    await session.editItem(item.id, from: opened, to: draft)
     #expect(session.itemPage(id: item.id)?.wanted == .count(3))
     await until { session.unsentChangeCount == 0 }
     #expect(try await onServer(item.id, as: person)["quantity"].number == 3)
 
-    draft = try self.draft(of: item.id, in: session)
+    opened = try await self.draft(of: item.id, in: session)
+    draft = opened
     draft.isUnlimited = true
-    await session.editItem(item.id, draft)
+    await session.editItem(item.id, from: opened, to: draft)
     #expect(session.itemPage(id: item.id)?.wanted == .always)
     await until { session.unsentChangeCount == 0 }
     #expect(try await onServer(item.id, as: person)["is_unlimited"].bool == true)
     #expect(try fields(of: try #require(seen(Self.update).last)) == ["is_unlimited"])
 
-    draft = try self.draft(of: item.id, in: session)
+    opened = try await self.draft(of: item.id, in: session)
+    draft = opened
     #expect(draft.quantity == 3)
     draft.isUnlimited = false
     draft.quantity = 2
-    await session.editItem(item.id, draft)
+    await session.editItem(item.id, from: opened, to: draft)
     #expect(session.itemPage(id: item.id)?.wanted == .count(2))
     await until { session.unsentChangeCount == 0 }
     let saved = try await onServer(item.id, as: person)
@@ -212,12 +218,13 @@ final class ItemEditsTests {
     #expect(session.itemPage(id: item.id)?.stillWanted == .count(2, of: 2))
 
     instance.conditioner.dropEverything()
-    var draft = try self.draft(of: item.id, in: session)
+    let opened = try await self.draft(of: item.id, in: session)
+    var draft = opened
     draft.quantity = 4
-    await session.editItem(item.id, draft)
+    await session.editItem(item.id, from: opened, to: draft)
     #expect(session.itemPage(id: item.id)?.stillWanted == .count(4, of: 4))
     draft.isUnlimited = true
-    await session.editItem(item.id, draft)
+    await session.editItem(item.id, from: opened, to: draft)
     #expect(session.itemPage(id: item.id)?.stillWanted == .always)
     #expect(session.itemPage(id: item.id)?.wanted == .always)
   }
@@ -241,7 +248,8 @@ final class ItemEditsTests {
     let session = try await signedIn(as: person)
     let photo = try photo()
 
-    var draft = try self.draft(of: item.id, in: session)
+    let opened = try await self.draft(of: item.id, in: session)
+    var draft = opened
     #expect(draft.photos.map(\.id) == [first, second, third])
     #expect(draft.primaryID == first)
     draft.remove(second)
@@ -252,7 +260,7 @@ final class ItemEditsTests {
 
     let hold = instance.conditioner.hold(Self.upload, at: .request)
     let sent = instance.conditioner.requests.count
-    await session.editItem(item.id, draft)
+    await session.editItem(item.id, from: opened, to: draft)
     // At once: the removed image is gone, and the primary image is the one picked. The new photo shows when the
     // server has it.
     let page = try #require(session.itemPage(id: item.id))
@@ -292,7 +300,7 @@ final class ItemEditsTests {
     #expect(session.images.cached(image) == photo.data)
 
     // A sixth photo can't be added: the draft keeps five.
-    var full = try self.draft(of: item.id, in: session)
+    var full = try await self.draft(of: item.id, in: session)
     full.add(try self.photo())
     full.add(try self.photo())
     #expect(full.photos.count == 5)
@@ -312,18 +320,20 @@ final class ItemEditsTests {
     let item = try await builder.item("Vase", on: list, as: person, imageIDs: [first, second])
     let session = try await signedIn(as: person)
 
-    var draft = try self.draft(of: item.id, in: session)
+    var opened = try await self.draft(of: item.id, in: session)
+    var draft = opened
     draft.remove(first)
     #expect(draft.primaryID == second)
-    await session.editItem(item.id, draft)
+    await session.editItem(item.id, from: opened, to: draft)
     #expect(session.item(id: item.id)?.primaryImage?.id == second)
     await until { session.unsentChangeCount == 0 }
     #expect(try await onServer(item.id, as: person)["primary_image"]["id"].string == second)
 
-    draft = try self.draft(of: item.id, in: session)
+    opened = try await self.draft(of: item.id, in: session)
+    draft = opened
     draft.remove(second)
     #expect(draft.primaryID == nil)
-    await session.editItem(item.id, draft)
+    await session.editItem(item.id, from: opened, to: draft)
     #expect(session.itemPage(id: item.id)?.images.isEmpty == true)
     await until { session.unsentChangeCount == 0 }
     let body = try JSON(parsing: try #require(seen(Self.update).last).body)
@@ -338,11 +348,12 @@ final class ItemEditsTests {
     let session = try await signedIn(as: person, storage: .folder(folder.url))
     let item = try #require(session.primaryListItems.first)
     instance.conditioner.dropEverything()
-    var draft = try self.draft(of: item.id, in: session)
+    let opened = try await self.draft(of: item.id, in: session)
+    var draft = opened
     draft.title = "Desk lamp"
     // Bytes that the server can't read as an image stand in for a photo that it refuses.
     draft.add(Photo(data: Data("not a photo".utf8), untitled: "Photo"))
-    await session.editItem(item.id, draft)
+    await session.editItem(item.id, from: opened, to: draft)
     #expect(try DatabaseFile(under: folder.url).count(of: "unsentFile") == 1)
     await until { session.isInstanceUnreachable }
 
@@ -387,13 +398,14 @@ final class ItemEditsTests {
     #expect(created.canDelete)
 
     // The edit names the item by its stand-in ID.
-    var draft = ItemEditDraft(created)
+    let opened = try await self.draft(of: added.id, in: session)
+    var draft = opened
     draft.title = "Box kite"
     draft.priceMinor = 1500
     draft.quantity = 2
     let photo = try photo()
     draft.add(photo)
-    await session.editItem(added.id, draft)
+    await session.editItem(added.id, from: opened, to: draft)
     await session.deleteItem(ball.id)
 
     // At once: the edit over the item that waits to be created, and the other item gone.
@@ -492,10 +504,11 @@ final class ItemEditsTests {
       Issue.record("The add gave no item")
       return
     }
-    var draft = try self.draft(of: added.id, in: session)
+    let opened = try await self.draft(of: added.id, in: session)
+    var draft = opened
     draft.title = "More bricks"
     draft.add(try photo())
-    await session.editItem(added.id, draft)
+    await session.editItem(added.id, from: opened, to: draft)
     await session.deleteItem(added.id)
     #expect(session.unsentChangeCount == 3)
     #expect(try DatabaseFile(under: folder.url).count(of: "unsentFile") == 1)
@@ -575,9 +588,10 @@ final class ItemEditsTests {
     #expect(!row.canEdit)
     #expect(!row.canDelete)
 
-    var draft = ItemEditDraft(row)
+    let opened = try await self.draft(of: item.id, in: session)
+    var draft = opened
     draft.title = "Atlas"
-    await session.editItem(item.id, draft)
+    await session.editItem(item.id, from: opened, to: draft)
     await session.deleteItem(item.id)
     #expect(session.unsentChangeCount == 0)
     #expect(session.item(id: item.id)?.title == "Map")
@@ -605,9 +619,10 @@ final class ItemEditsTests {
     #expect(session.item(id: bricks.id)?.canEdit == true)
 
     instance.conditioner.dropEverything()
-    var draft = try self.draft(of: bricks.id, in: session)
+    let opened = try await self.draft(of: bricks.id, in: session)
+    var draft = opened
     draft.title = "Big bricks"
-    await session.editItem(bricks.id, draft)
+    await session.editItem(bricks.id, from: opened, to: draft)
     await session.deleteItem(plates.id)
     #expect(session.item(id: bricks.id)?.title == "Big bricks")
     #expect(session.item(id: plates.id) == nil)
@@ -640,6 +655,257 @@ final class ItemEditsTests {
     #expect(session.lateRefusalAlert == nil)
   }
 
+  // MARK: - Photos whose uploads wait
+
+  /// An item added by hand with no connection, with the photo given or with none.
+  private func addedOffline(
+    _ title: String, photo: Photo? = nil, in session: SessionModel, sourceLocation: SourceLocation = #_sourceLocation
+  ) async throws -> AddedItem {
+    var form = ItemDraft(given: photo.map(SearchInput.photo) ?? .words(title))
+    form.title = title
+    guard case .added(let added) = await session.add(&form) else {
+      Issue.record("The add gave no item", sourceLocation: sourceLocation)
+      throw CancellationError()
+    }
+    return added
+  }
+
+  /// The IDs of the item's images on the server, in order, and its primary image's.
+  private func images(of id: String, as person: Fixture.Person) async throws -> (ids: [String], primary: String?) {
+    let saved = try await onServer(id, as: person)
+    return (saved["images"].array?.compactMap { $0["id"].string } ?? [], saved["primary_image"]["id"].string)
+  }
+
+  @Test(
+    """
+    Two edits with no connection that each add a photo: the second sheet shows the first photo, from the journal's \
+    bytes, and both reach the server
+    """
+  )
+  func twoOfflinePhotoEdits() async throws {
+    let person = try await instance.person("Robin", items: ["Ball"])
+    let session = try await signedIn(as: person)
+    let ball = try #require(session.primaryListItems.first)
+    let first = try photo()
+    instance.conditioner.dropEverything()
+
+    let opened = try await self.draft(of: ball.id, in: session)
+    var draft = opened
+    draft.add(first)
+    await session.editItem(ball.id, from: opened, to: draft)
+
+    // The page shows the photo once the server has it, but the sheet shows it now, as one whose upload waits.
+    #expect(session.item(id: ball.id)?.images.isEmpty == true)
+    let reopened = try await self.draft(of: ball.id, in: session)
+    guard case .waiting(let waiting) = try #require(reopened.photos.first), reopened.photos.count == 1 else {
+      Issue.record("The sheet shows \(reopened.photos)")
+      return
+    }
+    #expect(StandIn.isStandIn(waiting))
+    #expect(reopened.primaryID == waiting)
+    #expect(await session.waitingPhoto(waiting) == first.data)
+
+    var second = reopened
+    second.add(try photo())
+    await session.editItem(ball.id, from: reopened, to: second)
+    await until { session.isInstanceUnreachable }
+
+    instance.conditioner.passEverything()
+    await session.syncNow()
+    await until { session.unsentChangeCount == 0 }
+    let saved = try await images(of: ball.id, as: person)
+    #expect(saved.ids.count == 2)
+    #expect(saved.primary == saved.ids.first)
+    #expect(session.lateRefusals.isEmpty)
+  }
+
+  @Test("An item added with no connection, then two edits that each add a photo: both photos reach the server")
+  func addThenEditPhoto() async throws {
+    let person = try await instance.person("Robin")
+    let session = try await signedIn(as: person)
+    instance.conditioner.dropEverything()
+    let added = try await addedOffline("Kite \(instance.builder.tag)", in: session)
+
+    let opened = try await self.draft(of: added.id, in: session)
+    var first = opened
+    first.add(try photo())
+    await session.editItem(added.id, from: opened, to: first)
+    let reopened = try await self.draft(of: added.id, in: session)
+    #expect(reopened.photos.count == 1)
+    var second = reopened
+    second.add(try photo())
+    await session.editItem(added.id, from: reopened, to: second)
+    await until { session.isInstanceUnreachable }
+
+    instance.conditioner.passEverything()
+    await session.syncNow()
+    await until { session.unsentChangeCount == 0 }
+    let serverID = session.serverID(of: added.id)
+    #expect(!StandIn.isStandIn(serverID))
+    #expect(try await images(of: serverID, as: person).ids.count == 2)
+    #expect(session.lateRefusals.isEmpty)
+  }
+
+  @Test(
+    """
+    An item added by hand with a photo, with no connection, then an edit that adds a photo and makes it the primary \
+    one: the server keeps both, with the new one primary
+    """
+  )
+  func addedPhotoKeptByEdit() async throws {
+    let person = try await instance.person("Robin")
+    let session = try await signedIn(as: person)
+    instance.conditioner.dropEverything()
+    let added = try await addedOffline("Mug \(instance.builder.tag)", photo: try photo(), in: session)
+
+    let opened = try await self.draft(of: added.id, in: session)
+    let created = try #require(opened.photos.first)
+    #expect(opened.photos.count == 1)
+    #expect(opened.primaryID == created.id)
+    var draft = opened
+    draft.add(try photo())
+    let new = try #require(draft.photos.last)
+    draft.makePrimary(new.id)
+    await session.editItem(added.id, from: opened, to: draft)
+    await until { session.isInstanceUnreachable }
+
+    instance.conditioner.passEverything()
+    await session.syncNow()
+    await until { session.unsentChangeCount == 0 }
+    let saved = try await images(of: session.serverID(of: added.id), as: person)
+    #expect(saved.ids.count == 2)
+    #expect(saved.primary == saved.ids.last)
+    #expect(session.lateRefusals.isEmpty)
+  }
+
+  @Test(
+    """
+    An item added by hand with a photo, with no connection, then an edit that removes that photo and adds another: \
+    the server keeps only the one the user kept
+    """
+  )
+  func addedPhotoRemovedByEdit() async throws {
+    let person = try await instance.person("Robin")
+    let session = try await signedIn(as: person)
+    instance.conditioner.dropEverything()
+    let added = try await addedOffline("Vase \(instance.builder.tag)", photo: try photo(), in: session)
+
+    let opened = try await self.draft(of: added.id, in: session)
+    var draft = opened
+    draft.remove(try #require(opened.photos.first).id)
+    draft.add(try photo())
+    await session.editItem(added.id, from: opened, to: draft)
+    await until { session.isInstanceUnreachable }
+
+    instance.conditioner.passEverything()
+    let sent = instance.conditioner.requests.count
+    await session.syncNow()
+    await until { session.unsentChangeCount == 0 }
+    let saved = try await images(of: session.serverID(of: added.id), as: person)
+    #expect(saved.ids.count == 1)
+    #expect(saved.primary == saved.ids.first)
+    // The removed photo's upload went with its create, and the edit left it out.
+    let patch = try #require(seen(Self.update, from: sent).first)
+    #expect(try JSON(parsing: patch.body)["image_ids"].array?.compactMap(\.string) == saved.ids)
+    #expect(session.lateRefusals.isEmpty)
+  }
+
+  @Test(
+    """
+    A photo whose upload is sent while its edit still waits shows in the sheet by the server's ID, and a later \
+    edit keeps it
+    """
+  )
+  func uploadedWhileEditWaits() async throws {
+    let person = try await instance.person("Robin", items: ["Ball"])
+    let session = try await signedIn(as: person)
+    let ball = try #require(session.primaryListItems.first)
+    instance.conditioner.dropEverything()
+    let opened = try await self.draft(of: ball.id, in: session)
+    var draft = opened
+    draft.add(try photo())
+    await session.editItem(ball.id, from: opened, to: draft)
+    await until { session.isInstanceUnreachable }
+
+    // The upload is sent and answered. The edit is cut off before it reaches the server.
+    instance.conditioner.passEverything()
+    let hold = instance.conditioner.hold(Self.update, at: .request)
+    let syncing = Task { await session.syncNow() }
+    await hold.waitUntilHeld()
+    instance.conditioner.dropEverything()
+    _ = await syncing.value
+    await until { session.unsentChangeCount == 1 && !session.replacedStandIns.isEmpty }
+    let uploaded = try #require(session.replacedStandIns.values.first)
+
+    let reopened = try await self.draft(of: ball.id, in: session)
+    #expect(reopened.photos == [.waiting(uploaded)])
+    var second = reopened
+    second.add(try photo())
+    await session.editItem(ball.id, from: reopened, to: second)
+
+    instance.conditioner.passEverything()
+    await session.syncNow()
+    await until { session.unsentChangeCount == 0 }
+    let saved = try await images(of: ball.id, as: person)
+    #expect(saved.ids.count == 2)
+    #expect(saved.ids.first == uploaded)
+    #expect(session.lateRefusals.isEmpty)
+  }
+
+  // MARK: - Only what the user changed
+
+  @Test("An edit made elsewhere while the sheet is open is not undone by a Save of another field")
+  func staleDraft() async throws {
+    let person = try await instance.person("Robin", items: ["Ball"])
+    let session = try await signedIn(as: person)
+    let ball = try #require(session.primaryListItems.first)
+    let opened = try await self.draft(of: ball.id, in: session)
+    var draft = opened
+
+    // Meanwhile, in a browser, and a sync brings it while the sheet is open.
+    try await person.signedIn().send("PATCH", "/items/\(ball.id)", json: ["notes": .string("From the web")])
+      .expecting(200)
+    await session.syncNow()
+    await until { session.item(id: ball.id)?.notes == "From the web" }
+
+    let sent = instance.conditioner.requests.count
+    draft.title = "Red ball"
+    await session.editItem(ball.id, from: opened, to: draft)
+    await until { session.unsentChangeCount == 0 }
+    let patch = try #require(seen(Self.update, from: sent).first)
+    #expect(try fields(of: patch) == ["title"])
+    let saved = try await onServer(ball.id, as: person)
+    #expect(saved["notes"].string == "From the web")
+    #expect(saved["title"].string == "Red ball")
+  }
+
+  @Test("A photo added elsewhere while the sheet is open is kept by a Save that changes only the title")
+  func staleDraftPhoto() async throws {
+    let builder = instance.builder
+    let person = try await builder.person("Robin")
+    let list = try await builder.primaryList(of: person)
+    let item = try await builder.item("Lamp", on: list, as: person)
+    let session = try await signedIn(as: person)
+    let opened = try await self.draft(of: item.id, in: session)
+    #expect(opened.photos.isEmpty)
+    var draft = opened
+
+    // Meanwhile, another device adds a photo, and a sync brings it while the sheet is open.
+    let image = try await builder.image(as: person)
+    try await person.signedIn().send("PATCH", "/items/\(item.id)", json: ["image_ids": .array([.string(image)])])
+      .expecting(200)
+    await session.syncNow()
+    await until { session.item(id: item.id)?.images.map(\.id) == [image] }
+
+    let sent = instance.conditioner.requests.count
+    draft.title = "Desk lamp"
+    await session.editItem(item.id, from: opened, to: draft)
+    await until { session.unsentChangeCount == 0 }
+    let patch = try #require(seen(Self.update, from: sent).first)
+    #expect(try fields(of: patch) == ["title"])
+    #expect(try await images(of: item.id, as: person).ids == [image])
+  }
+
   // MARK: - 8. A title
 
   @Test("An empty title can't be saved")
@@ -647,11 +913,12 @@ final class ItemEditsTests {
     let person = try await instance.person("Robin", items: ["Scarf"])
     let session = try await signedIn(as: person)
     let item = try #require(session.primaryListItems.first)
-    var draft = try self.draft(of: item.id, in: session)
+    let opened = try await self.draft(of: item.id, in: session)
+    var draft = opened
     draft.title = "  \n "
     #expect(!draft.hasTitle)
     draft.notes = "Wool"
-    await session.editItem(item.id, draft)
+    await session.editItem(item.id, from: opened, to: draft)
     #expect(session.unsentChangeCount == 0)
     #expect(session.item(id: item.id)?.title == "Scarf")
     #expect(session.item(id: item.id)?.notes == nil)

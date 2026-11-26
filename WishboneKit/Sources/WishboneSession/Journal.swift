@@ -446,6 +446,12 @@ extension LocalDatabase {
     try await writer.read { database in try Self.unsentChanges(in: database).first }
   }
 
+  /// Every unsent change, in the journal's order, and every stand-in ID that the server's ID took the place of, with
+  /// that ID, in one read: what the journal says now, before the copy's observation publishes it.
+  func unsentChangesAndStandIns() async throws -> (changes: [UnsentChange], standIns: [String: String]) {
+    try await writer.read { database in (try Self.unsentChanges(in: database), try Self.standIns(in: database)) }
+  }
+
   /// How many unsent changes the journal holds.
   func unsentChangeCount() async throws -> Int {
     try await writer.read { database in try UnsentChangeRow.fetchCount(database) }
