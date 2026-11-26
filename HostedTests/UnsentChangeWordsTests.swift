@@ -103,4 +103,28 @@ struct UnsentChangeWordsTests {
       LateRefusalWords.line(delete)
         == "Deleting Cousins: Cousins has other recipients now, so it can't be deleted. You can leave it.")
   }
+
+  @Test("A late refusal of Decline names the list")
+  func lateRefusalOfDecline() {
+    let forbidden = APIError.Refusal(
+      route: .declineInvitation, status: 403, code: .forbidden, detail: "The server's words")
+    let decline = LateRefusal(
+      id: 1, action: .declineInvitation(invitationID: "5"), title: "Cousins", refusal: forbidden)
+    #expect(LateRefusalWords.line(decline) == "Declining the invitation to Cousins: You can't do this any more.")
+  }
+
+  @Test("An invitation's line says who invited whom, to which list, and only who is invited once the inviter is gone")
+  func invitationLines() {
+    let line = { (invited: PendingInvitation.Invited, inviter: String?, onListPage: Bool) in
+      InvitationWords.line(invited: invited, inviter: inviter, list: "Cousins", onListPage: onListPage)
+    }
+    #expect(line(.you, "Mom", false) == "Mom invited you to Cousins")
+    #expect(line(.child(name: "Emma"), "Mom", false) == "Mom invited Emma to Cousins")
+    #expect(line(.you, nil, false) == "You're invited to Cousins")
+    #expect(line(.child(name: "Emma"), nil, false) == "Emma is invited to Cousins")
+    #expect(line(.you, "Mom", true) == "Mom invited you to this list")
+    #expect(line(.child(name: "Emma"), "Mom", true) == "Mom invited Emma to this list")
+    #expect(line(.you, nil, true) == "You're invited to this list")
+    #expect(line(.child(name: "Emma"), nil, true) == "Emma is invited to this list")
+  }
 }

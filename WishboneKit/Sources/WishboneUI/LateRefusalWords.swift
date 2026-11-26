@@ -29,6 +29,14 @@ public enum LateRefusalWords {
       return String(
         localized: "Deleting \(refusal.title): \(reason)", bundle: #bundle,
         comment: "A late refusal of Delete list: the list's name, then why the change wasn't saved")
+    case .acceptInvitation:
+      return String(
+        localized: "Accepting the invitation to \(refusal.title): \(reason)", bundle: #bundle,
+        comment: "A late refusal of Accept: the list's name, then why the change wasn't saved")
+    case .declineInvitation:
+      return String(
+        localized: "Declining the invitation to \(refusal.title): \(reason)", bundle: #bundle,
+        comment: "A late refusal of Decline: the list's name, then why the change wasn't saved")
     case .markBought(_, true):
       return String(
         localized: "Marking \(refusal.title) bought: \(reason)", bundle: #bundle,

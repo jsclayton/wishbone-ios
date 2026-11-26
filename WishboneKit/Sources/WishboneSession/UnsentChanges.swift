@@ -130,7 +130,7 @@ extension SessionModel {
     }
   }
 
-  /// Sends one unsent change, and gives the server's answer. An unclaim and a delete have none.
+  /// Sends one unsent change, and gives the server's answer. An unclaim, a delete and a decline have none.
   ///
   /// An unclaim of a gift that is gone (a 404) is done: it was unclaimed, merged, or restored from elsewhere, and the
   /// giver no longer has it, which is what they asked for. So the gift leaves the copy, and nothing is said.
@@ -152,6 +152,11 @@ extension SessionModel {
       return .list(try await client.updateList(id, changes, key: change.key))
     case .deleteList(let id):
       try await client.deleteList(id, key: change.key)
+      return .none
+    case .acceptInvitation(let invitation):
+      return .list(try await client.acceptInvitation(invitation.invitationID, key: change.key))
+    case .declineInvitation(let id):
+      try await client.declineInvitation(id, key: change.key)
       return .none
     }
   }

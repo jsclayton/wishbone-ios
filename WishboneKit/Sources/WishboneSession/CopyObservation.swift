@@ -27,15 +27,15 @@ extension LocalDatabase {
       /// The tables that the part reads. A change to any of them reads the part again.
       ///
       /// The items, the store links and the recipient rows are only those of the lists in the copy, so they read
-      /// the lists too, and the store links read the items. The lists and the gifts show each unsent change over its
-      /// row, so they read the journal too.
+      /// the lists too, and the store links read the items. The lists, the invitations and the gifts show each unsent
+      /// change over its row, so they read the journal too.
       var tables: Set<String> {
         switch self {
         case .lists: [ListRow.databaseTableName, UnsentChangeRow.databaseTableName]
         case .items: [ItemRow.databaseTableName, ListRow.databaseTableName]
         case .storeLinks: [StoreLinkRow.databaseTableName, ItemRow.databaseTableName, ListRow.databaseTableName]
         case .recipients: [RecipientRow.databaseTableName, ListRow.databaseTableName]
-        case .invitations: [InvitationRow.databaseTableName]
+        case .invitations: [InvitationRow.databaseTableName, UnsentChangeRow.databaseTableName]
         case .gifts: [GiftRow.databaseTableName, UnsentChangeRow.databaseTableName]
         case .unsentChangeCount: [UnsentChangeRow.databaseTableName]
         case .lateRefusals: [LateRefusalRow.databaseTableName]
@@ -103,7 +103,11 @@ extension LocalDatabase {
         // The order that they became recipients, as the server gives it. Two can have the same time.
         recipients = try RecipientRow.filter(Self.listIDs.contains(Column("listID")))
           .order(Column("createdAt"), Column("userID")).fetchAll(database)
-      case .invitations: invitations = try InvitationRow.order(Column("createdAt"), Column("id")).fetchAll(database)
+      case .invitations:
+        // An accepted or declined invitation is left out, until the server accepts or refuses the change.
+        invitations = LocalDatabase.applying(
+          try LocalDatabase.unsentChanges(in: database),
+          to: try InvitationRow.order(Column("createdAt"), Column("id")).fetchAll(database))
       case .gifts:
         // The unsent changes show over the pulled rows, until the server accepts or refuses each one.
         let unsent = try LocalDatabase.unsentChanges(in: database)
