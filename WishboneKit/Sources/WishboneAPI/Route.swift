@@ -18,6 +18,7 @@ public enum Route: String, Sendable, CaseIterable {
   case occasion
   case occasionGroups
   case lists
+  case createList
   case list
   case listRecipients
   case updateList
@@ -58,7 +59,7 @@ public enum Route: String, Sendable, CaseIterable {
       .gifts, .gift, .blockedStores:
       "GET"
     case .redeemLoginLink, .confirmProfile, .uploadImage, .blockStore, .claim, .search, .createItem, .acknowledgeGift,
-      .restoreGift, .acceptInvitation, .addStoreLink, .refreshPrices:
+      .restoreGift, .acceptInvitation, .addStoreLink, .refreshPrices, .createList:
       "POST"
     case .updateMe, .updateGift, .updateList, .updateItem, .updateStoreLink: "PATCH"
     case .revokeCurrentSession, .unblockStore, .leaveList, .unclaimGift, .deleteList, .declineInvitation, .deleteItem,
@@ -88,7 +89,7 @@ public enum Route: String, Sendable, CaseIterable {
     case .occasions: "/occasions"
     case .occasion: "/occasions/{id}"
     case .occasionGroups: "/occasions/{id}/groups"
-    case .lists: "/lists"
+    case .lists, .createList: "/lists"
     case .list, .updateList, .deleteList: "/lists/{id}"
     case .listRecipients: "/lists/{id}/recipients"
     case .leaveList: "/lists/{id}/recipients/{user_id}"
@@ -124,7 +125,7 @@ public enum Route: String, Sendable, CaseIterable {
       .updateGift, .unclaimGift, .acknowledgeGift, .restoreGift, .claim, .blockedStores, .blockStore, .unblockStore,
       .leaveList, .revokeCurrentSession, .confirmProfile,
       .uploadImage, .me, .search, .createItem, .updateList, .deleteList, .acceptInvitation, .declineInvitation,
-      .updateItem, .deleteItem, .addStoreLink, .updateStoreLink, .deleteStoreLink, .refreshPrices:
+      .updateItem, .deleteItem, .addStoreLink, .updateStoreLink, .deleteStoreLink, .refreshPrices, .createList:
       false
     }
   }
@@ -147,7 +148,7 @@ public enum Route: String, Sendable, CaseIterable {
       .revokeCurrentSession,
       .confirmProfile, .uploadImage, .me,
       .search, .createItem, .updateList, .deleteList, .acceptInvitation, .declineInvitation, .updateItem, .deleteItem,
-      .addStoreLink, .updateStoreLink, .deleteStoreLink, .refreshPrices:
+      .addStoreLink, .updateStoreLink, .deleteStoreLink, .refreshPrices, .createList:
       []
     }
   }
@@ -181,8 +182,9 @@ public enum Route: String, Sendable, CaseIterable {
     // once. Refresh prices takes a new key on each tap: a second Refresh on purpose reads the pages again.
     case .addStoreLink, .refreshPrices: ["Idempotency-Key"]
     // An unsent change keeps its key, so a resend after a lost connection, or in a later sync, is the same write.
+    // A create of a list is an unsent change too: its key makes a resend after a lost answer make one list.
     case .updateGift, .unclaimGift, .acknowledgeGift, .updateList, .deleteList, .acceptInvitation,
-      .declineInvitation, .updateItem, .deleteItem, .updateStoreLink, .deleteStoreLink:
+      .declineInvitation, .updateItem, .deleteItem, .updateStoreLink, .deleteStoreLink, .createList:
       ["Idempotency-Key"]
     case .health, .redeemLoginLink, .users, .user, .groups, .group, .groupUsers, .groupGroups, .occasions, .occasion,
       .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation, .gifts, .gift,
@@ -200,6 +202,7 @@ public enum Route: String, Sendable, CaseIterable {
     case .claim: fields(of: ClaimBody.CodingKeys.self)
     case .updateGift: fields(of: GiftChanges.CodingKeys.self)
     case .updateList: fields(of: ListChanges.CodingKeys.self)
+    case .createList: fields(of: NewList.CodingKeys.self)
     case .updateItem: fields(of: ItemChanges.CodingKeys.self)
     case .addStoreLink: fields(of: AddStoreLinkBody.CodingKeys.self)
     case .updateStoreLink: fields(of: StoreLinkChanges.CodingKeys.self)
@@ -235,7 +238,7 @@ public enum Route: String, Sendable, CaseIterable {
     // A membership is read for its IDs only.
     case .groupUsers, .groupGroups, .occasionGroups: Page<Member>.fields
     case .lists: Page<VersionedRow<ListResource>>.fields
-    case .list, .updateList, .acceptInvitation: ListResource.fields
+    case .list, .updateList, .acceptInvitation, .createList: ListResource.fields
     case .listRecipients: Page<VersionedRow<Recipient>>.fields
     case .listItems: Page<VersionedRow<Item>>.fields
     case .item, .createItem, .updateItem, .refreshPrices: Item.fields
@@ -443,6 +446,44 @@ extension Endpoint where Response == ListResource {
   /// Accepts the invitation, with the unsent change's own key. The answer is the list.
   static func acceptInvitation(_ id: String, key: String) -> Endpoint {
     Endpoint(route: .acceptInvitation, parameters: ["id": id], idempotencyKey: key)
+  }
+
+  /// Makes an extra list, with the unsent change's own key, so that a resend of the create makes one list. The
+  /// answer is the list.
+  static func createList(_ list: NewList, key: String) -> Endpoint {
+    Endpoint(route: .createList, body: list, idempotencyKey: key)
+  }
+}
+
+/// The body of `POST /lists`: a new extra list, for the caller or for one of their children. See "A new list for a
+/// child" in `docs/spec.md`.
+public struct NewList: Encodable, Sendable, Equatable {
+  /// The list's name, 1 to 100 characters.
+  public let name: String
+
+  /// Markdown about the list, at most 2000 characters. Nil is none, and is not sent.
+  public let description: String?
+
+  /// The child that the list is for, who is its recipient. Nil is the caller, the server's default, and is not sent.
+  public let recipientID: String?
+
+  public init(name: String, description: String? = nil, recipientID: String? = nil) {
+    self.name = name
+    self.description = description
+    self.recipientID = recipientID
+  }
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case name
+    case description
+    case recipientID = "recipient_id"
+  }
+
+  public func encode(to encoder: any Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(name, forKey: .name)
+    try container.encodeIfPresent(description, forKey: .description)
+    try container.encodeIfPresent(recipientID, forKey: .recipientID)
   }
 }
 

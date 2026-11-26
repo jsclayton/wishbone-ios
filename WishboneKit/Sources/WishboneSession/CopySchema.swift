@@ -15,10 +15,10 @@ extension LocalDatabase {
   ///
   /// Also raise it when a row's version starts to mean what its answer read, where it meant what an entry named: a
   /// copy saved before can hold a row that the version claims is current, and no pull would fetch it again. 5 is
-  /// that change for the memberships.
+  /// that change for the memberships. 6 adds `can_create_list` to a full user's record.
   ///
   /// The number is SQLite's `user_version`. The first version of the copy had none, which is 0.
-  static let copySchema = 5
+  static let copySchema = 6
 
   /// One row at most: the `ETag` of the last answer of `GET /versions` that the copy agreed with.
   static let keptETagTable = "keptETag"

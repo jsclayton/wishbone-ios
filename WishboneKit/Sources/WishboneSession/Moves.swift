@@ -79,6 +79,8 @@ extension SessionModel {
   /// It does nothing for an item that the copy doesn't hold, that the user can't edit, or that is on the list
   /// already, and for a list that Move to… doesn't offer.
   public func moveItem(_ id: String, toList listID: String, from window: UUID? = nil) async {
+    // A list that New list made may be named by its stand-in ID, which the server's ID has replaced since.
+    let listID = serverID(of: listID)
     guard let item = item(id: id), item.listID != listID,
       let target = moveTargets(ofItem: id)?.targets.first(where: { $0.id == listID })
     else { return }

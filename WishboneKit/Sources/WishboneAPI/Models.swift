@@ -104,6 +104,10 @@ public struct User: Model, Equatable {
   public let canConfirmProfile: Bool
   public let canAddOccasion: Bool
 
+  /// Whether the caller can make an extra list for this user with `POST /lists`: the caller is the user, or their
+  /// parent and the user is active. The admin's access doesn't count.
+  public let canCreateList: Bool
+
   enum CodingKeys: String, CodingKey, CaseIterable {
     case id
     case name
@@ -127,6 +131,7 @@ public struct User: Model, Equatable {
     case canReactivate = "can_reactivate"
     case canConfirmProfile = "can_confirm_profile"
     case canAddOccasion = "can_add_occasion"
+    case canCreateList = "can_create_list"
   }
 
   public init(from decoder: any Decoder) throws {
@@ -153,6 +158,7 @@ public struct User: Model, Equatable {
     canReactivate = try container.decode(Bool.self, forKey: .canReactivate)
     canConfirmProfile = try container.decode(Bool.self, forKey: .canConfirmProfile)
     canAddOccasion = try container.decode(Bool.self, forKey: .canAddOccasion)
+    canCreateList = try container.decode(Bool.self, forKey: .canCreateList)
   }
 
   public static let fields = WishboneAPI.fields(

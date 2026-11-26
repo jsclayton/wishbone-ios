@@ -282,14 +282,16 @@ public final class SessionModel {
   }
 
   /// The list in the copy with the ID. Nil for a list that is not in the copy: a missing list and a hidden list
-  /// are the same here, as they are on the server.
+  /// are the same here, as they are on the server. A stand-in ID gives the list that the server's ID took its place
+  /// for.
   public func list(id: String) -> ListRow? {
-    listsByID[id]
+    listsByID[serverID(of: id)]
   }
 
-  /// The items on the list, in the list's order. Empty for a list that is not in the copy.
+  /// The items on the list, in the list's order. Empty for a list that is not in the copy. A stand-in ID gives the
+  /// items of the list that the server's ID took its place for.
   public func items(onList id: String) -> [ItemRow] {
-    itemsByList[id] ?? []
+    itemsByList[serverID(of: id)] ?? []
   }
 
   /// The item in the copy with the ID, on a list that the copy holds. Nil for an item that is not in the copy. A
@@ -313,7 +315,7 @@ public final class SessionModel {
   /// The recipient rows of the list, in the order they became recipients. Empty for a list that is not in the
   /// copy.
   public func recipients(ofList id: String) -> [RecipientRow] {
-    recipientsByList[id] ?? []
+    recipientsByList[serverID(of: id)] ?? []
   }
 
   // MARK: - Gifts

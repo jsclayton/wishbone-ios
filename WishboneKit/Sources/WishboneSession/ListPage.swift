@@ -171,11 +171,12 @@ public enum ListSort: String, Equatable, Sendable, CaseIterable, Identifiable {
 
 extension SessionModel {
   /// The list's page, from the copy. Nil when the page is the "not found" page: the list is not in the copy, which
-  /// is the same for a list that was deleted and one that the session's user can't see.
+  /// is the same for a list that was deleted and one that the session's user can't see. A page opened by a list's
+  /// stand-in ID shows the list by the server's ID, once the server has it.
   public func listPage(id: String) -> ListPage? {
     guard let list = list(id: id) else { return nil }
     let isRecipient = list.recipientIDs.contains(session.userID)
-    let items = items(onList: id).map { item in
+    let items = items(onList: list.id).map { item in
       UserPage.Item(row: item, claim: isRecipient ? nil : UserPage.Claim(item))
     }
     let children = Set(self.user?.record?.childIDs ?? [])

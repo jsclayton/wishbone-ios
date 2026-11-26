@@ -228,12 +228,14 @@ extension WindowTab {
 }
 
 extension Page {
-  /// The page with the server's ID in the place of a stand-in ID that it replaced. Only an item can have a stand-in
-  /// ID now: an item that the user added by hand while the instance couldn't be reached.
+  /// The page with the server's ID in the place of a stand-in ID that it replaced. An item and a list can have a
+  /// stand-in ID: an item that the user added by hand while the instance couldn't be reached, and a list that New
+  /// list made, whose page is pushed at once.
   func replacingStandIns(_ standIns: [String: String]) -> Page {
     switch self {
     case .item(let id): .item(id: standIns[id] ?? id)
-    case .list, .user, .gift, .people, .allUsers, .allGroups, .deactivatedUsers, .occasions, .sharedOccasion: self
+    case .list(let id): .list(id: standIns[id] ?? id)
+    case .user, .gift, .people, .allUsers, .allGroups, .deactivatedUsers, .occasions, .sharedOccasion: self
     }
   }
 

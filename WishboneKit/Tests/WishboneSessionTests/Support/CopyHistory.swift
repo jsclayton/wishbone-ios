@@ -41,6 +41,11 @@ final class CopyHistory {
     }
   }
 
+  /// The lists of the copy, by their ID, after each change.
+  var lists: [[String: ListRow]] {
+    all.map { copy in Dictionary(copy.lists.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }) }
+  }
+
   /// The stand-in IDs that the server's ID took the place of, after each change.
   var standIns: [[String: String]] { all.map(\.standIns) }
 

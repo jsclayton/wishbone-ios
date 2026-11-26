@@ -201,6 +201,23 @@ struct UnsentChangeWordsTests {
     #expect(LateRefusalWords.line(photo) == "Your photo for Kite: \(ErrorWords.notAnImage)")
   }
 
+  @Test("A late refusal of New list names the list, and a child whom the admin deactivated meanwhile")
+  func lateRefusalsOfNewList() {
+    let created = CreatedList(
+      id: "stand-in-1", name: "Cousins", description: nil, recipientID: "8", isForAChild: true,
+      recipientName: "Emma", createdAt: Date(timeIntervalSince1970: 0))
+    let deactivated = LateRefusal(
+      id: 1, action: .createList(created), title: "Cousins",
+      refusal: .init(route: .createList, status: 403, code: .userDeactivated, detail: "The server's words"))
+    let forbidden = LateRefusal(
+      id: 2, action: .createList(created), title: "Cousins",
+      refusal: .init(route: .createList, status: 403, code: .forbidden, detail: "The server's words"))
+    #expect(
+      LateRefusalWords.line(deactivated)
+        == "Making Cousins: Only the admin can reactivate Emma. Until then, you can't change anything for Emma.")
+    #expect(LateRefusalWords.line(forbidden) == "Making Cousins: You can't do this any more.")
+  }
+
   @Test("An invitation's line says who invited whom, to which list, and only who is invited once the inviter is gone")
   func invitationLines() {
     let line = { (invited: PendingInvitation.Invited, inviter: String?, onListPage: Bool) in

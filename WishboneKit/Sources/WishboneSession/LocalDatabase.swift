@@ -883,7 +883,8 @@ extension UserRow {
         createdAt: resource.createdAt, canEdit: resource.canEdit, canEditParents: resource.canEditParents,
         canMakeLoginLink: resource.canMakeLoginLink, canManageSessions: resource.canManageSessions,
         canDeactivate: resource.canDeactivate, canReactivate: resource.canReactivate,
-        canConfirmProfile: resource.canConfirmProfile, canAddOccasion: resource.canAddOccasion),
+        canConfirmProfile: resource.canConfirmProfile, canAddOccasion: resource.canAddOccasion,
+        canCreateList: resource.canCreateList),
       version: user.version)
   }
 }
