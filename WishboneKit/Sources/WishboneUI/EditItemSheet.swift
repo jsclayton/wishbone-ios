@@ -395,6 +395,9 @@ private struct StoreLinksSection: View {
   /// What the last Add link said, when it added nothing.
   @State private var said: String?
 
+  /// Add link's key, kept between taps while the address stays the same and nothing was added.
+  @State private var key = AddLinkKey()
+
   var body: some View {
     Section {
       ForEach($draft.storeLinks) { $link in
@@ -455,15 +458,18 @@ private struct StoreLinksSection: View {
     guard canAdd else { return }
     isAdding = true
     said = nil
-    let outcome = await session.addStoreLink(address, toItem: item.id)
+    let outcome = await session.addStoreLink(address, toItem: item.id, key: key.key(for: address, toItem: item.id))
     isAdding = false
     switch outcome {
     case .added(let link):
+      key.added()
       opened.added(link)
       draft.added(link)
-      if opened.priceMinor == nil, let price = session.item(id: item.id)?.priceMinor {
-        if draft.priceMinor == nil { draft.priceMinor = price }
-        opened.priceMinor = price
+      if opened.priceMinor == nil, let took = session.item(id: item.id), let price = took.priceMinor,
+        let currency = took.currency
+      {
+        opened.itemTookPrice(price, currency: currency)
+        draft.itemTookPrice(price, currency: currency)
       }
       address = ""
       return

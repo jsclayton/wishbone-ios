@@ -33,6 +33,37 @@ public enum StoreLinkOutcome: Sendable, Equatable {
   case failed
 }
 
+/// The `Idempotency-Key` that Add link keeps between taps. A tap after a lost answer, with the same address for the
+/// same item, sends the same key, so the server adds the link once and gives its first answer again. Another address
+/// or item gets a new key, and so does the next add after one that added the link. The sheet keeps it as its own
+/// state, as the add form keeps Add's key (`ItemDraft.key(for:onList:)`).
+public struct AddLinkKey: Sendable, Equatable {
+  private var kept: Kept?
+
+  private struct Kept: Sendable, Equatable {
+    let value: String
+    let address: String
+    let itemID: String
+  }
+
+  public init() {}
+
+  /// The key for the address on the item: the one kept, when both are the same, or a new one. The address is
+  /// compared with no space at either end, as Add link sends it.
+  public mutating func key(for address: String, toItem itemID: String) -> String {
+    let address = address.trimmingCharacters(in: .whitespacesAndNewlines)
+    if let kept, kept.address == address, kept.itemID == itemID { return kept.value }
+    let value = UUID().uuidString
+    kept = Kept(value: value, address: address, itemID: itemID)
+    return value
+  }
+
+  /// The add went through: the next add gets a new key.
+  public mutating func added() {
+    kept = nil
+  }
+}
+
 /// How Refresh prices ended.
 public enum RefreshOutcome: Sendable, Equatable {
   /// The server read the links again: "Prices checked." The copy has the new prices, and when each was read.
@@ -51,7 +82,11 @@ public enum RefreshOutcome: Sendable, Equatable {
 extension SessionModel {
   /// Add link: adds the pasted web address to the item as a store link, with `POST /items/{id}/store-links`. It
   /// waits for the server, which reads the page for its price, and is never an unsent change. Then it brings the
-  /// item, with `GET /items/{id}`: an item with no price that never had one takes the link's.
+  /// item, with `GET /items/{id}`: an item with no price that never had one takes the link's. The link that it gives
+  /// back is the one the copy saved, read from the database, so it never waits for the copy to be published.
+  ///
+  /// `key` is the add's `Idempotency-Key`, which the sheet keeps between taps (see `AddLinkKey`): a tap after an
+  /// answer that was lost adds the link once.
   ///
   /// An item that waits to be created, by its stand-in ID, has no server's ID to add to yet. The unsent changes are
   /// sent first, so the server has it, and the link goes to the server's ID. When they can't be sent, it is
@@ -62,7 +97,7 @@ extension SessionModel {
   ///
   /// Diagnostics: never here. The client reports each error as its side asks: a 422 such as `too_many_store_links`
   /// is captured by its code, and a blocked store and a 429 never are.
-  public func addStoreLink(_ text: String, toItem id: String) async -> StoreLinkOutcome {
+  public func addStoreLink(_ text: String, toItem id: String, key: String) async -> StoreLinkOutcome {
     guard !hasEnded, case .link(let url, let store)? = SearchInput(text), let item = item(id: id), item.canEdit
     else { return .failed }
     let itemID: String
@@ -72,15 +107,15 @@ extension SessionModel {
     case .notSent: return .failed
     }
     do {
-      let link = try await client.addStoreLink(url, toItem: itemID)
+      let link = try await client.addStoreLink(url, toItem: itemID, key: key)
       // The item's new price. Without it, the link is saved alone, and the next sync brings the item.
       let answered = try? await client.item(itemID)
       guard !hasEnded else { return .failed }
-      try await database.saveAddedStoreLink(link, ofItem: itemID, item: answered)
+      let row = try await database.saveAddedStoreLink(link, ofItem: itemID, item: answered)
       // A sync that runs now may have asked before the add. Its pull keeps the link, and one more sync asks after it.
       syncAgainIfSyncing()
+      // Every window shows it at once.
       await publishNow()
-      guard let row = storeLinks(ofItem: itemID).first(where: { $0.id == link.resource.id }) else { return .failed }
       return .added(row)
     } catch {
       switch await waitedOutcome(of: error) {
@@ -102,11 +137,18 @@ extension SessionModel {
   /// waits for the server, and is never an unsent change. The item that the server gives back goes into the copy at
   /// once, with each link's new price and when it was read. A link that the server couldn't read keeps its price.
   ///
+  /// The unsent changes are sent first, in the journal's order, so the server has them in the user's order: a price
+  /// typed while the instance couldn't be reached comes before the refresh, which then replaces it, as the server's
+  /// rule says. When they can't be sent because the instance can't be reached, it is `unreachable`, and nothing is
+  /// refreshed. A change that must wait for another reason, such as the hourly limit, doesn't hold the refresh.
+  ///
   /// It does nothing (`failed`) for an item that doesn't offer it (see `offersRefreshPrices(onItem:)`).
   ///
   /// Diagnostics: never here. A 429 is never captured.
   public func refreshPrices(ofItem id: String) async -> RefreshOutcome {
     guard !hasEnded, offersRefreshPrices(onItem: id), let item = item(id: id) else { return .failed }
+    if await sendUnsentChanges() == .unreachable { return .unreachable }
+    guard !hasEnded else { return .failed }
     do {
       let answered = try await client.refreshPrices(ofItem: item.id)
       guard !hasEnded else { return .failed }
@@ -171,20 +213,27 @@ extension SessionModel {
 }
 
 extension LocalDatabase {
-  /// Saves a store link that Add link added, with the item as the server gives it now, in one change. With no item,
-  /// which the instance didn't give after the add, the link goes at the end of the item's links, and the next sync
-  /// brings the item.
+  /// Saves a store link that Add link added, with the item as the server gives it now, in one change, and gives back
+  /// the link as the copy saved it. With no item, which the instance didn't give after the add, or an item whose
+  /// links don't have it, the link goes at the end of the item's links, and the next sync brings the item.
   ///
   /// It is the server's answer to a write that waits for it: a pull that started before it doesn't change the item
   /// or its store links (see `Answers`).
-  func saveAddedStoreLink(_ link: Versioned<StoreLink>, ofItem itemID: String, item: Versioned<Item>?) async throws {
-    if let item, item.resource.id == itemID {
+  func saveAddedStoreLink(_ link: Versioned<StoreLink>, ofItem itemID: String, item: Versioned<Item>?) async throws
+    -> StoreLinkRow
+  {
+    let id = link.resource.id
+    if let item, item.resource.id == itemID, item.resource.storeLinks.contains(where: { $0.id == id }) {
       try await save([item], answering: true)
-      return
+    } else {
+      try await change(answering: [.row(itemID, of: ItemRow.self), .storeLinks(ofItem: itemID)]) { database in
+        let position = try StoreLinkRow.filter(Column("itemID") == itemID).fetchCount(database)
+        try StoreLinkRow(link.resource, ofItem: itemID, at: position, version: "").save(database)
+      }
     }
-    try await change(answering: [.row(itemID, of: ItemRow.self), .storeLinks(ofItem: itemID)]) { database in
-      let position = try StoreLinkRow.filter(Column("itemID") == itemID).fetchCount(database)
-      try StoreLinkRow(link.resource, ofItem: itemID, at: position, version: "").save(database)
-    }
+    // A change after this one, such as a delete of the item from another window, may have taken it out already: the
+    // link is then the server's answer, as the add saved it.
+    let saved = try await writer.read { database in try StoreLinkRow.fetchOne(database, key: id) }
+    return saved ?? StoreLinkRow(link.resource, ofItem: itemID, at: 0, version: "")
   }
 }

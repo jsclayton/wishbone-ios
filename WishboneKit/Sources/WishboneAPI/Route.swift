@@ -175,8 +175,10 @@ public enum Route: String, Sendable, CaseIterable {
     // so a second Add after a lost answer adds the item once. An upload of a file has a key of its own too, kept by
     // the form or by its unsent change, so a resend uploads the photo once. A download of a store's image sends none.
     case .search, .createItem, .uploadImage: ["Idempotency-Key"]
-    // Add link and Refresh prices wait for the server, which reads the store's pages. A key of their own makes a
-    // resend after a lost connection read nothing again.
+    // Add link and Refresh prices wait for the server, which reads the store's pages. The client's one resend after a
+    // lost connection reuses the key, so it reads nothing again. Add link keeps its key across taps too, while the
+    // item and the address stay the same and nothing was added, so a second tap after a lost answer adds the link
+    // once. Refresh prices takes a new key on each tap: a second Refresh on purpose reads the pages again.
     case .addStoreLink, .refreshPrices: ["Idempotency-Key"]
     // An unsent change keeps its key, so a resend after a lost connection, or in a later sync, is the same write.
     case .updateGift, .unclaimGift, .acknowledgeGift, .updateList, .deleteList, .acceptInvitation,
@@ -500,12 +502,11 @@ struct AddStoreLinkBody: Encodable, Sendable {
 }
 
 extension Endpoint where Response == StoreLink {
-  /// Adds a store link to the item, with a key of its own, so that a resend after a lost connection adds it once and
-  /// reads the page once.
-  static func addStoreLink(_ url: String, toItem itemID: String) -> Endpoint {
+  /// Adds a store link to the item, with the key that Add link keeps, so that a resend after a lost connection, or a
+  /// second tap after a lost answer, adds it once and reads the page once.
+  static func addStoreLink(_ url: String, toItem itemID: String, key: String) -> Endpoint {
     Endpoint(
-      route: .addStoreLink, parameters: ["id": itemID], body: AddStoreLinkBody(url: url),
-      idempotencyKey: UUID().uuidString)
+      route: .addStoreLink, parameters: ["id": itemID], body: AddStoreLinkBody(url: url), idempotencyKey: key)
   }
 
   /// A merge patch of the store link's price, with the unsent change's own key, so that a resend of the change is the

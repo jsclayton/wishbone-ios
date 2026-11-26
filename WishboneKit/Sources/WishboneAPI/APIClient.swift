@@ -393,8 +393,11 @@ public struct APIClient: Sendable {
   /// store's picture, during the request. Gives back the store link, with the version that the answer carried. A
   /// link from a blocked store is a 422 `store_blocked`, an item with 10 links a 422 `too_many_store_links`, and a
   /// read over the hourly limit a 429 `rate_limited`. An item with no price that never had one takes the link's.
-  public func addStoreLink(_ url: String, toItem itemID: String) async throws(APIError) -> Versioned<StoreLink> {
-    try await versioned(.addStoreLink(url, toItem: itemID))
+  /// `key` is the one that Add link keeps (see `AddLinkKey`).
+  public func addStoreLink(_ url: String, toItem itemID: String, key: String) async throws(APIError)
+    -> Versioned<StoreLink>
+  {
+    try await versioned(.addStoreLink(url, toItem: itemID, key: key))
   }
 
   /// `PATCH /items/{id}/store-links/{store_link_id}`: sets or clears the store link's price by hand, with no

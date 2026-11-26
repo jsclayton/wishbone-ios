@@ -61,7 +61,7 @@ public struct ItemEditDraft: Sendable, Equatable {
   public var topPriceMinor: Int?
 
   /// The price's ISO 4217 code: the item's, or USD.
-  public let currency: String
+  public private(set) var currency: String
 
   /// How many are wanted, at least 1. It is kept while the item is always wanted, so the switch can go back.
   public var quantity: Int
@@ -83,7 +83,8 @@ public struct ItemEditDraft: Sendable, Equatable {
     /// The price, in the currency's minor unit. Nil for no price.
     public var priceMinor: Int?
 
-    /// The price's ISO 4217 code: the link's, else the item's, else USD, as the server takes a price with none.
+    /// The price's ISO 4217 code: the link's, or USD for a link with no price, as the server saves a price typed for
+    /// it. The price edit sends no currency.
     public let currency: String
 
     /// When the price was read. Nil when it has none.
@@ -95,12 +96,12 @@ public struct ItemEditDraft: Sendable, Equatable {
     public let canEdit: Bool
     public let canDelete: Bool
 
-    init(_ link: StoreLinkRow, itemCurrency: String?) {
+    init(_ link: StoreLinkRow) {
       id = link.id
       url = link.url
       store = link.store
       priceMinor = link.priceMinor
-      currency = link.currency ?? itemCurrency ?? "USD"
+      currency = link.currency ?? "USD"
       capturedAt = link.capturedAt
       canEdit = link.canEdit && !StandIn.isStandIn(link.id)
       canDelete = link.canDelete && !StandIn.isStandIn(link.id)
@@ -124,7 +125,7 @@ public struct ItemEditDraft: Sendable, Equatable {
     quantity = item.quantity
     isUnlimited = item.isUnlimited
     notes = item.notes ?? ""
-    self.storeLinks = storeLinks.map { StoreLinkEntry($0, itemCurrency: item.currency) }
+    self.storeLinks = storeLinks.map(StoreLinkEntry.init)
   }
 
   /// Whether Add link can be used: the item has fewer than 10 store links.
@@ -141,7 +142,15 @@ public struct ItemEditDraft: Sendable, Equatable {
   /// that it opened with too: it is no change for Save to send. A link that the draft has already stays as it is.
   public mutating func added(_ link: StoreLinkRow) {
     guard !storeLinks.contains(where: { $0.id == link.id }) else { return }
-    storeLinks.append(StoreLinkEntry(link, itemCurrency: currency))
+    storeLinks.append(StoreLinkEntry(link))
+  }
+
+  /// The item took a price that Add link gave it, because it had none: the draft takes its currency, and its price
+  /// where the user typed none. The sheet does this to the draft it opened with too, so Save doesn't send the price
+  /// back.
+  public mutating func itemTookPrice(_ priceMinor: Int, currency: String) {
+    if self.priceMinor == nil { self.priceMinor = priceMinor }
+    self.currency = currency
   }
 
   /// The primary photo. Nil when there is no photo.

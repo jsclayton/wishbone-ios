@@ -114,7 +114,8 @@ final class StoreLinksTests {
     #expect(opened.storeLinks.isEmpty)
     #expect(opened.canAddStoreLink)
 
-    let link = try added(await session.addStoreLink("  \(page.url.absoluteString)  ", toItem: item.id))
+    let link = try added(
+      await session.addStoreLink("  \(page.url.absoluteString)  ", toItem: item.id, key: UUID().uuidString))
 
     // The copy has it as the server gave it, before any sync, with the page's price, read just now.
     #expect(link.store == "127.0.0.1")
@@ -154,6 +155,95 @@ final class StoreLinksTests {
     #expect(seen(Self.updateLink).isEmpty && seen(Self.updateItem).isEmpty)
   }
 
+  @Test(
+    """
+    A tap of Add link after an answer that was lost sends the same key, and the server adds the link once; the next \
+    add, or another address, gets a new key
+    """
+  )
+  func lostAnswerAddsOnce() async throws {
+    let page = try await StorePage(title: "Kite \(instance.builder.tag)", priceMinor: 2499)
+    let (person, item) = try await person(withItem: "Kite")
+    let session = try await signedIn(as: person)
+    let address = page.url.absoluteString
+    var key = AddLinkKey()
+
+    // The server adds the link, and its answer is lost on the way back.
+    let hold = instance.conditioner.hold(Self.addLink, at: .answer)
+    let firstKey = key.key(for: address, toItem: item.id)
+    let first = Task { await session.addStoreLink(address, toItem: item.id, key: firstKey) }
+    await hold.waitUntilHeld()
+    instance.conditioner.dropEverything()
+    hold.release()
+    #expect(await first.value == .unreachable)
+    #expect(try await linksOnServer(item.id, as: person).count == 1)
+
+    // The user taps Add link again, with the address still in the field.
+    instance.conditioner.passEverything()
+    let secondKey = key.key(for: " \(address) ", toItem: item.id)
+    #expect(secondKey == firstKey)
+    let link = try added(await session.addStoreLink(address, toItem: item.id, key: secondKey))
+
+    let saved = try await linksOnServer(item.id, as: person)
+    #expect(saved.compactMap { $0["id"].string } == [link.id])
+    #expect(session.storeLinks(ofItem: item.id).map(\.id) == [link.id])
+    let keys = Set(seen(Self.addLink).compactMap { $0.headers["idempotency-key"] })
+    #expect(keys == [firstKey])
+    #expect(page.reads == 1)
+
+    // The next add gets a new key, and so does another address or another item.
+    key.added()
+    let next = key.key(for: address, toItem: item.id)
+    #expect(next != firstKey)
+    let otherAddress = key.key(for: address + "?other", toItem: item.id)
+    #expect(otherAddress != next)
+    #expect(key.key(for: address + "?other", toItem: "another") != otherAddress)
+  }
+
+  @Test("When the item can't be fetched after Add link, the link is saved alone at the end, and Add link gives it")
+  func addLinkWithoutTheItem() async throws {
+    let page = try await StorePage(title: "Kite \(instance.builder.tag)", priceMinor: 2499)
+    let (person, item) = try await person(withItem: "Kite", links: [twoShops[0]])
+    let session = try await signedIn(as: person)
+    let before = session.storeLinks(ofItem: item.id)
+    let price = session.item(id: item.id)?.priceMinor
+    instance.conditioner.answer(Route("GET", "/items/{id}"), with: try .problem(500, code: "internal_error"))
+
+    let link = try added(await session.addStoreLink(page.url.absoluteString, toItem: item.id, key: UUID().uuidString))
+
+    #expect(link.itemID == item.id)
+    #expect(link.position == before.count)
+    #expect(link.priceMinor == 2499)
+    #expect(session.storeLinks(ofItem: item.id).map(\.id) == before.map(\.id) + [link.id])
+    // The item waits for the next sync.
+    #expect(session.item(id: item.id)?.priceMinor == price)
+    #expect(try await linksOnServer(item.id, as: person).count == 2)
+  }
+
+  @Test("A link with no price takes a typed price in the currency that the server saves it in, not the item's")
+  func priceOfALinkWithNone() async throws {
+    let (person, item) = try await person(
+      withItem: "Kite", links: [("https://one-\(instance.builder.tag).example/kite", nil)])
+    try await person.signedIn().send(
+      "PATCH", "/items/\(item.id)", json: ["price_minor": .number(1000), "currency": "EUR"]
+    ).expecting(200)
+    let session = try await signedIn(as: person)
+    #expect(session.item(id: item.id)?.currency == "EUR")
+    let opened = try await draft(of: item.id, in: session)
+    let entry = try #require(opened.storeLinks.first)
+    #expect(entry.priceMinor == nil)
+
+    var draft = opened
+    draft.storeLinks[0].priceMinor = 1200
+    await session.editItem(item.id, from: opened, to: draft)
+    #expect(session.storeLinks(ofItem: item.id).first?.currency == entry.currency)
+    await until { session.unsentChangeCount == 0 }
+
+    let saved = try #require(try await linksOnServer(item.id, as: person).first)
+    #expect(saved["price_minor"].number == 1200)
+    #expect(saved["currency"].string == entry.currency)
+  }
+
   @Test("Add link keeps the price of an item that has one, and goes after the links it has")
   func addLinkKeepsThePrice() async throws {
     let page = try await StorePage(title: "Lamp \(instance.builder.tag)", priceMinor: 4200)
@@ -166,7 +256,7 @@ final class StoreLinksTests {
     let session = try await signedIn(as: person)
     #expect(session.item(id: item.id)?.priceMinor == 1000)
 
-    let link = try added(await session.addStoreLink(page.url.absoluteString, toItem: item.id))
+    let link = try added(await session.addStoreLink(page.url.absoluteString, toItem: item.id, key: UUID().uuidString))
 
     #expect(session.item(id: item.id)?.priceMinor == 1000)
     #expect(session.storeLinks(ofItem: item.id).count == 2)
@@ -186,7 +276,8 @@ final class StoreLinksTests {
     #expect(session.offersRefreshPrices(onItem: item.id))
 
     instance.conditioner.dropEverything()
-    #expect(await session.addStoreLink(page.url.absoluteString, toItem: item.id) == .unreachable)
+    #expect(
+      await session.addStoreLink(page.url.absoluteString, toItem: item.id, key: UUID().uuidString) == .unreachable)
     #expect(await session.refreshPrices(ofItem: item.id) == .unreachable)
 
     #expect(session.storeLinks(ofItem: item.id) == before)
@@ -214,7 +305,8 @@ final class StoreLinksTests {
     let diagnostics = RecordingDiagnostics()
     let session = try await signedIn(as: person, diagnostics: diagnostics)
 
-    let outcome = await session.addStoreLink("https://www.\(blocked.store)/products/kite", toItem: item.id)
+    let outcome = await session.addStoreLink(
+      "https://www.\(blocked.store)/products/kite", toItem: item.id, key: UUID().uuidString)
 
     #expect(outcome == .blocked(store: blocked.store))
     #expect(session.storeLinks(ofItem: item.id).isEmpty)
@@ -234,7 +326,7 @@ final class StoreLinksTests {
     // The sheet can't use Add link at 10, and says why.
     #expect(try await draft(of: item.id, in: session).canAddStoreLink == false)
 
-    let outcome = await session.addStoreLink(page.url.absoluteString, toItem: item.id)
+    let outcome = await session.addStoreLink(page.url.absoluteString, toItem: item.id, key: UUID().uuidString)
 
     guard case .refused(let refusal) = outcome else {
       Issue.record("Add link ended with \(outcome)")
@@ -273,7 +365,8 @@ final class StoreLinksTests {
     let before = session.storeLinks(ofItem: full.id)
 
     let refreshed = await session.refreshPrices(ofItem: full.id)
-    let addedLink = await session.addStoreLink("\(page.url.absoluteString)?n=new", toItem: other.id)
+    let addedLink = await session.addStoreLink(
+      "\(page.url.absoluteString)?n=new", toItem: other.id, key: UUID().uuidString)
 
     guard case .refused(let refreshRefusal) = refreshed, case .refused(let addRefusal) = addedLink else {
       Issue.record("Refresh prices ended with \(refreshed), and Add link with \(addedLink)")
@@ -597,6 +690,45 @@ final class StoreLinksTests {
     #expect(session.storeLinks(ofItem: item.id).map(\.priceMinor) == [2499, 2499])
   }
 
+  @Test(
+    """
+    Refresh prices sends a price typed with no connection first, so the refresh, which the user asked for later, \
+    replaces it on the server and in the copy
+    """
+  )
+  func refreshAfterAWaitingPrice() async throws {
+    let page = try await StorePage(title: "Kite \(instance.builder.tag)", priceMinor: 2499)
+    let (person, item) = try await person(withItem: "Kite", links: [(page.url.absoluteString, 1000)])
+    let session = try await signedIn(as: person)
+
+    instance.conditioner.dropEverything()
+    let opened = try await draft(of: item.id, in: session)
+    var draft = opened
+    draft.storeLinks[0].priceMinor = 777
+    await session.editItem(item.id, from: opened, to: draft)
+    await until { session.isInstanceUnreachable }
+    #expect(session.storeLinks(ofItem: item.id).first?.priceMinor == 777)
+    // With the change waiting and still no connection, Refresh prices can't reach the instance, and sends nothing.
+    #expect(await session.refreshPrices(ofItem: item.id) == .unreachable)
+    #expect(session.unsentChangeCount == 1)
+
+    // The instance is back, and no sync has run yet.
+    instance.conditioner.passEverything()
+    let sent = instance.conditioner.requests.count
+    #expect(await session.refreshPrices(ofItem: item.id) == .checked)
+
+    #expect(session.unsentChangeCount == 0)
+    #expect(session.storeLinks(ofItem: item.id).first?.priceMinor == 2499)
+    let order = instance.conditioner.requests[sent...].compactMap { request in
+      [Self.updateLink, Self.refresh].firstIndex { request.isOn($0) }
+    }
+    #expect(order == [0, 1])
+    #expect(try await linksOnServer(item.id, as: person).first?["price_minor"].number == 2499)
+    await session.syncNow()
+    try await untilInStep(session, as: person)
+    #expect(session.storeLinks(ofItem: item.id).first?.priceMinor == 2499)
+  }
+
   // MARK: - An item that waits to be created
 
   @Test(
@@ -636,14 +768,16 @@ final class StoreLinksTests {
     #expect(await session.refreshPrices(ofItem: created.id) == .failed)
 
     // Add link waits for the server, which doesn't have the item yet, and can't reach it.
-    #expect(await session.addStoreLink(page.url.absoluteString, toItem: created.id) == .unreachable)
+    #expect(
+      await session.addStoreLink(page.url.absoluteString, toItem: created.id, key: UUID().uuidString) == .unreachable)
     #expect(session.unsentChangeCount == 1)
     #expect(session.storeLinks(ofItem: created.id).count == 1)
 
     // With the instance back, Add link sends the create first, then adds the link to the item by the server's ID.
     instance.conditioner.passEverything()
     let sent = instance.conditioner.requests.count
-    let link = try added(await session.addStoreLink(page.url.absoluteString, toItem: created.id))
+    let link = try added(
+      await session.addStoreLink(page.url.absoluteString, toItem: created.id, key: UUID().uuidString))
     let serverID = session.serverID(of: created.id)
     #expect(!StandIn.isStandIn(serverID))
     let order = instance.conditioner.requests[sent...].compactMap { request in

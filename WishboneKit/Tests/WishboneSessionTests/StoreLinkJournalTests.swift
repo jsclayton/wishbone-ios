@@ -134,7 +134,38 @@ struct StoreLinkJournalTests {
     let draft = ItemEditDraft(item, imageIDs: [], primaryImageID: nil, storeLinks: [standIn, saved])
     #expect(draft.storeLinks.map(\.canEdit) == [false, true])
     #expect(draft.storeLinks.map(\.canDelete) == [false, true])
-    // The field's currency: the link's, else the item's, else USD.
-    #expect(draft.storeLinks.map(\.currency) == ["USD", "USD"])
+  }
+
+  @Test("A link's price field is in the link's currency, or in USD for a link with none, whatever the item's")
+  func fieldCurrency() {
+    let item = ItemRow(
+      id: "7", listID: "a", title: "Kite", notes: nil, priceMinor: 1000, topPriceMinor: nil, currency: "EUR",
+      quantity: 1, isUnlimited: false, position: 0, addedByID: "me", createdAt: read, images: [], primaryImage: nil,
+      stillWanted: .hidden, myClaimedQuantity: .hidden, canEdit: true, canDelete: true, canClaim: false,
+      canRefreshPrices: true, version: "")
+    let links = [
+      link("1", at: 0, priceMinor: 500, currency: "GBP"), link("2", at: 1, priceMinor: nil, currency: nil),
+    ]
+    var draft = ItemEditDraft(item, imageIDs: [], primaryImageID: nil, storeLinks: links)
+    #expect(draft.storeLinks.map(\.currency) == ["GBP", "USD"])
+    draft.added(link("3", at: 2, priceMinor: nil, currency: nil))
+    #expect(draft.storeLinks.map(\.currency) == ["GBP", "USD", "USD"])
+  }
+
+  @Test("When Add link gives an item with no price the link's, the draft takes its currency, and its price if none")
+  func itemTookPrice() {
+    let item = ItemRow(
+      id: "7", listID: "a", title: "Kite", notes: nil, priceMinor: nil, topPriceMinor: nil, currency: nil,
+      quantity: 1, isUnlimited: false, position: 0, addedByID: "me", createdAt: read, images: [], primaryImage: nil,
+      stillWanted: .hidden, myClaimedQuantity: .hidden, canEdit: true, canDelete: true, canClaim: false,
+      canRefreshPrices: true, version: "")
+    var untouched = ItemEditDraft(item, imageIDs: [], primaryImageID: nil, storeLinks: [])
+    #expect(untouched.currency == "USD")
+    var typed = untouched
+    typed.priceMinor = 300
+    untouched.itemTookPrice(2499, currency: "EUR")
+    typed.itemTookPrice(2499, currency: "EUR")
+    #expect(untouched.priceMinor == 2499 && untouched.currency == "EUR")
+    #expect(typed.priceMinor == 300 && typed.currency == "EUR")
   }
 }
