@@ -26,7 +26,7 @@ From top to bottom:
 7. For a recipient: the list's other pending invitations, each with who invited them and Withdraw, and **Invite**.
 8. **Leave**, **Make {child} leave**, and **Delete list**, from their `can_*` fields.
 
-**Provisional.** Plain default: a system list. The name is the navigation title, the recipients and the description are the first section, and the items are rows with the image at the leading edge. An item with no image has a tile in its recipient's person color. Each web link in the description also has a link row under its block. Edit list, Sort, and Open in New Window are in the toolbar's menu, and Reorder is the toolbar's Edit button. Leave, Make {child} leave, and Delete list are destructive rows in the last section, and each confirmation is an alert, with the warning after its line.
+**Provisional.** Plain default: a system list. The name is the navigation title, the recipients and the description are the first section, and the items are rows with the image at the leading edge. An item with no image has a tile in its recipient's person color. Each web link in the description also has a link row under its block. Edit list, Sort, and Open in New Window are in the toolbar's menu, and Reorder is the toolbar's Edit button. While its edit mode shows the handles, the Add item row doesn't show: the system disables it there. Leave, Make {child} leave, and Delete list are destructive rows in the last section, and each confirmation is an alert, with the warning after its line.
 
 ### Edit list
 
