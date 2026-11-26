@@ -310,6 +310,9 @@
     "Add item" : {
 
     },
+    "Add to" : {
+
+    },
     "Added %@ to %@" : {
       "localizations" : {
         "en" : {
@@ -323,13 +326,19 @@
     "Added by %@" : {
 
     },
-    "Adds the item to your list." : {
+    "Adding to %@" : {
+
+    },
+    "Adds the item to the list." : {
 
     },
     "All groups" : {
 
     },
     "All users" : {
+
+    },
+    "Already on this list: %@" : {
 
     },
     "Always wanted" : {

@@ -114,9 +114,17 @@ public struct ItemDraft: Sendable, Equatable {
   /// The note at the top of the form, or nil when the search filled it in.
   public internal(set) var note: Note?
 
-  /// The add's `Idempotency-Key`, and the item that it was made for. A changed item gets a new key: the server
-  /// refuses a key again with another body.
-  private var key: (value: String, item: NewItem)?
+  /// The list that the item goes to, by ID: the choice in Add to. Nil is the user's primary list, where every form
+  /// starts. No earlier choice is remembered: each form is new. See "Which list" in `docs/spec.md`.
+  public var listID: String?
+
+  /// Whether the form is fixed to its list: it came from a list's own Add item row, in a sheet. Add to is hidden,
+  /// and the duplicate hint opens nothing.
+  public private(set) var isFixedToList = false
+
+  /// The add's `Idempotency-Key`, and the item and list that it was made for. A changed item, or another list,
+  /// gets a new key: the server refuses a key again with another body.
+  private var key: (value: String, item: NewItem, listID: String)?
 
   /// The images that an earlier Add uploaded, by their store address.
   private var uploads: [String: String] = [:]
@@ -203,11 +211,19 @@ public struct ItemDraft: Sendable, Equatable {
       imageIDs: imageIDs)
   }
 
-  /// The key for the item: the one kept, when the item is the same, or a new one.
-  mutating func key(for item: NewItem) -> String {
-    if let key, key.item == item { return key.value }
+  /// The form fixed to the list, as a list's own Add item row opens it.
+  public func fixed(to listID: String) -> ItemDraft {
+    var draft = self
+    draft.listID = listID
+    draft.isFixedToList = true
+    return draft
+  }
+
+  /// The key for the item on the list: the one kept, when the item and the list are the same, or a new one.
+  mutating func key(for item: NewItem, onList listID: String) -> String {
+    if let key, key.item == item, key.listID == listID { return key.value }
     let value = UUID().uuidString
-    key = (value, item)
+    key = (value, item, listID)
     return value
   }
 
@@ -220,6 +236,8 @@ public struct ItemDraft: Sendable, Equatable {
     uploads[url] = id
   }
 
+  /// Whether the two forms hold the same typed fields. The list is not one of them: a pick in Add to is not a
+  /// typed change, so Back after it asks nothing.
   public static func == (first: ItemDraft, second: ItemDraft) -> Bool {
     first.images == second.images && first.title == second.title && first.priceMinor == second.priceMinor
       && first.topPriceMinor == second.topPriceMinor && first.currency == second.currency
@@ -304,8 +322,19 @@ public struct AddScreenState: Sendable, Equatable {
   /// The search that runs, so that a late answer of one that was stopped changes nothing.
   public private(set) var searching: UUID?
 
-  public init(text: String = "") {
+  /// The list that the screen is fixed to, in a list's sheet. Every form it gives is fixed to it. Nil on the Add
+  /// screen in its place, where every form starts on the primary list.
+  public let fixedListID: String?
+
+  /// - Parameter fixedListID: The list of the Add item row that opened the screen in a sheet, or nil.
+  public init(text: String = "", fixedTo fixedListID: String? = nil) {
     self.text = text
+    self.fixedListID = fixedListID
+  }
+
+  /// The form, fixed to the screen's list in a sheet.
+  private func fixing(_ draft: ItemDraft) -> ItemDraft {
+    fixedListID.map { draft.fixed(to: $0) } ?? draft
   }
 
   /// A search of the field's text starts. Nil when the field is empty. The search's ID names its answer.
@@ -324,7 +353,7 @@ public struct AddScreenState: Sendable, Equatable {
     switch outcome {
     case .form(let draft):
       phase = .empty
-      return draft
+      return fixing(draft)
     case .blocked(let store):
       phase = .blocked(input, store: store)
     case .unreachable:
@@ -347,14 +376,14 @@ public struct AddScreenState: Sendable, Equatable {
       }
     searching = nil
     phase = .empty
-    return input.map { ItemDraft(given: $0) }
+    return input.map { fixing(ItemDraft(given: $0)) }
   }
 
   /// "Add it without the link", after a blocked store: a blank form.
   public mutating func addWithoutTheLink() -> ItemDraft {
     searching = nil
     phase = .empty
-    return ItemDraft()
+    return fixing(ItemDraft())
   }
 
   /// The field's text changed: a line about an earlier search goes.
@@ -406,8 +435,9 @@ extension SessionModel {
     }
   }
 
-  /// Add: uploads each ticked image with `POST /images`, then adds the item to the user's primary list. The copy
-  /// has the item at once. See "After Add" in `docs/spec.md`.
+  /// Add: uploads each ticked image with `POST /images`, then adds the item to the draft's list: the one picked in
+  /// Add to, the one the form is fixed to, or the user's primary list. The server puts it at the end of the list.
+  /// The copy has the item at once. See "Which list" and "After Add" in `docs/spec.md`.
   ///
   /// The draft keeps the add's key and the images uploaded, so a second Add after a lost answer adds the item
   /// once. An image that the server can't fetch (`image_fetch_failed`) is left out, and the item is added without
@@ -416,7 +446,7 @@ extension SessionModel {
   ///
   /// Diagnostics: never here. The client reports each error as its side asks.
   public func add(_ draft: inout ItemDraft) async -> AddOutcome {
-    guard !hasEnded, let list = primaryList else { return .failed }
+    guard !hasEnded, let list = draft.listID.map({ self.list(id: $0) }) ?? primaryList else { return .failed }
     var imageWasLeftOut = false
     do {
       var imageIDs: [String] = []
@@ -435,7 +465,7 @@ extension SessionModel {
         }
       }
       let item = draft.newItem(imageIDs: imageIDs)
-      let key = draft.key(for: item)
+      let key = draft.key(for: item, onList: list.id)
       let added = try await client.createItem(item, onList: list.id, key: key)
       guard !hasEnded else { return .failed }
       try await database.save([added], answering: true)

@@ -5,8 +5,8 @@ import WishboneSession
 /// A user's page: the header, the line for a special case, good to know, the items of the user's primary list, and
 /// Other lists. The user's own page is this same page, with no claim state. See `docs/screens/user.md`.
 ///
-/// Claim state shows only as the server sends it, and the page never says who claimed. The Add item row and the For
-/// {name} part come later.
+/// Claim state shows only as the server sends it, and the page never says who claimed. The Add item row, from the
+/// primary list's `can_edit`, opens the Add screen in a sheet, fixed to that list. The For {name} part comes later.
 ///
 /// **Provisional.** Plain default: a system list. The header is the avatar in the person's color with the name
 /// under it, each part is a section, and the items are rows with the image at the leading edge.
@@ -43,6 +43,9 @@ struct UserPageScreen: View {
           ForEach(page.items) { item in
             ItemRowLink(
               item: item, tileUserID: list.recipientIDs.first ?? page.user.id, session: session, pages: $pages)
+          }
+          if list.canEdit {
+            AddItemRow(session: session, listID: list.id)
           }
         }
       }

@@ -87,7 +87,77 @@ nonisolated final class AddItemJourney: JourneyTestCase {
     app.navigationBars.buttons.firstMatch.tap()
     XCTAssertTrue(field.waitForExistence(timeout: 10), "Back didn't show the Add screen.")
     XCTAssertFalse(added.exists, "The Added row stayed after the user left the screen.")
+
+    try openTheDuplicate(titled: title, on: list.name, in: app)
     app.terminate()
+  }
+
+  /// The same title again: the form says that the list has the item already. The hint pushes the item's page over
+  /// the form, and Back returns to the form with its typed changes. Back from the changed form then asks.
+  @MainActor
+  private func openTheDuplicate(titled title: String, on listName: String, in app: XCUIApplication) throws {
+    let field = app.searchFields[Audit.words("Paste a link or type what you want")]
+    field.tap()
+    field.typeText("\(title)\n")
+    let form = app.navigationBars[Audit.words("Add item")]
+    XCTAssertTrue(form.waitForExistence(timeout: 30), "The add form didn't show for the same title.")
+
+    // A typed change, which the form must keep under the item's page. The search put the typed words in the notes
+    // too, so the notes are the second field that holds them.
+    let notes = "For the beach"
+    let typed = inputs(valued: title, in: app)
+    XCTAssertTrue(
+      typed.element(boundBy: 1).waitForExistence(timeout: 10), "The add form's notes aren't the typed words.")
+    typed.element(boundBy: 1).tap()
+    typed.element(boundBy: 1).typeText(" \(notes)")
+    dropKeyboard(of: app)
+    XCTAssertTrue(form.waitForExistence(timeout: 30), "The add form didn't come back.")
+
+    // In the double-length pseudo-language iOS doubles the format, so the hint is found by its start and the title.
+    let hint = app.buttons.matching(
+      NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "Already on this list:", title)
+    ).firstMatch
+    XCTAssertTrue(hint.waitForExistence(timeout: 10), "The add form has no hint for a title that the list has.")
+    hint.tap()
+    XCTAssertTrue(app.staticTexts[title].waitForExistence(timeout: 10), "The hint didn't open the item's page.")
+    XCTAssertTrue(app.buttons[listName].exists, "The hint's page doesn't name the item's list.")
+    XCTAssertFalse(form.exists, "The add form shows over the item's page.")
+
+    // Back: the form, with the title and the typed notes still in it.
+    app.navigationBars.buttons.firstMatch.tap()
+    XCTAssertTrue(form.waitForExistence(timeout: 10), "Back from the hint's page didn't return to the add form.")
+    XCTAssertTrue(
+      inputs(valued: title, in: app).firstMatch.waitForExistence(timeout: 10),
+      "The add form lost its title under the page.")
+    XCTAssertTrue(
+      inputs(containing: notes, in: app).firstMatch.exists, "The add form lost its typed notes under the page.")
+
+    // Back from the changed form asks before it discards the item.
+    form.buttons[Audit.words("Back")].tap()
+    let discard = app.buttons[Audit.words("Discard")]
+    XCTAssertTrue(discard.waitForExistence(timeout: 10), "Back from a changed form didn't ask.")
+    discard.tap()
+    XCTAssertTrue(field.waitForExistence(timeout: 10), "Discard didn't return to the Add screen.")
+  }
+
+  /// The fields and text views that hold exactly the words. A field that wraps is either one, by the system's choice.
+  @MainActor
+  private func inputs(valued value: String, in app: XCUIApplication) -> XCUIElementQuery {
+    inputs(matching: NSPredicate(format: "value == %@", value), in: app)
+  }
+
+  /// The fields and text views whose words contain the words.
+  @MainActor
+  private func inputs(containing words: String, in app: XCUIApplication) -> XCUIElementQuery {
+    inputs(matching: NSPredicate(format: "value CONTAINS %@", words), in: app)
+  }
+
+  @MainActor
+  private func inputs(matching value: NSPredicate, in app: XCUIApplication) -> XCUIElementQuery {
+    let kind = NSPredicate(
+      format: "elementType == %d OR elementType == %d", XCUIElement.ElementType.textField.rawValue,
+      XCUIElement.ElementType.textView.rawValue)
+    return app.descendants(matching: .any).matching(NSCompoundPredicate(andPredicateWithSubpredicates: [value, kind]))
   }
 
   /// The audit is of the app's screen, not of the system keyboard. Once the keyboard has shown in a launch, it

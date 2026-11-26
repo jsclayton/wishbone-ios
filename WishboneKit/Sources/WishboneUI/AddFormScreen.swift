@@ -2,13 +2,15 @@ import SwiftUI
 import WishboneAPI
 import WishboneSession
 
-/// The add form: the user checks what the search found, changes it, and adds the item to their primary list.
-/// Nothing is saved until Add. See `docs/screens/add-form.md`, and "What the add form holds" in `docs/spec.md`.
+/// The add form: the user checks what the search found, changes it, and adds the item to the list in Add to, or to
+/// the list that the form is fixed to. Nothing is saved until Add. See `docs/screens/add-form.md`, and "What the add
+/// form holds" and "Which list" in `docs/spec.md`.
 ///
 /// The form keeps its draft as its own state, with the add's `Idempotency-Key`, so a second Add after a lost
-/// answer adds the item once. It shows no claim state.
+/// answer adds the item once. It shows no claim state. Add to offers only the lists that the user can edit, and the
+/// duplicate hint reads only what the user sees on the list.
 ///
-/// Add to, the duplicate hint, and a photo of the user's own come later.
+/// A photo of the user's own comes later.
 ///
 /// **Provisional.** Plain default: a system form, in the order of the screen's spec. Add is in the toolbar.
 struct AddFormScreen: View {
@@ -72,6 +74,11 @@ struct AddFormScreen: View {
           }
         }
       }
+      if let addTo = session.addTo(for: draft) {
+        Section {
+          AddToPicker(addTo: addTo, selection: listChoice)
+        }
+      }
       if !draft.options.isEmpty {
         Section {
           ForEach($draft.options) { $option in
@@ -96,9 +103,17 @@ struct AddFormScreen: View {
           Text("Your notes were cut to 2000 characters.", bundle: #bundle)
         }
       }
+      if let hint = session.duplicateHint(for: draft) {
+        Section {
+          DuplicateHintRow(hint: hint, session: session)
+        }
+      }
     }
     .navigationTitle(Text("Add item", bundle: #bundle))
     .navigationBarBackButtonHidden(hasChanges)
+    // In a list's sheet, a swipe down doesn't close the sheet while the form has typed changes: Back asks first.
+    // On the Add screen's place, there is no sheet, and this does nothing.
+    .interactiveDismissDisabled(hasChanges)
     .disabled(isAdding)
     .toolbar {
       if hasChanges {
@@ -147,7 +162,7 @@ struct AddFormScreen: View {
     .disabled(!draft.hasTitle || isAdding)
     .accessibilityHint(
       draft.hasTitle
-        ? Text("Adds the item to your list.", bundle: #bundle) : Text("Give the item a title.", bundle: #bundle))
+        ? Text("Adds the item to the list.", bundle: #bundle) : Text("Give the item a title.", bundle: #bundle))
   }
 
   /// Price and Up to, side by side, and stacked at the largest text sizes.
@@ -203,6 +218,15 @@ struct AddFormScreen: View {
       }
       draft.title = title.filter { !$0.isNewline }
       add()
+    }
+  }
+
+  /// The list in Add to: the one picked, or the primary list, where every form starts.
+  private var listChoice: Binding<String> {
+    Binding {
+      draft.listID ?? session.primaryList?.id ?? ""
+    } set: { id in
+      draft.listID = id
     }
   }
 
@@ -262,6 +286,63 @@ struct AddFormScreen: View {
         if let words = problemWords ?? noteWords { AccessibilityNotification.Announcement(words).post() }
       }
     }
+  }
+}
+
+/// Add to: pushes a picker of the lists that the user can edit, in the Lists tab's order, with a child's lists under
+/// the child's name. The row reads the list, with its recipients' names when the user is not one.
+private struct AddToPicker: View {
+  let addTo: AddTo
+  @Binding var selection: String
+
+  var body: some View {
+    Picker(selection: $selection) {
+      ForEach(addTo.yourLists) { target in
+        AddTargetName(target: target).tag(target.id)
+      }
+      ForEach(addTo.children) { part in
+        Section {
+          ForEach(part.targets) { target in
+            AddTargetName(target: target).tag(target.id)
+          }
+        } header: {
+          Text(part.child.name)
+        }
+      }
+    } label: {
+      Text("Add to", bundle: #bundle)
+    }
+    #if os(iOS)
+      .pickerStyle(.navigationLink)
+    #endif
+  }
+}
+
+/// "Already on this list: {title}". On the Add screen it pushes the item's page over the form, so Back returns to
+/// the form with its changes. In a sheet it is text, because a sheet never opens a second sheet. It never blocks the
+/// add.
+private struct DuplicateHintRow: View {
+  let hint: DuplicateHint
+  let session: SessionModel
+
+  var body: some View {
+    if hint.opensItem {
+      // The page is pushed by view, not by value. The Add screen pushes the form by view, and the stack keeps the
+      // pages pushed by view on top of its path, so a page pushed by value would go under the form. The item's
+      // page has no window pages of its own here, and a link on it that pushes by value goes under the form too.
+      NavigationLink {
+        PageScreen(page: .item(id: hint.itemID), session: session, pages: .constant([]))
+      } label: {
+        words
+      }
+    } else {
+      words
+    }
+  }
+
+  private var words: some View {
+    Text("Already on this list: \(hint.title)", bundle: #bundle)
+      .fixedSize(horizontal: false, vertical: true)
   }
 }
 

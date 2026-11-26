@@ -13,10 +13,10 @@ The start of adding an item: paste a link, type what you want, or use a photo. T
 
 ## Content
 
-1. The search field.
-2. The "Added {title} to {list}" row, after an add, until the user leaves the screen.
-3. The three ways in: **Paste**, **Take a photo**, and **Choose a photo**.
-4. In the sheet, a line that names the list.
+1. In the sheet, a line that names the list.
+2. The search field.
+3. The "Added {title} to {list}" row, after an add, until the user leaves the screen.
+4. The three ways in: **Paste**, **Take a photo**, and **Choose a photo**.
 
 **Provisional.** Plain default: the system search field, and the three ways in as rows of a system list under it.
 
@@ -34,6 +34,7 @@ The start of adding an item: paste a link, type what you want, or use a photo. T
 - **Narrow:** the field takes the tab bar's place, above the keyboard.
 - **Wide:** the field is in the toolbar, and the screen is a place in the sidebar.
 - **Several windows:** each window has its own Add screen and its own text.
+- **The sheet:** a swipe down closes it, but not while the pushed form has typed changes. Then Back asks "Discard this item?", as it does on the place.
 - **A drop target:** the screen takes one link, one text, or one image from another app, and opens the form filled in. A drop of several is refused (see [A drop from another app starts an add](../spec.md#a-drop-from-another-app-starts-an-add)). It takes no item from inside the app.
 
 ## Actions
@@ -65,6 +66,7 @@ Decided in the spec: the prompt "Paste a link or type what you want", "Paste", "
 
 ## Accessibility
 
+- In the sheet, the line that names the list is the first element.
 - The field's label is its prompt. The system's magnifying glass is decoration.
 - The "Added" row is announced when it appears.
 - The progress line is announced, and Fill it in myself is the next element.
