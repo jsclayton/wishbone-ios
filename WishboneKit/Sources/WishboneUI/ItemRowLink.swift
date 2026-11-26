@@ -2,9 +2,11 @@ import SwiftUI
 import WishboneSession
 
 /// An item's row that opens the item's page, on a list's page and on a user's page. Its context menu has I'll get
-/// this for a giver, from `can_claim` while they have no open gift on the item, and Copy link when the item has a
-/// store link. VoiceOver offers Open, I'll get this and Copy link as the row's actions. See Actions and
-/// Accessibility in `docs/screens/list.md`.
+/// this for a giver, from `can_claim` while they have no open gift on the item, Copy link when the item has a store
+/// link, and Edit and Delete from the item's `can_edit` and `can_delete`. VoiceOver offers Open, I'll get this, Copy
+/// link, Edit and Delete as the row's actions. See Actions and Accessibility in `docs/screens/list.md`.
+///
+/// Edit opens the Edit item sheet over the page, and Delete asks first, as on the item's page.
 ///
 /// A claim from the row waits for the server, as on the item's page. A claim that made no gift says why under the
 /// row's text, and the result is announced.
@@ -22,9 +24,16 @@ struct ItemRowLink: View {
   @State private var said: String?
   @State private var granted = 0
 
+  /// Whether the Edit item sheet shows.
+  @State private var isEditing = false
+
+  /// Whether the confirmation of Delete shows.
+  @State private var isConfirmingDelete = false
+
   var body: some View {
     let copyLink = session.copyLink(ofItem: item.id)
     let offersClaim = session.offersClaim(onItem: item.id) && !isClaiming
+    let row = session.item(id: item.id)
     NavigationLink(value: Page.item(id: item.id)) {
       VStack(alignment: .leading, spacing: 4) {
         ItemRowView(item: item, tileUserID: tileUserID)
@@ -43,6 +52,12 @@ struct ItemRowLink: View {
       if let copyLink {
         CopyLinkButton(url: copyLink)
       }
+      if row?.canEdit == true {
+        editButton
+      }
+      if row?.canDelete == true {
+        deleteButton
+      }
     }
     .accessibilityAction(named: Text("Open", bundle: #bundle)) {
       pages.append(.item(id: item.id))
@@ -54,8 +69,58 @@ struct ItemRowLink: View {
       if let copyLink {
         CopyLinkButton(url: copyLink)
       }
+      if row?.canEdit == true {
+        editButton
+      }
+      if row?.canDelete == true {
+        deleteButton
+      }
     }
     .sensoryFeedback(.success, trigger: granted)
+    .sheet(isPresented: $isEditing) {
+      if let row {
+        EditItemSheet(item: row, session: session)
+      }
+    }
+    .alert(DeleteItemWords.title(item: item.row.title), isPresented: $isConfirmingDelete) {
+      Button(role: .destructive) {
+        Task { await session.deleteItem(item.id) }
+      } label: {
+        DeleteItemWords.action(item: item.row.title)
+      }
+      Button(role: .cancel) {
+      } label: {
+        Text("Cancel", bundle: #bundle)
+      }
+    } message: {
+      DeleteItemWords.message
+    }
+  }
+
+  private var editButton: some View {
+    Button {
+      isEditing = true
+    } label: {
+      Label {
+        Text("Edit", bundle: #bundle)
+      } icon: {
+        Image(systemName: "pencil")
+      }
+    }
+  }
+
+  /// Delete: it asks first. Its label reads the action in full.
+  private var deleteButton: some View {
+    Button(role: .destructive) {
+      isConfirmingDelete = true
+    } label: {
+      Label {
+        Text("Delete", bundle: #bundle)
+      } icon: {
+        Image(systemName: "trash")
+      }
+    }
+    .accessibilityLabel(DeleteItemWords.action(item: item.row.title))
   }
 
   private var claimButton: some View {

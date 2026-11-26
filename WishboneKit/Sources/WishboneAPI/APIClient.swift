@@ -376,6 +376,19 @@ public struct APIClient: Sendable {
     _ = try await load(.deleteList(id, key: key))
   }
 
+  /// `PATCH /items/{id}`: a merge patch of only the fields that change, with no `If-Match`. `key` is the unsent
+  /// change's own `Idempotency-Key`. Gives back the item, with the version that the answer carried. More than 5
+  /// images is a 422 `too_many_images`.
+  public func updateItem(_ id: String, _ changes: ItemChanges, key: String) async throws(APIError) -> Versioned<Item> {
+    try await versioned(.updateItem(id, changes, key: key))
+  }
+
+  /// `DELETE /items/{id}`: deletes the item, with no `If-Match`. `key` is the unsent change's own `Idempotency-Key`.
+  /// The items after it close the gap. It never refuses because of the item's gifts.
+  public func deleteItem(_ id: String, key: String) async throws(APIError) {
+    _ = try await load(.deleteItem(id, key: key))
+  }
+
   /// `POST /invitations/{id}/accept`: the invited user, or their parent, accepts, with no body. `key` is the unsent
   /// change's own `Idempotency-Key`. The user becomes a recipient, and the answer is the list, with the version that
   /// it carried. While the invited user is deactivated, it is a 403 `user_deactivated`.

@@ -44,6 +44,8 @@ public enum Route: String, Sendable, CaseIterable {
   case uploadImage
   case search
   case createItem
+  case updateItem
+  case deleteItem
 
   public var method: String {
     switch self {
@@ -54,8 +56,9 @@ public enum Route: String, Sendable, CaseIterable {
     case .redeemLoginLink, .confirmProfile, .uploadImage, .blockStore, .claim, .search, .createItem, .acknowledgeGift,
       .restoreGift, .acceptInvitation:
       "POST"
-    case .updateMe, .updateGift, .updateList: "PATCH"
-    case .revokeCurrentSession, .unblockStore, .leaveList, .unclaimGift, .deleteList, .declineInvitation: "DELETE"
+    case .updateMe, .updateGift, .updateList, .updateItem: "PATCH"
+    case .revokeCurrentSession, .unblockStore, .leaveList, .unclaimGift, .deleteList, .declineInvitation, .deleteItem:
+      "DELETE"
     }
   }
 
@@ -85,7 +88,7 @@ public enum Route: String, Sendable, CaseIterable {
     case .listRecipients: "/lists/{id}/recipients"
     case .leaveList: "/lists/{id}/recipients/{user_id}"
     case .listItems, .createItem: "/lists/{id}/items"
-    case .item: "/items/{id}"
+    case .item, .updateItem, .deleteItem: "/items/{id}"
     case .invitations: "/invitations"
     case .invitation, .declineInvitation: "/invitations/{id}"
     case .acceptInvitation: "/invitations/{id}/accept"
@@ -112,7 +115,8 @@ public enum Route: String, Sendable, CaseIterable {
       .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation, .gifts, .gift,
       .updateGift, .unclaimGift, .acknowledgeGift, .restoreGift, .claim, .blockedStores, .blockStore, .unblockStore,
       .leaveList, .revokeCurrentSession, .confirmProfile,
-      .uploadImage, .me, .search, .createItem, .updateList, .deleteList, .acceptInvitation, .declineInvitation:
+      .uploadImage, .me, .search, .createItem, .updateList, .deleteList, .acceptInvitation, .declineInvitation,
+      .updateItem, .deleteItem:
       false
     }
   }
@@ -134,7 +138,7 @@ public enum Route: String, Sendable, CaseIterable {
       .updateGift, .unclaimGift, .acknowledgeGift, .restoreGift, .claim, .blockStore, .unblockStore, .leaveList,
       .revokeCurrentSession,
       .confirmProfile, .uploadImage, .me,
-      .search, .createItem, .updateList, .deleteList, .acceptInvitation, .declineInvitation:
+      .search, .createItem, .updateList, .deleteList, .acceptInvitation, .declineInvitation, .updateItem, .deleteItem:
       []
     }
   }
@@ -164,7 +168,7 @@ public enum Route: String, Sendable, CaseIterable {
     case .search, .createItem, .uploadImage: ["Idempotency-Key"]
     // An unsent change keeps its key, so a resend after a lost connection, or in a later sync, is the same write.
     case .updateGift, .unclaimGift, .acknowledgeGift, .updateList, .deleteList, .acceptInvitation,
-      .declineInvitation:
+      .declineInvitation, .updateItem, .deleteItem:
       ["Idempotency-Key"]
     case .health, .redeemLoginLink, .users, .user, .groups, .group, .groupUsers, .groupGroups, .occasions, .occasion,
       .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation, .gifts, .gift,
@@ -182,6 +186,7 @@ public enum Route: String, Sendable, CaseIterable {
     case .claim: fields(of: ClaimBody.CodingKeys.self)
     case .updateGift: fields(of: GiftChanges.CodingKeys.self)
     case .updateList: fields(of: ListChanges.CodingKeys.self)
+    case .updateItem: fields(of: ItemChanges.CodingKeys.self)
     case .acknowledgeGift: fields(of: AcknowledgeBody.CodingKeys.self)
     // A search sends a form, not JSON: its one field is the text, or the photo.
     case .search: ["text", "image"]
@@ -192,7 +197,7 @@ public enum Route: String, Sendable, CaseIterable {
     case .health, .versions, .users, .user, .groups, .group, .groupUsers, .groupGroups, .occasions, .occasion,
       .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation, .gifts, .gift,
       .blockedStores, .unblockStore, .leaveList, .revokeCurrentSession, .confirmProfile, .me, .unclaimGift,
-      .restoreGift, .deleteList, .acceptInvitation, .declineInvitation:
+      .restoreGift, .deleteList, .acceptInvitation, .declineInvitation, .deleteItem:
       []
     }
   }
@@ -217,7 +222,7 @@ public enum Route: String, Sendable, CaseIterable {
     case .list, .updateList, .acceptInvitation: ListResource.fields
     case .listRecipients: Page<VersionedRow<Recipient>>.fields
     case .listItems: Page<VersionedRow<Item>>.fields
-    case .item, .createItem: Item.fields
+    case .item, .createItem, .updateItem: Item.fields
     case .search: SearchBody.fields
     case .invitations: Page<VersionedRow<Invitation>>.fields
     case .invitation: Invitation.fields
@@ -226,7 +231,7 @@ public enum Route: String, Sendable, CaseIterable {
     case .blockedStores: Page<VersionedRow<BlockedStore>>.fields
     case .blockStore: BlockedStore.fields
     case .revokeCurrentSession, .unblockStore, .leaveList, .unclaimGift, .restoreGift, .deleteList,
-      .declineInvitation:
+      .declineInvitation, .deleteItem:
       NoContent.fields
     }
   }
@@ -456,6 +461,12 @@ extension Endpoint where Response == Item {
   static func item(_ id: String) -> Endpoint {
     Endpoint(route: .item, parameters: ["id": id])
   }
+
+  /// A merge patch of the item, with the unsent change's own key, so that a resend of the change is the same write.
+  /// It sends no `If-Match`.
+  static func updateItem(_ id: String, _ changes: ItemChanges, key: String) -> Endpoint {
+    Endpoint(route: .updateItem, parameters: ["id": id], body: changes, idempotencyKey: key)
+  }
 }
 
 extension Endpoint where Response == Invitation {
@@ -612,6 +623,11 @@ extension Endpoint where Response == NoContent {
   /// Declines the invitation, with the unsent change's own key. It sends no `If-Match`.
   static func declineInvitation(_ id: String, key: String) -> Endpoint {
     Endpoint(route: .declineInvitation, parameters: ["id": id], idempotencyKey: key)
+  }
+
+  /// Deletes the item, with the unsent change's own key. It sends no `If-Match`.
+  static func deleteItem(_ id: String, key: String) -> Endpoint {
+    Endpoint(route: .deleteItem, parameters: ["id": id], idempotencyKey: key)
   }
 }
 

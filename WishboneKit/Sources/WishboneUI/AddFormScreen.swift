@@ -30,7 +30,6 @@ struct AddFormScreen: View {
   @State private var isConfirmingDiscard = false
 
   @Environment(\.dismiss) private var dismiss
-  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
   init(session: SessionModel, draft: ItemDraft, didAdd: @escaping (AddedItem) -> Void) {
     self.session = session
@@ -70,7 +69,7 @@ struct AddFormScreen: View {
         }
       }
       Section {
-        priceFields
+        PriceFields(priceMinor: $draft.priceMinor, topPriceMinor: $draft.topPriceMinor, currency: draft.currency)
         if let link = draft.storeLink {
           LabeledContent {
             Text(link.store)
@@ -168,48 +167,6 @@ struct AddFormScreen: View {
     .accessibilityHint(
       draft.hasTitle
         ? Text("Adds the item to the list.", bundle: #bundle) : Text("Give the item a title.", bundle: #bundle))
-  }
-
-  /// Price and Up to, side by side, and stacked at the largest text sizes.
-  @ViewBuilder private var priceFields: some View {
-    let layout =
-      dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading)) : AnyLayout(HStackLayout())
-    layout {
-      priceField(\.priceMinor, label: Text("Price", bundle: #bundle))
-      priceField(\.topPriceMinor, label: Text("Up to", bundle: #bundle))
-    }
-  }
-
-  private func priceField(_ field: WritableKeyPath<ItemDraft, Int?>, label: Text) -> some View {
-    TextField(value: price(field), format: .currency(code: draft.currency)) {
-      label
-    }
-    #if os(iOS)
-      .keyboardType(.decimalPad)
-    #endif
-  }
-
-  /// A price of the draft in the currency's main unit, for a field: "24.99" for 2499 cents.
-  private func price(_ field: WritableKeyPath<ItemDraft, Int?>) -> Binding<Decimal?> {
-    let unit = Decimal(minorUnit)
-    return Binding {
-      draft[keyPath: field].map { Decimal($0) / unit }
-    } set: { value in
-      draft[keyPath: field] = value.map { value in
-        var minor = value * unit
-        var rounded = Decimal()
-        NSDecimalRound(&rounded, &minor, 0, .plain)
-        return NSDecimalNumber(decimal: rounded).intValue
-      }
-    }
-  }
-
-  /// How many minor units the draft's currency has in its main unit: 100 for USD, 1 for JPY.
-  private var minorUnit: Int {
-    let formatter = NumberFormatter()
-    formatter.numberStyle = .currency
-    formatter.currencyCode = draft.currency
-    return (0..<formatter.maximumFractionDigits).reduce(1) { value, _ in value * 10 }
   }
 
   /// The title, on one line: Return adds the item.

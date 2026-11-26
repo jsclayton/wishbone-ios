@@ -34,14 +34,18 @@ public enum LateRefusalWords {
       return String(
         localized: "Your photo for \(refusal.title): \(reason)", bundle: #bundle,
         comment: "A late refusal of the photo of an item added by hand: the item's title, then why it wasn't saved")
-    case .editList:
+    case .editList, .editItem:
       return String(
         localized: "Editing \(refusal.title): \(reason)", bundle: #bundle,
-        comment: "A late refusal of Edit list: the list's name, then why the change wasn't saved")
-    case .deleteList:
+        comment:
+          "A late refusal of Edit list or Edit item: the list's name or the item's title, then why the change wasn't saved"
+      )
+    case .deleteList, .deleteItem:
       return String(
         localized: "Deleting \(refusal.title): \(reason)", bundle: #bundle,
-        comment: "A late refusal of Delete list: the list's name, then why the change wasn't saved")
+        comment:
+          "A late refusal of Delete list or Delete item: the list's name or the item's title, then why the change wasn't saved"
+      )
     case .acceptInvitation:
       return String(
         localized: "Accepting the invitation to \(refusal.title): \(reason)", bundle: #bundle,

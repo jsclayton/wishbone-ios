@@ -30,8 +30,14 @@ extension SessionModel {
   /// Saves an unsent change in the journal, publishes it, so every window shows it at once, and starts a sync,
   /// which sends it. It doesn't wait for the sync.
   func record(_ action: UnsentChange.Action, title: String) async {
+    await record([LocalDatabase.NewChange(action, title: title)])
+  }
+
+  /// Saves the unsent changes in the journal, in order, in one change, publishes them, so every window shows them
+  /// at once, and starts a sync, which sends them. It doesn't wait for the sync.
+  func record(_ changes: [LocalDatabase.NewChange]) async {
     do {
-      try await database.record(action, title: title)
+      try await database.record(changes)
     } catch {
       Log.fault(.session, "The journal can't take an unsent change.", detail: "\(error)")
       return
@@ -131,7 +137,8 @@ extension SessionModel {
   }
 
   /// Sends one unsent change, and gives the server's answer. An unclaim, a delete and a decline have none. An
-  /// upload's answer is the image, and a create's is the item, each by the server's ID.
+  /// upload's answer is the image, and a create's is the item, each by the server's ID. An item's edit has the item
+  /// as its answer.
   ///
   /// An unclaim of a gift that is gone (a 404) is done: it was unclaimed, merged, or restored from elsewhere, and the
   /// giver no longer has it, which is what they asked for. So the gift leaves the copy, and nothing is said.
@@ -168,6 +175,11 @@ extension SessionModel {
       return .image(image)
     case .createItem(let item):
       return .item(try await client.createItem(item.newItem, onList: item.listID, key: change.key))
+    case .editItem(let id, let changes):
+      return .item(try await client.updateItem(id, changes.sent, key: change.key))
+    case .deleteItem(let id, _):
+      try await client.deleteItem(id, key: change.key)
+      return .none
     }
   }
 

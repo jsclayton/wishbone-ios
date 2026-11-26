@@ -6,16 +6,25 @@ import WishboneSession
 /// wanted, the notes, the store links, and "Added by {name}". See `docs/screens/item.md`.
 ///
 /// Claim state shows only as the server sends it, and the page never says who else claimed. For a giver, I'll get
-/// this claims one at once, and waits for the server: see `ClaimSection`. The edit controls come later.
+/// this claims one at once, and waits for the server: see `ClaimSection`. For a user who can edit, Edit opens the
+/// Edit item sheet, and Delete asks first. Each is an unsent change: it shows at once, in every window. After a
+/// delete, the page closes in this window, and any other window that shows it shows the "not found" page.
 ///
 /// **Provisional.** Plain default: a system list, one column at every size. The images are a row that pages
-/// sideways, the title is large text under it, and each part is a section. Copy link is in the toolbar's menu.
+/// sideways, the title is large text under it, and each part is a section. Edit is a toolbar button, and Copy link
+/// and Delete are in the toolbar's menu. The Delete confirmation is an alert.
 struct ItemPageScreen: View {
   let page: ItemPage
   let session: SessionModel
 
   /// The window's pages on this tab: the list's name and a name push their pages.
   @Binding var pages: [Page]
+
+  /// Whether the Edit item sheet shows.
+  @State private var isEditing = false
+
+  /// Whether the confirmation of Delete shows.
+  @State private var isConfirmingDelete = false
 
   var body: some View {
     List {
@@ -30,15 +39,10 @@ struct ItemPageScreen: View {
         }
         ForLine(recipients: page.recipients) { pages.append(.user(id: $0)) }
       }
-      if page.stillWanted != nil || page.wanted != nil {
+      if let stillWanted = page.stillWanted {
         Section {
-          if let stillWanted = page.stillWanted {
-            StillWantedLine(stillWanted: stillWanted)
-            ClaimSection(page: page, session: session)
-          }
-          if let wanted = page.wanted {
-            WantedLine(wanted: wanted)
-          }
+          StillWantedLine(stillWanted: stillWanted)
+          ClaimSection(page: page, session: session)
         }
       }
       if let notes = page.item.notes, !notes.allSatisfy(\.isWhitespace) {
@@ -59,17 +63,62 @@ struct ItemPageScreen: View {
           AddedByLine(user: addedBy)
         }
       }
+      // For a user who can edit: how many are wanted, after "Added by", as the screen's spec orders it.
+      if let wanted = page.wanted {
+        Section {
+          WantedLine(wanted: wanted)
+        }
+      }
     }
     .cantReachLine(of: session)
+    .sheet(isPresented: $isEditing) {
+      EditItemSheet(item: page.item, session: session)
+    }
+    .alert(DeleteItemWords.title(item: page.item.title), isPresented: $isConfirmingDelete) {
+      Button(role: .destructive) {
+        Task { await delete() }
+      } label: {
+        DeleteItemWords.action(item: page.item.title)
+      }
+      Button(role: .cancel) {
+      } label: {
+        Text("Cancel", bundle: #bundle)
+      }
+    } message: {
+      DeleteItemWords.message
+    }
     .navigationTitle(Text(page.item.title))
     #if os(iOS)
       .navigationBarTitleDisplayMode(.inline)
     #endif
     .toolbar {
-      if let copyLink = page.copyLink {
+      if page.item.canEdit {
+        ToolbarItem(placement: .primaryAction) {
+          Button {
+            isEditing = true
+          } label: {
+            Text("Edit", bundle: #bundle)
+          }
+        }
+      }
+      if page.copyLink != nil || page.item.canDelete {
         ToolbarItem(placement: .primaryAction) {
           Menu {
-            CopyLinkButton(url: copyLink)
+            if let copyLink = page.copyLink {
+              CopyLinkButton(url: copyLink)
+            }
+            if page.item.canDelete {
+              Button(role: .destructive) {
+                isConfirmingDelete = true
+              } label: {
+                Label {
+                  Text("Delete", bundle: #bundle)
+                } icon: {
+                  Image(systemName: "trash")
+                }
+              }
+              .accessibilityLabel(DeleteItemWords.action(item: page.item.title))
+            }
           } label: {
             Label {
               Text("More", bundle: #bundle)
@@ -80,6 +129,41 @@ struct ItemPageScreen: View {
         }
       }
     }
+  }
+}
+
+extension ItemPageScreen {
+  /// Deletes the item, as an unsent change. It leaves the copy at once, and the page closes in this window, which
+  /// shows what was under it. Every other window that shows the page shows the "not found" page.
+  private func delete() async {
+    let id = page.item.id
+    await session.deleteItem(id)
+    guard session.item(id: id) == nil,
+      let index = pages.lastIndex(where: { shown in
+        if case .item(let shownID) = shown { session.serverID(of: shownID) == id } else { false }
+      })
+    else { return }
+    pages.removeSubrange(index...)
+  }
+}
+
+/// The words of Delete, on an item's page and in its row's context menu: the confirmation, and its button, which the
+/// menu item's label reads too. Nothing here depends on the item's gifts, because that would show a recipient that
+/// something is claimed.
+enum DeleteItemWords {
+  /// What the action does, named in full: "Delete Kite".
+  static func action(item: String) -> Text {
+    Text("Delete \(item)", bundle: #bundle)
+  }
+
+  /// The confirmation's title.
+  static func title(item: String) -> Text {
+    Text("Delete \(item)?", bundle: #bundle)
+  }
+
+  /// The confirmation's message.
+  static var message: Text {
+    Text("This can't be undone.", bundle: #bundle)
   }
 }
 
