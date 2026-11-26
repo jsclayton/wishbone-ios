@@ -86,6 +86,8 @@ struct AddScreen: View {
         } label: {
           Label {
             Text("Choose a photo", bundle: #bundle)
+              // The words wrap to as many lines as they need, so none is cut short.
+              .fixedSize(horizontal: false, vertical: true)
           } icon: {
             Image(systemName: "photo.on.rectangle")
           }
@@ -235,6 +237,8 @@ struct AddScreen: View {
         } label: {
           Label {
             Text("Take a photo", bundle: #bundle)
+              // The words wrap to as many lines as they need, so none is cut short.
+              .fixedSize(horizontal: false, vertical: true)
           } icon: {
             Image(systemName: "camera")
           }
