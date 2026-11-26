@@ -300,12 +300,9 @@ jobs:
           path: ~/Library/Caches/org.swift.swiftpm
           key: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Package.resolved') }}
           restore-keys: swiftpm-${{ runner.os }}-${{ runner.arch }}-
-      # The shard waits for the runner to settle after the simulator's first
-      # boot before its first test (settleVariable in scripts/gate/simulator.mjs).
       - name: Gate, the shard ${{ matrix.shard }}
         env:
           SHARD: ${{ matrix.shard }}
-          WISHBONE_GATE_SETTLE: "1"
         run: node scripts/gate/main.mjs "--part=$SHARD"
       # The part's record, for the Gate result job, which adds the parts up.
       - if: always() && hashFiles('build/gate/part-*.json') != ''

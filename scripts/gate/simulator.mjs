@@ -695,55 +695,6 @@ export async function startSimulator({ boot, hold, putInDefault, keepLogs, say =
 }
 
 /**
- * Whether the simulator step waits for the runner to settle before its first test: `WISHBONE_GATE_SETTLE=1`, which
- * CI's journeys jobs set. They start the simulator's first boot while they set up (boot.mjs), so the boot is done
- * when the step starts, but the simulator's first-boot work, hundreds of its own processes, isn't. In the one job of
- * the old gate, the step's start waited about 6 minutes for that work, and the journeys ran after it. A Mac that
- * other checkouts share is never idle, so `just gate` doesn't wait.
- */
-export const settleVariable = 'WISHBONE_GATE_SETTLE';
-
-/** The share of the runner's CPU that must be idle, in each of `settleSamples` samples in a row, to be settled. */
-export const settledIdle = 60;
-
-/** How many samples in a row must be idle enough. */
-export const settleSamples = 3;
-
-/** The longest wait for the runner to settle. After it, the step goes on, and its line says so. */
-export const settleLimitMs = 5 * 60_000;
-
-/** The idle share of the CPU in what `top -l 2 -n 0 -s <seconds>` prints: the last `CPU usage` line, or null. */
-export function idleShare(printed) {
-  const lines = String(printed).split('\n').filter((line) => line.startsWith('CPU usage'));
-  const match = /([\d.]+)% idle/.exec(lines.at(-1) ?? '');
-  return match === null ? null : Number(match[1]);
-}
-
-/**
- * Waits until the runner's CPU is at least `idle`% idle in `samples` samples in a row, or until `limitMs`.
- * `sample()` resolves with the idle share over a few seconds. Resolves with `{ settled, ms, idle }`: whether it
- * settled, how long it waited, and the last idle share.
- */
-export async function waitToSettle({ sample, idle = settledIdle, samples = settleSamples, limitMs = settleLimitMs, now = Date.now }) {
-  const started = now();
-  let inRow = 0;
-  let last = null;
-  while (now() - started < limitMs) {
-    last = await sample();
-    inRow = last !== null && last >= idle ? inRow + 1 : 0;
-    if (inRow >= samples) return { settled: true, ms: now() - started, idle: last };
-  }
-  return { settled: false, ms: now() - started, idle: last };
-}
-
-/** The runner's idle share over 5 seconds, from `top`, or null when `top` gives none. */
-function sampleIdle() {
-  return new Promise((resolve) => {
-    execFile('top', ['-l', '2', '-n', '0', '-s', '5'], { encoding: 'utf8', timeout: 30_000 }, (error, stdout) => resolve(error === null ? idleShare(stdout) : null));
-  });
-}
-
-/**
  * Boots the gate's simulator, holds its status bar still, and puts it in the default settings, with a line for
  * each part and its time (`startSimulator`). The simulator's logs at a shutdown go in `directory`. Returns
  * `{ simulator, applier }`: the simulator's ID, and the `settingsApplier` that knows its settings.
@@ -764,15 +715,6 @@ export async function prepareSimulator({ directory, say = console.log, relative 
     keepLogs: (sighting) => relative(keepStartLogs({ directory, simulator, sighting })),
     say,
   });
-  if (process.env[settleVariable] === '1') {
-    const { settled, ms, idle } = await waitToSettle({ sample: sampleIdle });
-    const share = idle === null ? 'unread' : `${Math.round(idle)}%`;
-    say(
-      settled
-        ? `✓ The runner settled after the simulator's boot: ${settleSamples} samples in a row at least ${settledIdle}% idle (${duration(ms)})`
-        : `  The runner didn't settle after the simulator's boot within ${duration(settleLimitMs)}: the last sample was ${share} idle. The journeys start anyway.`,
-    );
-  }
   return { simulator, applier };
 }
 

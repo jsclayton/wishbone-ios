@@ -23,7 +23,6 @@ import {
   keepStartLogs,
   launchFlake,
   launchFlakeIn,
-  idleShare,
   parseArguments,
   pickDevice,
   readinessAnswerLimitMs,
@@ -32,7 +31,6 @@ import {
   resendFlake,
   resendLines,
   resultBundles,
-  waitToSettle,
   runAgainOnLaunchFlake,
   screenshotRetryLines,
   screenshotTimeOutFlake,
@@ -47,7 +45,6 @@ import {
   simctlWithLimit,
   startReboots,
   startSettingsHelper,
-  settleVariable,
   startSimulator,
 } from './simulator.mjs';
 
@@ -1027,40 +1024,4 @@ test("the simulator's logs at a shutdown go where CI uploads a first try, and a 
   assert.match(text, /SIM state Booted -> Shutdown/);
   assert.ok(!text.includes('old line\nold line\nold line\nold line\nold line'), 'it keeps only the end of a long log');
   assert.match(text, /system\.log: not there/);
-});
-
-test("the runner's idle share is read from top's last CPU line", () => {
-  const printed = 'Processes: 1\nCPU usage: 50.0% user, 20.0% sys, 30.0% idle\nCPU usage: 10.5% user, 4.25% sys, 85.25% idle\n';
-  assert.equal(idleShare(printed), 85.25);
-  assert.equal(idleShare('no CPU line'), null);
-});
-
-test('the wait to settle ends after enough idle samples in a row, and a busy sample starts the count again', async () => {
-  let clock = 0;
-  const shares = [80, 70, 20, 65, 61, 90];
-  const sample = async () => {
-    clock += 6_000;
-    return shares.shift();
-  };
-  const result = await waitToSettle({ sample, idle: 60, samples: 3, limitMs: 60_000, now: () => clock });
-  assert.deepEqual(result, { settled: true, ms: 36_000, idle: 90 });
-});
-
-test("the wait to settle gives up at its limit, with the last share, and an unread sample isn't idle", async () => {
-  let clock = 0;
-  const sample = async () => {
-    clock += 10_000;
-    return clock % 20_000 === 0 ? null : 99;
-  };
-  assert.deepEqual(await waitToSettle({ sample, idle: 60, samples: 2, limitMs: 50_000, now: () => clock }), { settled: false, ms: 50_000, idle: 99 });
-});
-
-test('only CI waits for the runner to settle: the journeys jobs set the variable, and `just gate` does not', () => {
-  const ci = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
-  const journeys = ci.slice(ci.indexOf('\n  gate-journeys:\n'), ci.indexOf('\n  gate-result:\n'));
-  assert.match(journeys, new RegExp(`^\\s+${settleVariable}: "1"$`, 'm'));
-  const build = ci.slice(ci.indexOf('\n  gate-build:\n'), ci.indexOf('\n  gate-journeys:\n'));
-  assert.ok(!build.includes(settleVariable));
-  const justfile = readFileSync(new URL('../../justfile', import.meta.url), 'utf8');
-  assert.ok(!justfile.includes(settleVariable));
 });
