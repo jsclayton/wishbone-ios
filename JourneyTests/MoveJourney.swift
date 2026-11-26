@@ -69,8 +69,12 @@ nonisolated final class MoveJourney: JourneyTestCase {
     let target = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", toys.name)).firstMatch
     XCTAssertTrue(target.waitForExistence(timeout: 10), "The picker has no row for Emma's other list.")
     XCTAssertTrue(target.label.contains(emma.name), "The picker's row doesn't name the list's recipient.")
+    // The item's page under the sheet has a button with the list's name, so the check is for a picker's row: a
+    // child's list there carries the child's name.
     XCTAssertFalse(
-      app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", primary.name)).firstMatch.exists,
+      app.buttons.matching(
+        NSPredicate(format: "label BEGINSWITH %@ AND label CONTAINS %@", primary.name, emma.name)
+      ).firstMatch.exists,
       "The picker offers the list that the item is on.")
     try await Audit.run(on: app, showing: "the Move to… picker", in: self)
 
