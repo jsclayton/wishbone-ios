@@ -21,6 +21,8 @@ public enum LateRefusalWords {
       switch (refusal.refusal.code, refusal.action) {
       case (.listHasOtherRecipients, _): ErrorWords.otherRecipients(of: refusal.title)
       case (.cannotEditTargetList, .moveItem(let move)): ErrorWords.cannotAddTo(move.toListName)
+      // A list for a child whom the admin deactivated meanwhile names the child.
+      case (.userDeactivated, .createList(let list)): ErrorWords.deactivated(list.recipientName)
       // An item filled in by hand keeps the link that the user gave as its store link.
       case (.storeBlocked, .createItem(let item)) where !item.storeLinks.isEmpty:
         ErrorWords.blocked(item.storeLinks[0].store)
@@ -36,6 +38,10 @@ public enum LateRefusalWords {
       return String(
         localized: "Adding \(refusal.title): \(reason)", bundle: #bundle,
         comment: "A late refusal of an item added by hand: the item's title, then why it wasn't added")
+    case .createList:
+      return String(
+        localized: "Making \(refusal.title): \(reason)", bundle: #bundle,
+        comment: "A late refusal of New list: the list's name, then why the list wasn't made")
     case .uploadImage:
       return String(
         localized: "Your photo for \(refusal.title): \(reason)", bundle: #bundle,

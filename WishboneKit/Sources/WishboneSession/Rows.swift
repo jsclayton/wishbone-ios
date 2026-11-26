@@ -85,6 +85,10 @@ public struct UserRow: Codable, Sendable, Equatable, Identifiable, FetchableReco
     public let canReactivate: Bool
     public let canConfirmProfile: Bool
     public let canAddOccasion: Bool
+
+    /// Whether the session's user can make an extra list for this user: the user themself, or a parent of an active
+    /// child. It decides whether the New list form offers the child under For.
+    public let canCreateList: Bool
   }
 }
 

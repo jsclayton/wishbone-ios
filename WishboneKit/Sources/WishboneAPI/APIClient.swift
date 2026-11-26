@@ -369,6 +369,15 @@ public struct APIClient: Sendable {
     try await versioned(.updateList(id, changes, key: key))
   }
 
+  /// `POST /lists`: makes an extra list, for the caller or for one of their children, with no one else as its
+  /// recipient. A parent who makes a list for a child is not a recipient. `key` is the unsent change's own
+  /// `Idempotency-Key`. Gives back the list, by the server's ID, with the version that the answer carried. A
+  /// deactivated child is a 403 `user_deactivated`, and a child the caller isn't the parent of a 403
+  /// `reference_not_allowed`.
+  public func createList(_ list: NewList, key: String) async throws(APIError) -> Versioned<ListResource> {
+    try await versioned(.createList(list, key: key))
+  }
+
   /// `DELETE /lists/{id}`: deletes the extra list and its items, with no `If-Match`. `key` is the unsent change's
   /// own `Idempotency-Key`. A primary list is a 403 `primary_list`, and a list with another recipient a 403
   /// `list_has_other_recipients`. It never refuses because of the list's gifts.

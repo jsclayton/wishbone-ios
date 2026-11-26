@@ -532,10 +532,23 @@ extension SessionModel {
   /// found it unreachable, or when the add itself can't reach it. The item is then on its list at once, and the
   /// add ends as `added`, by the item's stand-in ID (see `addLater(_:to:)`).
   ///
+  /// An add to a list that New list made, whose create waits, sends the unsent changes first, so the instance has
+  /// the list. While the create still waits, an add filled in by hand is an unsent change after it, and any other
+  /// add can't reach the instance.
+  ///
   /// Diagnostics: never here. The client reports each error as its side asks.
   public func add(_ draft: inout ItemDraft) async -> AddOutcome {
-    guard !hasEnded, let list = draft.listID.map({ self.list(id: $0) }) ?? primaryList else { return .failed }
+    guard !hasEnded, var list = draft.listID.map({ self.list(id: $0) }) ?? primaryList else { return .failed }
     if draft.isFilledInByHand, isInstanceUnreachable { return await addLater(&draft, to: list) }
+    if StandIn.isStandIn(list.id) {
+      // A list that New list made, whose create waits: it is sent first. The instance has no list by the stand-in.
+      switch await listSendingFirst(list) {
+      case .sent(let sent): list = sent
+      case .waits where draft.isFilledInByHand: return await addLater(&draft, to: list)
+      case .waits: return .unreachable
+      case .gone: return .failed
+      }
+    }
     var imageWasLeftOut = false
     do {
       var imageIDs: [String] = []
@@ -629,6 +642,32 @@ extension SessionModel {
     return .added(AddedItem(id: created.id, title: item.title, listName: list.name, imageWasLeftOut: false))
   }
 
+  /// What became of a list that New list made, after the changes before an add were sent.
+  private enum SentList {
+    /// The server has it: the list, by the server's ID.
+    case sent(ListRow)
+
+    /// Its create still waits: the instance can't be reached, or didn't decide it.
+    case waits
+
+    /// The server refused it, so the list is gone.
+    case gone
+  }
+
+  /// Sends the unsent changes, the create of the list among them, and gives the list by the server's ID.
+  private func listSendingFirst(_ list: ListRow) async -> SentList {
+    _ = await sendUnsentChanges()
+    // Read with the journal: the copy's observation may not have published the server's ID yet.
+    guard let (changes, standIns) = try? await database.unsentChangesAndStandIns() else { return .waits }
+    if let serverID = standIns[list.id] {
+      return .sent(self.list(id: serverID) ?? list.withID(serverID))
+    }
+    let waits = changes.contains { change in
+      if case .createList(let created) = change.action { created.id == list.id } else { false }
+    }
+    return waits ? .waits : .gone
+  }
+
   private enum WriteOutcome {
     case unreachable
     case refused(APIError.Refusal)
@@ -655,5 +694,16 @@ extension SessionModel {
       Log.fault(.session, "The copy can't take the added item.", detail: "\(error)")
       return .failed
     }
+  }
+}
+
+extension ListRow {
+  /// The list by another ID: a list that New list made, by the server's ID that took its stand-in's place, before the
+  /// copy's observation publishes it.
+  fileprivate func withID(_ id: String) -> ListRow {
+    ListRow(
+      id: id, name: name, description: description, isPrimary: isPrimary, recipientIDs: recipientIDs,
+      itemCount: itemCount, createdAt: createdAt, canEdit: canEdit, canDelete: canDelete, canInvite: canInvite,
+      canLeave: canLeave, version: version)
   }
 }

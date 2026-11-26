@@ -85,6 +85,22 @@ struct WindowPlaceTests {
     #expect(same == place)
   }
 
+  @Test(
+    "A list's page pushed by its stand-in, after New list, shows by the server's ID on every tab, as an item's does")
+  func listStandInsReplaced() {
+    var place = WindowPlace()
+    place.select(.lists)
+    place[pagesOn: .lists] = [.list(id: "stand-in-list"), .item(id: "stand-in-item"), .list(id: "3")]
+    place[pagesOn: .home] = [.list(id: "stand-in-list")]
+    let earlier = place
+
+    place.replaceStandIns(["stand-in-list": "41", "stand-in-item": "52"])
+
+    #expect(place[pagesOn: .lists] == [.list(id: "41"), .item(id: "52"), .list(id: "3")])
+    #expect(place[pagesOn: .home] == [.list(id: "41")])
+    #expect(place.opened(since: earlier.replacingStandIns(["stand-in-list": "41", "stand-in-item": "52"])) == nil)
+  }
+
   @Test("A tap on the selected tab pops to its first screen")
   func tapOnTheSelectedTab() {
     var place = WindowPlace()

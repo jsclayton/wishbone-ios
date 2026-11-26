@@ -8,7 +8,7 @@ Everything the user can edit, in one place: their own lists, a part for each chi
 
 - The second tab.
 - A list's row pushes the [list's page](list.md). An invitation's text pushes the list's page too, when the user can see the list.
-- **New list** opens the New list form as a sheet. After Save, the new list's page is pushed.
+- **New list** opens the New list form as a sheet. After Save, the new list's page is pushed at once, also with no connection. The page stays when the server's ID takes the place of the list's stand-in ID.
 - The avatar opens [Settings](settings.md).
 - No link from outside opens this tab. A link to a list opens on top of Home.
 
@@ -73,6 +73,7 @@ Decided: "New list", "Accept", "Decline", "Deactivated", and the invitation line
 | An invitation whose inviter was deleted | "You're invited to {list}", "Emma is invited to {list}" |
 | A late refusal of Accept | "Accepting the invitation to {list}: {reason}" |
 | A late refusal of Decline | "Declining the invitation to {list}: {reason}" |
+| A late refusal of New list | "Making {list}: {reason}". For a child whom the admin deactivated meanwhile, the reason is the line about the admin |
 | Form title | "New list" |
 | Form, For | "For", with "You" and each child's name |
 | Form, for a child | "Emma's list. You can edit it, but it isn't yours." |
@@ -83,6 +84,7 @@ Decided: "New list", "Accept", "Decline", "Deactivated", and the invitation line
 - A list's row is one element: the name, the recipients' names, the item count. Its actions are Open and, where allowed, Open in New Window.
 - An invitation is one element with the actions Accept and Decline. The buttons are also on screen.
 - At the largest text sizes, the avatars move under the list's name.
+- In the New list form, the For choice reads "You" or the child's name. While the name is empty, the form says "Give the list a name." under the field, and Save's hint says it too.
 
 ## Secrecy
 

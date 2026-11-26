@@ -183,10 +183,11 @@ struct AddFormScreen: View {
     }
   }
 
-  /// The list in Add to: the one picked, or the primary list, where every form starts.
+  /// The list in Add to: the one picked, or the primary list, where every form starts. A list that New list made is
+  /// picked by its stand-in ID, and shows by the server's ID once that takes the stand-in's place.
   private var listChoice: Binding<String> {
     Binding {
-      draft.listID ?? session.primaryList?.id ?? ""
+      draft.listID.map(session.serverID(of:)) ?? session.primaryList?.id ?? ""
     } set: { id in
       draft.listID = id
     }

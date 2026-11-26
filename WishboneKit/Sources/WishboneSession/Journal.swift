@@ -119,6 +119,54 @@ public struct UnsentChange: Sendable, Equatable, Identifiable {
     /// keeps it, so a resend sends the same place. An item that a create in the journal adds is named by its stand-in
     /// ID, as for an edit, and so is such a neighbour. See "Where an item can land" in `docs/spec.md`.
     case reorderItem(ItemReorder)
+
+    /// New list: `POST /lists`, for the user or for one of their children. The list shows at once in the Lists tab,
+    /// by its stand-in ID, and the server's ID takes its place when the answer comes. Later changes name it by its
+    /// stand-in meanwhile: an item added to it, an item moved to it, and an edit or a delete of it. See "A new list
+    /// for a child" in `docs/spec.md`.
+    case createList(CreatedList)
+  }
+}
+
+/// A list that the user made with New list, as an unsent change, with what its row shows until the server answers.
+/// See "A new list for a child" in `docs/spec.md`, and `docs/screens/lists.md`.
+public struct CreatedList: Sendable, Equatable {
+  /// The list's stand-in ID. See `StandIn`.
+  public let id: String
+  public let name: String
+
+  /// Markdown about the list. Nil is none.
+  public let description: String?
+
+  /// The list's one recipient: the session's user, or the child that the parent made it for. A parent who makes a
+  /// list for a child is not its recipient.
+  public let recipientID: String
+
+  /// Whether the recipient is a child of the session's user, and not the user: the create sends `recipient_id`
+  /// only then.
+  public let isForAChild: Bool
+
+  /// The recipient's name when the user made the list: what a late refusal for a deactivated child names.
+  public let recipientName: String
+  public let createdAt: Date
+
+  public init(
+    id: String, name: String, description: String?, recipientID: String, isForAChild: Bool, recipientName: String,
+    createdAt: Date
+  ) {
+    self.id = id
+    self.name = name
+    self.description = description
+    self.recipientID = recipientID
+    self.isForAChild = isForAChild
+    self.recipientName = recipientName
+    self.createdAt = createdAt
+  }
+
+  /// The body that the create sends. The user's own list sends no `recipient_id`: the server's default is the
+  /// caller.
+  var newList: NewList {
+    NewList(name: name, description: description, recipientID: isForAChild ? recipientID : nil)
   }
 }
 
@@ -373,6 +421,9 @@ extension UnsentChange {
     /// The answer of a price edit: the store link as the server has it now.
     case storeLink(Versioned<StoreLink>)
 
+    /// The answer of a create of a list: the list, by the server's ID.
+    case createdList(Versioned<ListResource>)
+
     /// No answer to keep: an unclaim, a delete, or an answer that the app couldn't read. The next pull brings the
     /// row.
     case none
@@ -382,7 +433,10 @@ extension UnsentChange {
     }
 
     var list: Versioned<ListResource>? {
-      if case .list(let list) = self { list } else { nil }
+      switch self {
+      case .list(let list), .createdList(let list): list
+      default: nil
+      }
     }
 
     /// The server's ID of what a create made. Nil for any other answer.
@@ -390,6 +444,7 @@ extension UnsentChange {
       switch self {
       case .image(let image): image.id
       case .item(let item): item.resource.id
+      case .createdList(let list): list.resource.id
       case .gift, .list, .storeLink, .none: nil
       }
     }
@@ -487,6 +542,7 @@ struct UnsentChangeRow: Codable, Sendable, FetchableRecord, MutablePersistableRe
     case deleteStoreLink
     case moveItem
     case reorderItem
+    case createList
   }
 
   mutating func didInsert(_ inserted: InsertionSuccess) {
@@ -703,7 +759,9 @@ extension LocalDatabase {
   /// closes. A create's item, and a delete, count on the list as the server counts. A move's answer and a reorder's are
   /// the item in its new place, and the others shift (see `saveMoved`). A store link's price edit has the link as
   /// its answer, which takes the place of its row, and a Remove has none: the link leaves the copy. The item's own
-  /// row waits for the next pull, which the send comes before.
+  /// row waits for the next pull, which the send comes before. A create of a list has the list as its answer, by the
+  /// server's ID, which takes the stand-in's place in the changes that wait: the items added to it, the moves to it,
+  /// and its edits. Its recipient rows wait for the next pull.
   func accept(_ change: UnsentChange, answer: UnsentChange.Answer) async throws {
     let gift = answer.gift.map { GiftRow($0) }
     let list = answer.list.map { ListRow($0) }
@@ -744,13 +802,15 @@ extension LocalDatabase {
   ///
   /// A refused create leaves with the changes that name its item by its stand-in ID, an edit or a delete, and the
   /// uploads of the photos that those edits add: the server never had the item, so none of them can be sent. Only
-  /// the create's refusal shows.
+  /// the create's refusal shows. A refused create of a list leaves with every change that needs the list: see
+  /// `removeChanges(toList:in:)`.
   func refuse(_ change: UnsentChange, refusal: APIError.Refusal) async throws {
     let row = try LateRefusalRow(change, refusal: refusal)
     try await self.change { database in
       _ = try UnsentChangeRow.deleteOne(database, key: change.id)
       if case .uploadImage(let id) = change.action { _ = try UnsentFileRow.deleteOne(database, key: id) }
       if case .createItem(let item) = change.action { try Self.removeChanges(toStandIn: item.id, in: database) }
+      if case .createList(let list) = change.action { try Self.removeChanges(toList: list.id, in: database) }
       var row = row
       try row.insert(database)
     }
@@ -765,6 +825,61 @@ extension LocalDatabase {
       return (changes.imageIDs ?? []).filter(StandIn.isStandIn)
     }
     _ = try UnsentChangeRow.deleteAll(database, keys: dependents.compactMap(\.id))
+    try UnsentChangeRow
+      .filter(Column("kind") == UnsentChangeRow.Kind.uploadImage.rawValue && uploads.contains(Column("targetID")))
+      .deleteAll(database)
+    _ = try UnsentFileRow.deleteAll(database, keys: uploads)
+  }
+
+  /// Removes the changes that need the list that a refused create would have made, by its stand-in ID, in the
+  /// journal's order: the server never had the list, so none of them can be sent, or would do what the user meant.
+  ///
+  /// - An edit or a delete of the list.
+  /// - An item added to the list, with every change to that item, by its stand-in ID, and the uploads of the photos
+  ///   that they add.
+  /// - A move of an item to the list. The item stays where it was, so a reorder of it on the list goes too, until a
+  ///   later move takes it to another list. That move stays, and so does a delete of the item, or an edit: each
+  ///   is sent as it would be without the list.
+  private static func removeChanges(toList listID: String, in database: Database) throws {
+    var items = Set<String>()
+    var movedIn = Set<String>()
+    var removed: [Int64] = []
+    var uploads: [String] = []
+    for change in try unsentChanges(in: database) {
+      let needsTheList: Bool
+      switch change.action {
+      case .editList(let id, _), .deleteList(let id):
+        needsTheList = id == listID
+      case .createItem(let item):
+        needsTheList = item.listID == listID
+        if needsTheList {
+          items.insert(item.id)
+          uploads += item.imageIDs.filter(StandIn.isStandIn)
+        }
+      case .editItem(let id, let changes):
+        needsTheList = items.contains(id)
+        if needsTheList { uploads += (changes.imageIDs ?? []).filter(StandIn.isStandIn) }
+      case .deleteItem(let id, _):
+        needsTheList = items.contains(id)
+        movedIn.remove(id)
+      case .moveItem(let move):
+        if items.contains(move.itemID) {
+          needsTheList = true
+        } else if move.toListID == listID {
+          needsTheList = true
+          movedIn.insert(move.itemID)
+        } else {
+          needsTheList = false
+          movedIn.remove(move.itemID)
+        }
+      case .reorderItem(let reorder):
+        needsTheList = items.contains(reorder.itemID) || movedIn.contains(reorder.itemID)
+      default:
+        needsTheList = false
+      }
+      if needsTheList { removed.append(change.id) }
+    }
+    _ = try UnsentChangeRow.deleteAll(database, keys: removed)
     try UnsentChangeRow
       .filter(Column("kind") == UnsentChangeRow.Kind.uploadImage.rawValue && uploads.contains(Column("targetID")))
       .deleteAll(database)
@@ -882,7 +997,8 @@ extension LocalDatabase {
   /// out, and so are its items and recipient rows, which the snapshot shows only for the lists that it has.
   ///
   /// An accepted invitation adds the invited user to the list's recipients. A list that the copy doesn't hold, which
-  /// the invited user can't see yet, shows by its name, with no items, until the server's answer brings it. An item
+  /// the invited user can't see yet, shows by its name, with no items, until the server's answer brings it. A list
+  /// that New list makes shows by its stand-in ID, with its one recipient, until the server's answer brings it. An item
   /// that a create adds counts on its list, one that a delete takes out counts no more, and one that a move takes to
   /// another list counts there and no more on its old one.
   ///
@@ -919,6 +1035,9 @@ extension LocalDatabase {
           let index = rows.firstIndex(where: { $0.id == listID })
         else { continue }
         rows[index] = rows[index].with(itemCount: max(0, rows[index].itemCount - 1))
+      case .createList(let list):
+        rows.append(ListRow(standingInFor: list))
+        renamed = true
       case .moveItem(let move):
         guard let from = places[move.itemID], from != move.toListID else { continue }
         places[move.itemID] = move.toListID
@@ -1080,7 +1199,7 @@ extension LocalDatabase {
       case .unclaim: rows.remove(at: index)
       case .acknowledge(_, let flag): rows[index] = gift.answering(flag, now: now)
       case .editList, .deleteList, .acceptInvitation, .declineInvitation, .uploadImage, .createItem, .editItem,
-        .deleteItem, .editStoreLink, .deleteStoreLink, .moveItem, .reorderItem:
+        .deleteItem, .editStoreLink, .deleteStoreLink, .moveItem, .reorderItem, .createList:
         continue
       case .setOccasion(_, let occasion):
         picked = true
@@ -1147,6 +1266,8 @@ extension UnsentChange.Action {
       move.itemID
     case .reorderItem(let reorder):
       reorder.itemID
+    case .createList(let list):
+      list.id
     }
   }
 
@@ -1155,7 +1276,7 @@ extension UnsentChange.Action {
   var isToAGift: Bool {
     switch self {
     case .editList, .deleteList, .acceptInvitation, .declineInvitation, .uploadImage, .createItem, .editItem,
-      .deleteItem, .editStoreLink, .deleteStoreLink, .moveItem, .reorderItem:
+      .deleteItem, .editStoreLink, .deleteStoreLink, .moveItem, .reorderItem, .createList:
       false
     default: true
     }
@@ -1180,7 +1301,7 @@ extension UnsentChange.Action {
     case .lowerQuantity(_, let quantity): GiftChanges(quantity: quantity)
     case .setOccasion(_, let occasion): GiftChanges(occasionID: occasion.id)
     case .unclaim, .acknowledge, .editList, .deleteList, .acceptInvitation, .declineInvitation, .uploadImage,
-      .createItem, .editItem, .deleteItem, .editStoreLink, .deleteStoreLink, .moveItem, .reorderItem:
+      .createItem, .editItem, .deleteItem, .editStoreLink, .deleteStoreLink, .moveItem, .reorderItem, .createList:
       GiftChanges()
     }
   }
@@ -1206,6 +1327,7 @@ extension UnsentChange.Action {
     case .deleteStoreLink: .deleteStoreLink
     case .moveItem: .moveItem
     case .reorderItem: .reorderItem
+    case .createList: .createList
     }
   }
 
@@ -1216,7 +1338,8 @@ extension UnsentChange.Action {
   /// item's list, which counts one fewer until the server answers. A store link's price edit keeps its item, the
   /// price, and when it was made, and a Remove keeps its item: the request's path names both. A move keeps the list
   /// that it sends, with that list's name and the list that the item left, which the lists show until the server
-  /// answers. A reorder keeps the place that it sends, and nothing else.
+  /// answers. A reorder keeps the place that it sends, and nothing else. A create of a list keeps its body and what
+  /// its row shows.
   fileprivate func patch() throws -> String {
     let data =
       switch self {
@@ -1231,6 +1354,7 @@ extension UnsentChange.Action {
       case .deleteStoreLink(let itemID, _): try JSONEncoder().encode(StoreLinkDeletionPatch(itemID: itemID))
       case .moveItem(let move): try JSONEncoder().encode(MovePatch(move))
       case .reorderItem(let reorder): try JSONEncoder().encode(ReorderPatch(reorder))
+      case .createList(let list): try JSONEncoder().encode(ListCreationPatch(list))
       default: try JSONEncoder().encode(giftChanges)
       }
     return String(decoding: data, as: UTF8.self)
@@ -1301,6 +1425,10 @@ extension UnsentChange.Action {
       guard let patch = ReorderPatch(patch) else { return nil }
       self = .reorderItem(patch.reorder(targetID))
       return
+    case .createList:
+      guard let patch = try? JSONDecoder().decode(ListCreationPatch.self, from: Data(patch.utf8)) else { return nil }
+      self = .createList(patch.list(targetID))
+      return
     case .markBought, .setFromLabel, .setNote, .lowerQuantity:
       break
     }
@@ -1319,7 +1447,8 @@ extension UnsentChange.Action {
       guard let quantity = changes.quantity else { return nil }
       self = .lowerQuantity(giftID: targetID, quantity: quantity)
     case .unclaim, .acknowledge, .setOccasion, .editList, .deleteList, .acceptInvitation, .declineInvitation,
-      .uploadImage, .createItem, .editItem, .deleteItem, .editStoreLink, .deleteStoreLink, .moveItem, .reorderItem:
+      .uploadImage, .createItem, .editItem, .deleteItem, .editStoreLink, .deleteStoreLink, .moveItem, .reorderItem,
+      .createList:
       return nil
     }
   }
@@ -1473,6 +1602,34 @@ private struct StoreLinkDeletionPatch: Codable {
   let itemID: String
 }
 
+/// A create of a list, as the journal keeps it: the body that it sends, and what its row shows until the server
+/// answers.
+private struct ListCreationPatch: Codable {
+  let name: String
+  let description: String?
+  let recipientID: String
+  let isForAChild: Bool
+  let recipientName: String
+  // JSONEncoder's default date form, seconds since 2001 as a number. Don't change it: a later version of the app must
+  // read the journal rows that this one wrote.
+  let createdAt: Date
+
+  init(_ list: CreatedList) {
+    name = list.name
+    description = list.description
+    recipientID = list.recipientID
+    isForAChild = list.isForAChild
+    recipientName = list.recipientName
+    createdAt = list.createdAt
+  }
+
+  func list(_ id: String) -> CreatedList {
+    CreatedList(
+      id: id, name: name, description: description, recipientID: recipientID, isForAChild: isForAChild,
+      recipientName: recipientName, createdAt: createdAt)
+  }
+}
+
 /// A create of an item, as the journal keeps it: the body that it sends, and what its row shows until the server
 /// answers.
 private struct CreationPatch: Codable {
@@ -1608,6 +1765,18 @@ extension ListRow {
       id: invitation.listID, name: invitation.listName, description: nil, isPrimary: false,
       recipientIDs: [invitation.invitedByID, invitation.userID].compactMap { $0 }, itemCount: 0,
       createdAt: invitation.createdAt, canEdit: false, canDelete: false, canInvite: false, canLeave: false,
+      version: "")
+  }
+}
+
+extension ListRow {
+  /// What New list shows for its list until the server answers: its name and description, by its stand-in ID, with
+  /// its one recipient and no items. It has no version: it is never saved. The user can edit it and delete it, as the
+  /// server lets the maker of an extra list. They can't leave it or invite to it until the server has it.
+  fileprivate init(standingInFor list: CreatedList) {
+    self.init(
+      id: list.id, name: list.name, description: list.description, isPrimary: false, recipientIDs: [list.recipientID],
+      itemCount: 0, createdAt: list.createdAt, canEdit: true, canDelete: true, canInvite: false, canLeave: false,
       version: "")
   }
 }

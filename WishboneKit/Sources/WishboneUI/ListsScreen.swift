@@ -5,7 +5,8 @@ import WishboneSession
 /// their children, each with Accept and Decline. Then "Your lists", the primary list first and then the extra lists
 /// by name, then one part for each child, under the child's name, with "Deactivated" beside a deactivated child's
 /// name. A tap on a row pushes the list's page, and so does a tap on an invitation's line, when the user can see the
-/// list. New list comes later. See `docs/screens/lists.md`.
+/// list. New list, a toolbar button, opens the New list form in a sheet, and after Save the new list's page is pushed.
+/// See `docs/screens/lists.md`.
 ///
 /// Its states are the ones that every screen shares. Every user has a primary list, so the tab is never empty
 /// after the first sync.
@@ -16,8 +17,11 @@ import WishboneSession
 struct ListsScreen: View {
   let session: SessionModel
 
-  /// The pages pushed on Lists. A tap on an invitation's line pushes the list's page.
+  /// The pages pushed on Lists. A tap on an invitation's line pushes the list's page, and so does Save in the New
+  /// list form.
   @Binding var pages: [Page]
+
+  @State private var isMakingList = false
 
   var body: some View {
     let tab = session.listsTab
@@ -55,6 +59,22 @@ struct ListsScreen: View {
       }
     }
     .navigationTitle(Text("Lists", bundle: #bundle))
+    .toolbar {
+      ToolbarItem(placement: .primaryAction) {
+        Button {
+          isMakingList = true
+        } label: {
+          Label {
+            Text("New list", bundle: #bundle)
+          } icon: {
+            Image(systemName: "plus")
+          }
+        }
+      }
+    }
+    .sheet(isPresented: $isMakingList) {
+      NewListSheet(session: session) { id in pages.append(.list(id: id)) }
+    }
   }
 
   private func rows(_ lists: [ListRow]) -> some View {

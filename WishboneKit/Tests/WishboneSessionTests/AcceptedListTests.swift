@@ -79,7 +79,7 @@ struct AcceptedListTests {
         deactivatedAt: .shown(isDeactivated ? Date(timeIntervalSince1970: 0) : nil),
         createdAt: Date(timeIntervalSince1970: 0), canEdit: true, canEditParents: false, canMakeLoginLink: true,
         canManageSessions: true, canDeactivate: false, canReactivate: false, canConfirmProfile: true,
-        canAddOccasion: true),
+        canAddOccasion: true, canCreateList: !isDeactivated),
       version: "\"1\"")
   }
 

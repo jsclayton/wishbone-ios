@@ -37,7 +37,7 @@ extension SessionModel {
     if !name.isEmpty, name != list.name { changes.name = name }
     if description != list.description { changes.description = description ?? "" }
     guard !changes.isEmpty else { return }
-    await record(.editList(listID: id, changes: changes), title: list.name)
+    await record(.editList(listID: list.id, changes: changes), title: list.name)
   }
 
   /// Delete list: deletes the extra list and its items, as an unsent change. The list leaves the copy at once, in
@@ -47,6 +47,6 @@ extension SessionModel {
   /// It returns when the change is in the journal and published, and doesn't wait for the sync.
   public func deleteList(_ id: String) async {
     guard !hasEnded, let page = listPage(id: id), page.canDelete else { return }
-    await record(.deleteList(listID: id), title: page.list.name)
+    await record(.deleteList(listID: page.list.id), title: page.list.name)
   }
 }

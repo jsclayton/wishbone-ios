@@ -265,6 +265,7 @@ struct PeopleTests {
       expect(record.canReactivate == json["can_reactivate"].bool, "can_reactivate")
       expect(record.canConfirmProfile == json["can_confirm_profile"].bool, "can_confirm_profile")
       expect(record.canAddOccasion == json["can_add_occasion"].bool, "can_add_occasion")
+      expect(record.canCreateList == json["can_create_list"].bool, "can_create_list")
     }
   }
 

@@ -94,7 +94,8 @@ private struct PlacedFrame: View {
           diagnostics.leave(.placeOpened(kind))
         }
       }
-      // An item that the user added by hand shows by the server's ID once the instance has it. See `StandIn`.
+      // An item that the user added by hand, and a list that New list made, show by the server's ID once the instance
+      // has them. See `StandIn`.
       .onChange(of: session.replacedStandIns, initial: true) { _, standIns in
         place.replaceStandIns(standIns)
       }
