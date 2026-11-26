@@ -6,6 +6,10 @@ import WishboneAPI
 //
 // A search waits for the server, by nature. So does an add that a search filled in: the form stays open while the
 // instance can't be reached, and Add tries again with the same `Idempotency-Key`, so the item is added once.
+//
+// An add filled in by hand needs nothing that only the server can do. When the instance can't be reached, it is an
+// unsent change: the item shows on its list at once, by a stand-in ID, and reaches the instance later, once. See
+// "When the instance can't be reached" in `docs/spec.md`.
 
 /// What the user gave the Add screen: a link, typed words, or a photo. The server decides what a search reads. This
 /// only names the store while a link is read, and fills the form for "Fill it in myself".
@@ -138,12 +142,21 @@ public struct ItemDraft: Sendable, Equatable {
   /// and the duplicate hint opens nothing.
   public private(set) var isFixedToList = false
 
+  /// Whether the user fills the form in by hand: it has only what the user gave, from "Fill it in myself", "Add it
+  /// without the link", or a search over the hourly limit, and no images that the server must download. Its Add is
+  /// an unsent change when the instance can't be reached.
+  public private(set) var isFilledInByHand = false
+
   /// The add's `Idempotency-Key`, and the item and list that it was made for. A changed item, or another list,
   /// gets a new key: the server refuses a key again with another body.
   private var key: (value: String, item: NewItem, listID: String)?
 
   /// The images that an earlier Add uploaded: a store's image by its address, and the photo by its ID.
   private var uploads: [String: String] = [:]
+
+  /// The `Idempotency-Key` of the photo's upload, made at the first Add, so a second Add, or the unsent change
+  /// after an Add that couldn't reach the instance, uploads the photo once.
+  private var photoKey: String?
 
   /// The form that a search of the input filled in. A link that nothing could be read from gets the note that
   /// names its store. Typed words are never read, so they get no note. A photo is the item's image, and with no
@@ -183,6 +196,7 @@ public struct ItemDraft: Sendable, Equatable {
   /// photo then has the title "Photo from {date}".
   public init(given input: SearchInput, note: Note? = nil) {
     self.note = note
+    isFilledInByHand = true
     images = []
     priceMinor = nil
     topPriceMinor = nil
@@ -256,6 +270,19 @@ public struct ItemDraft: Sendable, Equatable {
     let value = UUID().uuidString
     key = (value, item, listID)
     return value
+  }
+
+  /// The `Idempotency-Key` of the photo's upload: the one kept, or a new one.
+  mutating func uploadKeyOfPhoto() -> String {
+    if let photoKey { return photoKey }
+    let value = UUID().uuidString
+    photoKey = value
+    return value
+  }
+
+  /// What `uploads` keeps the photo's upload by.
+  static func uploadName(of photo: Photo) -> String {
+    "photo:\(photo.id.uuidString)"
   }
 
   /// The ID of the image that an earlier Add uploaded from the address.
@@ -501,20 +528,25 @@ extension SessionModel {
   /// it, and the added item says so. An add refused with `store_blocked` drops the link from the draft, and sets
   /// its note, so a second Add adds the item without the link.
   ///
+  /// An add filled in by hand is an unsent change when the instance can't be reached: at once when the last sync
+  /// found it unreachable, or when the add itself can't reach it. The item is then on its list at once, and the
+  /// add ends as `added`, by the item's stand-in ID (see `addLater(_:to:)`).
+  ///
   /// Diagnostics: never here. The client reports each error as its side asks.
   public func add(_ draft: inout ItemDraft) async -> AddOutcome {
     guard !hasEnded, let list = draft.listID.map({ self.list(id: $0) }) ?? primaryList else { return .failed }
+    if draft.isFilledInByHand, isInstanceUnreachable { return await addLater(&draft, to: list) }
     var imageWasLeftOut = false
     do {
       var imageIDs: [String] = []
       // The photo is the item's image: its bytes go up first, so it is the primary image.
       if let photo = draft.photo {
-        let key = "photo:\(photo.id.uuidString)"
-        if let id = draft.upload(of: key) {
+        let name = ItemDraft.uploadName(of: photo)
+        if let id = draft.upload(of: name) {
           imageIDs.append(id)
         } else {
-          let uploaded = try await client.uploadImage(photo.data)
-          draft.keep(upload: uploaded.id, of: key)
+          let uploaded = try await client.uploadImage(photo.data, key: draft.uploadKeyOfPhoto())
+          draft.keep(upload: uploaded.id, of: name)
           imageIDs.append(uploaded.id)
         }
       }
@@ -545,6 +577,7 @@ extension SessionModel {
           imageWasLeftOut: imageWasLeftOut))
     } catch {
       switch await writeOutcome(of: error) {
+      case .unreachable where draft.isFilledInByHand: return await addLater(&draft, to: list)
       case .unreachable: return .unreachable
       case .refused(let refusal) where refusal.code == .storeBlocked:
         if let link = draft.storeLink {
@@ -556,6 +589,44 @@ extension SessionModel {
       case .failed: return .failed
       }
     }
+  }
+
+  /// An add filled in by hand, as an unsent change: the photo's upload, when the photo isn't uploaded yet, then the
+  /// item's create, in one change of the journal. The item shows at the end of its list at once, by its stand-in ID,
+  /// and a sync sends both, now or when the instance answers. See "Unsent changes" in `docs/spec.md`.
+  ///
+  /// Each keeps the key that the form made, and the create names the upload by the image's stand-in ID. So after an
+  /// Add whose answer was lost, the instance gets the same upload and the same add again, and keeps one of each. A
+  /// photo that an earlier Add uploaded is named by its ID, and isn't uploaded again.
+  private func addLater(_ draft: inout ItemDraft, to list: ListRow) async -> AddOutcome {
+    var changes: [LocalDatabase.NewChange] = []
+    var imageIDs: [String] = []
+    let title = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
+    if let photo = draft.photo {
+      if let id = draft.upload(of: ItemDraft.uploadName(of: photo)) {
+        imageIDs.append(id)
+      } else {
+        let standIn = StandIn.make()
+        changes.append(
+          .init(.uploadImage(imageID: standIn), title: title, key: draft.uploadKeyOfPhoto(), file: photo.data))
+        imageIDs.append(standIn)
+      }
+    }
+    let item = draft.newItem(imageIDs: imageIDs)
+    let created = CreatedItem(
+      id: StandIn.make(), listID: list.id, item: item, storeLinks: draft.storeLink.map { [$0] } ?? [],
+      addedByID: session.userID, hidesClaimState: list.recipientIDs.contains(session.userID), createdAt: .now)
+    changes.append(.init(.createItem(created), title: item.title, key: draft.key(for: item, onList: list.id)))
+    do {
+      try await database.record(changes)
+    } catch {
+      Log.fault(.session, "The journal can't take an unsent change.", detail: "\(error)")
+      return .failed
+    }
+    guard !hasEnded else { return .failed }
+    await publishNow()
+    Task { await syncNow() }
+    return .added(AddedItem(id: created.id, title: item.title, listName: list.name, imageWasLeftOut: false))
   }
 
   private enum WriteOutcome {

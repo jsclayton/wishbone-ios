@@ -41,6 +41,9 @@ final class CopyHistory {
     }
   }
 
+  /// The stand-in IDs that the server's ID took the place of, after each change.
+  var standIns: [[String: String]] { all.map(\.standIns) }
+
   /// The blocked stores of the copy, after each change.
   var blockedStores: [[BlockedStoreRow]] { all.map(\.blockedStores) }
 

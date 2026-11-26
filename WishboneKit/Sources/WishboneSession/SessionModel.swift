@@ -58,6 +58,11 @@ public final class SessionModel {
   /// `docs/spec.md`.
   public private(set) var unsentChangeCount = 0
 
+  /// Each stand-in ID that the server's ID took the place of, with that ID: a thing that a create in the journal
+  /// made, and that the server has now. A window puts the server's ID in the place of the stand-in in its pages,
+  /// and every lookup by ID takes either. See `StandIn`.
+  public private(set) var replacedStandIns: [String: String] = [:]
+
   /// The late refusals that wait for the next window that comes to the foreground. See `lateRefusalAlert`.
   public private(set) var lateRefusals: [LateRefusal] = []
 
@@ -252,6 +257,7 @@ public final class SessionModel {
     memberships = snapshot.memberships
     unsentChangeCount = snapshot.unsentChangeCount
     lateRefusals = snapshot.lateRefusals
+    replacedStandIns = snapshot.standIns
   }
 
   /// Reads the copy, and publishes it now, after a write that every window must show at once, such as a claim. The
@@ -286,14 +292,22 @@ public final class SessionModel {
     itemsByList[id] ?? []
   }
 
-  /// The item in the copy with the ID, on a list that the copy holds. Nil for an item that is not in the copy.
+  /// The item in the copy with the ID, on a list that the copy holds. Nil for an item that is not in the copy. A
+  /// stand-in ID gives the item that the server's ID took its place for.
   public func item(id: String) -> ItemRow? {
-    itemsByList.values.lazy.flatMap { $0 }.first { $0.id == id }
+    let id = serverID(of: id)
+    return itemsByList.values.lazy.flatMap { $0 }.first { $0.id == id }
   }
 
   /// The store links of the item, in the order that the server gives the session's user.
   public func storeLinks(ofItem id: String) -> [StoreLinkRow] {
-    storeLinksByItem[id] ?? []
+    storeLinksByItem[serverID(of: id)] ?? []
+  }
+
+  /// The server's ID that took the place of the stand-in ID, or the ID as it is: a server's ID, or a stand-in
+  /// whose create waits.
+  public func serverID(of id: String) -> String {
+    replacedStandIns[id] ?? id
   }
 
   /// The recipient rows of the list, in the order they became recipients. Empty for a list that is not in the

@@ -159,15 +159,16 @@ public enum Route: String, Sendable, CaseIterable {
     // where a second restore would be a 404.
     case .restoreGift: ["Idempotency-Key"]
     // A search's key makes a resend after a lost connection read nothing again. The add's key is the add form's own,
-    // so a second Add after a lost answer adds the item once.
-    case .search, .createItem: ["Idempotency-Key"]
+    // so a second Add after a lost answer adds the item once. An upload of a file has a key of its own too, kept by
+    // the form or by its unsent change, so a resend uploads the photo once. A download of a store's image sends none.
+    case .search, .createItem, .uploadImage: ["Idempotency-Key"]
     // An unsent change keeps its key, so a resend after a lost connection, or in a later sync, is the same write.
     case .updateGift, .unclaimGift, .acknowledgeGift, .updateList, .deleteList, .acceptInvitation,
       .declineInvitation:
       ["Idempotency-Key"]
     case .health, .redeemLoginLink, .users, .user, .groups, .group, .groupUsers, .groupGroups, .occasions, .occasion,
       .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation, .gifts, .gift,
-      .blockedStores, .unblockStore, .leaveList, .revokeCurrentSession, .confirmProfile, .uploadImage, .me:
+      .blockedStores, .unblockStore, .leaveList, .revokeCurrentSession, .confirmProfile, .me:
       []
     }
   }
@@ -381,9 +382,10 @@ extension Endpoint where Response == User {
 }
 
 extension Endpoint where Response == ImageSummary {
-  /// Uploads the bytes of an image file. The server reads the file, whatever its type.
-  static func uploadImage(_ file: Data) -> Endpoint {
-    Endpoint(route: .uploadImage, file: file)
+  /// Uploads the bytes of an image file, with a key, so that a resend uploads it once. The server reads the file,
+  /// whatever its type.
+  static func uploadImage(_ file: Data, key: String) -> Endpoint {
+    Endpoint(route: .uploadImage, file: file, idempotencyKey: key)
   }
 }
 

@@ -80,6 +80,106 @@ public struct UnsentChange: Sendable, Equatable, Identifiable {
     /// Decline: the invited user, or their parent, declines an invitation, `DELETE /invitations/{id}`. The
     /// invitation leaves the copy at once.
     case declineInvitation(invitationID: String)
+
+    /// Upload a photo: `POST /images` with the bytes of the photo that the user took or chose, for an item that
+    /// they added by hand. The ID is the image's stand-in ID, which the item's create names. The bytes wait in the
+    /// journal, beside the change, until the upload is sent or refused. Nothing shows for it: the item shows no
+    /// image until the server's answers come.
+    case uploadImage(imageID: String)
+
+    /// Add an item filled in by hand: `POST /lists/{id}/items`. The item shows at the end of its list at once, by
+    /// its stand-in ID, and the server's ID takes its place when the answer comes.
+    case createItem(CreatedItem)
+  }
+}
+
+/// An item that the user filled in by hand and added as an unsent change, with what its row shows until the
+/// server answers. See "When the instance can't be reached" in `docs/spec.md`.
+public struct CreatedItem: Sendable, Equatable {
+  /// The item's stand-in ID. See `StandIn`.
+  public let id: String
+  public let listID: String
+  public let title: String
+  public let notes: String?
+  public let priceMinor: Int?
+  public let topPriceMinor: Int?
+  public let currency: String?
+
+  /// The store links, with their stores: the link that the user gave, kept as the store link.
+  public let storeLinks: [SearchStoreLink]
+
+  /// The images, the primary first: the server's ID of an image that is uploaded, or the stand-in ID of an upload
+  /// that waits. An upload that the server refused is left out when the create is sent.
+  public let imageIDs: [String]
+
+  /// The user who added it: the session's user.
+  public let addedByID: String
+
+  /// Whether the session's user is a recipient of the list, so the item shows no claim state, as the server hides
+  /// it from a recipient.
+  public let hidesClaimState: Bool
+  public let createdAt: Date
+
+  init(
+    id: String, listID: String, item: NewItem, storeLinks: [SearchStoreLink], addedByID: String,
+    hidesClaimState: Bool, createdAt: Date
+  ) {
+    self.init(
+      id: id, listID: listID, title: item.title, notes: item.notes, priceMinor: item.priceMinor,
+      topPriceMinor: item.topPriceMinor, currency: item.currency, storeLinks: storeLinks, imageIDs: item.imageIDs,
+      addedByID: addedByID, hidesClaimState: hidesClaimState, createdAt: createdAt)
+  }
+
+  public init(
+    id: String, listID: String, title: String, notes: String?, priceMinor: Int?, topPriceMinor: Int?,
+    currency: String?, storeLinks: [SearchStoreLink], imageIDs: [String], addedByID: String,
+    hidesClaimState: Bool, createdAt: Date
+  ) {
+    self.id = id
+    self.listID = listID
+    self.title = title
+    self.notes = notes
+    self.priceMinor = priceMinor
+    self.topPriceMinor = topPriceMinor
+    self.currency = currency
+    self.storeLinks = storeLinks
+    self.imageIDs = imageIDs
+    self.addedByID = addedByID
+    self.hidesClaimState = hidesClaimState
+    self.createdAt = createdAt
+  }
+
+  /// The body that the create sends, as the add form makes it. An image that is still a stand-in was never
+  /// uploaded, because the server refused its upload: the item goes without it.
+  var newItem: NewItem {
+    NewItem(
+      title: title, notes: notes, priceMinor: priceMinor, topPriceMinor: topPriceMinor, currency: currency,
+      storeLinks: storeLinks.map { link in
+        NewStoreLink(url: link.url, priceMinor: link.priceMinor, currency: link.currency, imageURL: link.imageURL)
+      },
+      imageIDs: imageIDs.filter { !StandIn.isStandIn($0) })
+  }
+}
+
+/// A stand-in ID: the ID of a thing that a create in the journal makes, until the server's answer gives its own.
+/// Later changes, the copy and each window refer to the thing by it meanwhile. When the answer comes, the server's
+/// ID takes its place in the copy and in the changes that wait, and the journal keeps which ID took the place of
+/// which, so a page that a window opened by the stand-in shows the thing still. See "Unsent changes" in
+/// `docs/spec.md`.
+///
+/// A stand-in can't be taken for a server's ID: it has a prefix that no server's ID has, and a UUID. It needs no
+/// escape in JSON, so the journal can put the server's ID in its place in a patch's text.
+public enum StandIn {
+  static let prefix = "stand-in-"
+
+  /// A new stand-in ID.
+  static func make() -> String {
+    prefix + UUID().uuidString.lowercased()
+  }
+
+  /// Whether the ID is a stand-in, and not the server's.
+  public static func isStandIn(_ id: String) -> Bool {
+    id.hasPrefix(prefix)
   }
 }
 
@@ -122,6 +222,12 @@ extension UnsentChange {
     case gift(Versioned<Gift>)
     case list(Versioned<ListResource>)
 
+    /// The answer of an upload: the image, by the server's ID.
+    case image(ImageSummary)
+
+    /// The answer of a create: the item, by the server's ID.
+    case item(Versioned<Item>)
+
     /// No answer to keep: an unclaim, a delete, or an answer that the app couldn't read. The next pull brings the
     /// row.
     case none
@@ -132,6 +238,15 @@ extension UnsentChange {
 
     var list: Versioned<ListResource>? {
       if case .list(let list) = self { list } else { nil }
+    }
+
+    /// The server's ID of what a create made. Nil for any other answer.
+    var createdID: String? {
+      switch self {
+      case .image(let image): image.id
+      case .item(let item): item.resource.id
+      case .gift, .list, .none: nil
+      }
     }
   }
 }
@@ -219,11 +334,32 @@ struct UnsentChangeRow: Codable, Sendable, FetchableRecord, MutablePersistableRe
     case deleteList
     case acceptInvitation
     case declineInvitation
+    case uploadImage
+    case createItem
   }
 
   mutating func didInsert(_ inserted: InsertionSuccess) {
     id = inserted.rowID
   }
+}
+
+/// The bytes of a photo that an upload in the journal sends, by the upload's stand-in ID. It is in the session's
+/// database, in the session's own folder, never in the shared container: it carries through every migration of the
+/// copy, leaves with its upload, and goes with the database at sign-out and at the API's own 401. The journal reads
+/// it only to send it, so the snapshot never reads the bytes.
+struct UnsentFileRow: Codable, Sendable, FetchableRecord, PersistableRecord {
+  static let databaseTableName = "unsentFile"
+
+  var id: String
+  var data: Data
+}
+
+/// A stand-in ID that the server's ID took the place of. See `StandIn`.
+struct StandInRow: Codable, Sendable, Equatable, FetchableRecord, PersistableRecord {
+  static let databaseTableName = "standIn"
+
+  var id: String
+  var serverID: String
 }
 
 /// A late refusal, as the journal's table keeps it until a window shows it.
@@ -279,6 +415,16 @@ extension LocalDatabase {
         table.column("detail", .text).notNull()
       }
     }
+    migrator.registerMigration("journal 2") { database in
+      try database.create(table: UnsentFileRow.databaseTableName) { table in
+        table.primaryKey("id", .text)
+        table.column("data", .blob).notNull()
+      }
+      try database.create(table: StandInRow.databaseTableName) { table in
+        table.primaryKey("id", .text)
+        table.column("serverID", .text).notNull()
+      }
+    }
     try migrator.migrate(writer)
   }
 
@@ -312,16 +458,58 @@ extension LocalDatabase {
 
   /// Saves an unsent change at the end of the journal, with a key of its own. Every window shows it at once.
   func record(_ action: UnsentChange.Action, title: String) async throws {
-    let row = try UnsentChangeRow(action, title: title, key: UUID().uuidString, createdAt: .now)
-    try await change { database in
-      var row = row
-      try row.insert(database)
+    try await record([NewChange(action, title: title)])
+  }
+
+  /// An unsent change to save: its action, its title, its key, and the bytes that it sends, for an upload.
+  struct NewChange: Sendable {
+    let action: UnsentChange.Action
+    let title: String
+    let key: String
+    let file: Data?
+
+    init(_ action: UnsentChange.Action, title: String, key: String = UUID().uuidString, file: Data? = nil) {
+      self.action = action
+      self.title = title
+      self.key = key
+      self.file = file
     }
+  }
+
+  /// Saves the unsent changes at the end of the journal, in order, with the bytes of each upload, in one change:
+  /// every window shows them together. A create keeps the key that it was given, such as the add form's, so a
+  /// send after an Add whose answer was lost is the same write.
+  func record(_ changes: [NewChange]) async throws {
+    let now = Date.now
+    let rows = try changes.map { change in
+      try UnsentChangeRow(change.action, title: change.title, key: change.key, createdAt: now)
+    }
+    let files = changes.compactMap { change in
+      change.file.map { UnsentFileRow(id: change.action.targetID, data: $0) }
+    }
+    try await change { database in
+      for row in rows {
+        var row = row
+        try row.insert(database)
+      }
+      for file in files {
+        try file.insert(database)
+      }
+    }
+  }
+
+  /// The bytes that the upload with the stand-in ID sends. Nil when the journal holds none.
+  func unsentFile(_ id: String) async throws -> Data? {
+    try await writer.read { database in try UnsentFileRow.fetchOne(database, key: id)?.data }
   }
 
   /// The server accepted the change: its answer goes into the copy, and the change leaves the journal, in one
   /// change. From then on, the server is the authority again. With no answer to keep, which the app couldn't read,
   /// only the change leaves, and the next pull brings the row.
+  ///
+  /// A create's answer gives the server's ID, which takes the place of the stand-in in the changes that wait, in the
+  /// same change (see `StandIn`). An upload leaves with its bytes. An item's answer goes into the copy with its store
+  /// links, so the item shows by the server's ID in the change that its stand-in leaves in.
   ///
   /// The answer is the thing as the server has it now, with the version that the answer carried. A gift that a
   /// change of occasion merged into another is the gift that stays, so the one with the change's ID leaves the copy.
@@ -331,6 +519,7 @@ extension LocalDatabase {
   func accept(_ change: UnsentChange, answer: UnsentChange.Answer) async throws {
     let gift = answer.gift.map { GiftRow($0) }
     let list = answer.list.map { ListRow($0) }
+    let item: Versioned<Item>? = if case .item(let item) = answer { item } else { nil }
     try await self.change { database in
       _ = try UnsentChangeRow.deleteOne(database, key: change.id)
       switch change.action {
@@ -339,7 +528,12 @@ extension LocalDatabase {
       case .acceptInvitation(let invitation):
         _ = try InvitationRow.deleteOne(database, key: invitation.invitationID)
       case .declineInvitation(let id): _ = try InvitationRow.deleteOne(database, key: id)
+      case .uploadImage(let id): _ = try UnsentFileRow.deleteOne(database, key: id)
+      case .createItem: try item.map { try Self.saveAnswered($0, in: database) }
       default: break
+      }
+      if let serverID = answer.createdID {
+        try Self.replace(standIn: change.action.targetID, with: serverID, in: database)
       }
       try list?.save(database)
       guard let gift else { return }
@@ -350,10 +544,13 @@ extension LocalDatabase {
 
   /// The server refused the change: it leaves the journal, so the copy shows the server's row again, and the
   /// refusal waits for a window to show it, in one change.
+  ///
+  /// A refused upload leaves with its bytes. The item's create still names its stand-in, and is sent without it.
   func refuse(_ change: UnsentChange, refusal: APIError.Refusal) async throws {
     let row = try LateRefusalRow(change, refusal: refusal)
     try await self.change { database in
       _ = try UnsentChangeRow.deleteOne(database, key: change.id)
+      if case .uploadImage(let id) = change.action { _ = try UnsentFileRow.deleteOne(database, key: id) }
       var row = row
       try row.insert(database)
     }
@@ -366,13 +563,46 @@ extension LocalDatabase {
     }
   }
 
+  /// Puts the server's ID in the place of the stand-in in every change that waits, as the ID of what it changes
+  /// and in its patch, and keeps which ID took the place of which.
+  private static func replace(standIn: String, with serverID: String, in database: Database) throws {
+    guard StandIn.isStandIn(standIn) else { return }
+    let table = UnsentChangeRow.databaseTableName.quotedDatabaseIdentifier
+    try database.execute(
+      sql: "UPDATE \(table) SET targetID = ? WHERE targetID = ?", arguments: [serverID, standIn])
+    try database.execute(
+      sql: "UPDATE \(table) SET patch = replace(patch, ?, ?) WHERE instr(patch, ?) > 0",
+      arguments: [standIn, serverID, standIn])
+    try StandInRow(id: standIn, serverID: serverID).save(database)
+  }
+
+  /// Saves the item that a create's answer gave, with its store links, as a pull saves an item. No body carries a
+  /// store link's version, so the next pull compares them.
+  private static func saveAnswered(_ item: Versioned<Item>, in database: Database) throws {
+    try removeItems([item.resource.id], in: database)
+    try ItemRow(item).save(database)
+    for (position, link) in item.resource.storeLinks.enumerated() {
+      try StoreLinkRow(link, ofItem: item.resource.id, at: position, version: "").save(database)
+    }
+  }
+
+  /// Every stand-in ID that the server's ID took the place of, with that ID.
+  static func standIns(in database: Database) throws -> [String: String] {
+    var standIns: [String: String] = [:]
+    for row in try StandInRow.fetchAll(database) {
+      standIns[row.id] = row.serverID
+    }
+    return standIns
+  }
+
   // MARK: - Over the copy
 
   /// The lists, each with the unsent changes to it applied in order over its row, by name. A deleted list is left
   /// out, and so are its items and recipient rows, which the snapshot shows only for the lists that it has.
   ///
   /// An accepted invitation adds the invited user to the list's recipients. A list that the copy doesn't hold, which
-  /// the invited user can't see yet, shows by its name, with no items, until the server's answer brings it.
+  /// the invited user can't see yet, shows by its name, with no items, until the server's answer brings it. An item
+  /// that a create adds counts on its list.
   static func applying(_ changes: [UnsentChange], to lists: [ListRow]) -> [ListRow] {
     var rows = lists
     var renamed = false
@@ -391,6 +621,9 @@ extension LocalDatabase {
           rows.append(ListRow(standingInFor: invitation))
           renamed = true
         }
+      case .createItem(let item):
+        guard let index = rows.firstIndex(where: { $0.id == item.listID }) else { continue }
+        rows[index] = rows[index].with(itemCount: rows[index].itemCount + 1)
       default:
         continue
       }
@@ -417,6 +650,38 @@ extension LocalDatabase {
     return invitations.filter { !answered.contains($0.id) }
   }
 
+  /// The items, with each item that a create adds after the last item of its list, in the journal's order, by its
+  /// stand-in ID. The items are in the copy's order: by list, then by place.
+  static func applying(_ changes: [UnsentChange], to items: [ItemRow]) -> [ItemRow] {
+    let created = changes.compactMap { change -> CreatedItem? in
+      if case .createItem(let item) = change.action { item } else { nil }
+    }
+    guard !created.isEmpty else { return items }
+    var last: [String: Int] = [:]
+    for item in items {
+      last[item.listID] = max(last[item.listID] ?? -1, item.position)
+    }
+    var rows = items
+    for item in created {
+      let position = (last[item.listID] ?? -1) + 1
+      last[item.listID] = position
+      rows.append(ItemRow(standingInFor: item, at: position))
+    }
+    return rows
+  }
+
+  /// The store links, with the store links of each item that a create adds, in the order that the user gave them.
+  static func applying(_ changes: [UnsentChange], to storeLinks: [StoreLinkRow]) -> [StoreLinkRow] {
+    var rows = storeLinks
+    for change in changes {
+      guard case .createItem(let item) = change.action else { continue }
+      rows += item.storeLinks.enumerated().map { position, link in
+        StoreLinkRow(standingInFor: link, of: item, at: position)
+      }
+    }
+    return rows
+  }
+
   /// The gifts, each with the unsent changes to it applied in order over its row. An unclaimed gift is left out.
   /// `now` is when a gift is said to be given within 14 days, for `needs_attention` after an answer to a flag or a
   /// pick of the occasion.
@@ -438,7 +703,7 @@ extension LocalDatabase {
       case .lowerQuantity(_, let quantity): rows[index] = gift.with(quantity: quantity)
       case .unclaim: rows.remove(at: index)
       case .acknowledge(_, let flag): rows[index] = gift.answering(flag, now: now)
-      case .editList, .deleteList, .acceptInvitation, .declineInvitation:
+      case .editList, .deleteList, .acceptInvitation, .declineInvitation, .uploadImage, .createItem:
         continue
       case .setOccasion(_, let occasion):
         picked = true
@@ -478,13 +743,17 @@ extension UnsentChange.Action {
       id
     case .acceptInvitation(let invitation):
       invitation.invitationID
+    case .uploadImage(let id):
+      id
+    case .createItem(let item):
+      item.id
     }
   }
 
-  /// Whether the change is to a gift. Otherwise it is to a list, or to an invitation.
+  /// Whether the change is to a gift. Otherwise it is to a list, to an invitation, or a create.
   var isToAGift: Bool {
     switch self {
-    case .editList, .deleteList, .acceptInvitation, .declineInvitation: false
+    case .editList, .deleteList, .acceptInvitation, .declineInvitation, .uploadImage, .createItem: false
     default: true
     }
   }
@@ -499,7 +768,9 @@ extension UnsentChange.Action {
     case .setNote(_, let note): GiftChanges(note: note ?? "")
     case .lowerQuantity(_, let quantity): GiftChanges(quantity: quantity)
     case .setOccasion(_, let occasion): GiftChanges(occasionID: occasion.id)
-    case .unclaim, .acknowledge, .editList, .deleteList, .acceptInvitation, .declineInvitation: GiftChanges()
+    case .unclaim, .acknowledge, .editList, .deleteList, .acceptInvitation, .declineInvitation, .uploadImage,
+      .createItem:
+      GiftChanges()
     }
   }
 
@@ -516,12 +787,15 @@ extension UnsentChange.Action {
     case .deleteList: .deleteList
     case .acceptInvitation: .acceptInvitation
     case .declineInvitation: .declineInvitation
+    case .uploadImage: .uploadImage
+    case .createItem: .createItem
     }
   }
 
   /// The patch as the journal keeps it: the JSON that the change sends. An answer to a flag keeps its code, a pick
   /// of the occasion keeps what it shows too, and an unclaim keeps an empty object. An accept sends no body, and
-  /// keeps what the list shows until the server answers.
+  /// keeps what the list shows until the server answers. A create keeps its body and what its row shows, and an
+  /// upload keeps an empty object: its bytes wait beside it.
   fileprivate func patch() throws -> String {
     let data =
       switch self {
@@ -529,6 +803,7 @@ extension UnsentChange.Action {
       case .setOccasion(_, let occasion): try JSONEncoder().encode(OccasionPick(occasion))
       case .editList(_, let changes): try JSONEncoder().encode(changes)
       case .acceptInvitation(let invitation): try JSONEncoder().encode(AcceptancePatch(invitation))
+      case .createItem(let item): try JSONEncoder().encode(CreationPatch(item))
       default: try JSONEncoder().encode(giftChanges)
       }
     return String(decoding: data, as: UTF8.self)
@@ -565,6 +840,13 @@ extension UnsentChange.Action {
     case .declineInvitation:
       self = .declineInvitation(invitationID: targetID)
       return
+    case .uploadImage:
+      self = .uploadImage(imageID: targetID)
+      return
+    case .createItem:
+      guard let patch = try? JSONDecoder().decode(CreationPatch.self, from: Data(patch.utf8)) else { return nil }
+      self = .createItem(patch.item(targetID))
+      return
     case .markBought, .setFromLabel, .setNote, .lowerQuantity:
       break
     }
@@ -582,7 +864,8 @@ extension UnsentChange.Action {
     case .lowerQuantity:
       guard let quantity = changes.quantity else { return nil }
       self = .lowerQuantity(giftID: targetID, quantity: quantity)
-    case .unclaim, .acknowledge, .setOccasion, .editList, .deleteList, .acceptInvitation, .declineInvitation:
+    case .unclaim, .acknowledge, .setOccasion, .editList, .deleteList, .acceptInvitation, .declineInvitation,
+      .uploadImage, .createItem:
       return nil
     }
   }
@@ -645,6 +928,62 @@ private struct AcceptancePatch: Codable {
   }
 }
 
+/// A create of an item, as the journal keeps it: the body that it sends, and what its row shows until the server
+/// answers.
+private struct CreationPatch: Codable {
+  struct Link: Codable {
+    let url: String
+    let store: String
+    let priceMinor: Int?
+    let currency: String?
+    let imageURL: String?
+  }
+
+  let listID: String
+  let title: String
+  let notes: String?
+  let priceMinor: Int?
+  let topPriceMinor: Int?
+  let currency: String?
+  let storeLinks: [Link]
+  let imageIDs: [String]
+  let addedByID: String
+  let hidesClaimState: Bool
+  // JSONEncoder's default date form, seconds since 2001 as a number. Don't change it: a later version of the app must
+  // read the journal rows that this one wrote.
+  let createdAt: Date
+
+  init(_ item: CreatedItem) {
+    listID = item.listID
+    title = item.title
+    notes = item.notes
+    priceMinor = item.priceMinor
+    topPriceMinor = item.topPriceMinor
+    currency = item.currency
+    storeLinks = item.storeLinks.map { link in
+      Link(
+        url: link.url, store: link.store, priceMinor: link.priceMinor, currency: link.currency,
+        imageURL: link.imageURL)
+    }
+    imageIDs = item.imageIDs
+    addedByID = item.addedByID
+    hidesClaimState = item.hidesClaimState
+    createdAt = item.createdAt
+  }
+
+  func item(_ id: String) -> CreatedItem {
+    CreatedItem(
+      id: id, listID: listID, title: title, notes: notes, priceMinor: priceMinor, topPriceMinor: topPriceMinor,
+      currency: currency,
+      storeLinks: storeLinks.map { link in
+        SearchStoreLink(
+          url: link.url, store: link.store, priceMinor: link.priceMinor, currency: link.currency,
+          imageURL: link.imageURL)
+      },
+      imageIDs: imageIDs, addedByID: addedByID, hidesClaimState: hidesClaimState, createdAt: createdAt)
+  }
+}
+
 extension UnsentChange {
   /// The change that a row of the journal keeps. Nil for a row that the app can't read: it stays in the journal,
   /// unsent, and shows nothing.
@@ -699,6 +1038,14 @@ extension ListRow {
 }
 
 extension ListRow {
+  /// The list with one more item, as a create shows it over the row.
+  fileprivate func with(itemCount: Int) -> ListRow {
+    ListRow(
+      id: id, name: name, description: description, isPrimary: isPrimary, recipientIDs: recipientIDs,
+      itemCount: itemCount, createdAt: createdAt, canEdit: canEdit, canDelete: canDelete, canInvite: canInvite,
+      canLeave: canLeave, version: version)
+  }
+
   /// The list with the user as one more recipient, as an accept shows it over the row. Its `can_*` fields stay the
   /// server's until the answer.
   fileprivate func with(recipient userID: String) -> ListRow {
@@ -717,6 +1064,35 @@ extension ListRow {
       recipientIDs: [invitation.invitedByID, invitation.userID].compactMap { $0 }, itemCount: 0,
       createdAt: invitation.createdAt, canEdit: false, canDelete: false, canInvite: false, canLeave: false,
       version: "")
+  }
+}
+
+extension ItemRow {
+  /// What a create shows for its item until the server answers: what the user filled in, at the end of its list,
+  /// by its stand-in ID. One is wanted. It has no image yet, and no version: it is never saved.
+  ///
+  /// A recipient gets no claim state, as the server hides it. Anyone else, such as a parent on a child's list, sees
+  /// that nobody has claimed it. The user can edit it, as they could add it. Nothing can claim it or refresh its
+  /// prices: those need the server, and the item isn't there yet.
+  fileprivate init(standingInFor item: CreatedItem, at position: Int) {
+    self.init(
+      id: item.id, listID: item.listID, title: item.title, notes: item.notes, priceMinor: item.priceMinor,
+      topPriceMinor: item.topPriceMinor, currency: item.currency, quantity: 1, isUnlimited: false,
+      position: position, addedByID: item.addedByID, createdAt: item.createdAt, images: [], primaryImage: nil,
+      stillWanted: item.hidesClaimState ? .hidden : .shown(1),
+      myClaimedQuantity: item.hidesClaimState ? .hidden : .shown(0), canEdit: true, canDelete: true,
+      canClaim: false, canRefreshPrices: false, version: "")
+  }
+}
+
+extension StoreLinkRow {
+  /// What a create shows for a store link of its item until the server answers, by an ID made from the item's
+  /// stand-in ID. It has no version: it is never saved.
+  fileprivate init(standingInFor link: SearchStoreLink, of item: CreatedItem, at position: Int) {
+    self.init(
+      id: "\(item.id)-link-\(position)", itemID: item.id, position: position, url: link.url, store: link.store,
+      priceMinor: link.priceMinor, currency: link.currency, capturedAt: nil, imageURL: link.imageURL,
+      createdAt: item.createdAt, canEdit: false, canDelete: false, version: "")
   }
 }
 

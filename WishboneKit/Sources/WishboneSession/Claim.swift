@@ -36,7 +36,9 @@ extension SessionModel {
   ///
   /// Diagnostics: never here. A refused claim is a 403 or a 409, which the client doesn't capture.
   public func claim(item id: String) async -> ClaimOutcome {
-    guard !hasEnded else { return .failed }
+    // A page that a window opened by a stand-in ID claims the item by the server's ID that took its place.
+    let id = serverID(of: id)
+    guard !hasEnded, !StandIn.isStandIn(id) else { return .failed }
     do {
       _ = try await claimOne(of: id, for: nil)
       return .claimed

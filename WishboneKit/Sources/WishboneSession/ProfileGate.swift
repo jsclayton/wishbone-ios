@@ -102,7 +102,7 @@ extension SessionModel {
     var changes = draft.changes(from: user)
     if case .new(let file) = draft.photo {
       do {
-        let image = try await client.uploadImage(file)
+        let image = try await client.uploadImage(file, key: UUID().uuidString)
         // The new avatar shows at once, with no download.
         await images.keep(file, for: image)
         changes.avatarImageID = .some(image.id)

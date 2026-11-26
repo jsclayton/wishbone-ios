@@ -83,6 +83,7 @@ Decided in the spec: "Add to", "Not sure", "Already on this list: {title}", "Pho
 | Notes were cut | "Your notes were cut to 2000 characters." |
 | A list for someone else, in Add to | "Lego · Emma" |
 | Leave with changes | "Discard this item?", with "Discard" and "Keep editing" |
+| A late refusal of an add filled in by hand, in the alert "Some changes couldn't be saved" | "Adding {title}: {reason}", and for its photo "Your photo for {title}: {reason}" |
 
 ## Accessibility
 

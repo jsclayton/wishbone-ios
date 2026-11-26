@@ -66,4 +66,22 @@ struct DatabaseFile {
       throw Refused(description: String(cString: sqlite3_errmsg(connection)))
     }
   }
+
+  /// How many rows the table holds, read through SQLite itself.
+  func count(of table: String) throws -> Int {
+    var connection: OpaquePointer?
+    defer { sqlite3_close(connection) }
+    guard sqlite3_open_v2(url.path(percentEncoded: false), &connection, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
+      throw Refused(description: "The database file will not open.")
+    }
+    sqlite3_busy_timeout(connection, 5000)
+    var statement: OpaquePointer?
+    defer { sqlite3_finalize(statement) }
+    guard sqlite3_prepare_v2(connection, "SELECT COUNT(*) FROM \"\(table)\"", -1, &statement, nil) == SQLITE_OK,
+      sqlite3_step(statement) == SQLITE_ROW
+    else {
+      throw Refused(description: String(cString: sqlite3_errmsg(connection)))
+    }
+    return Int(sqlite3_column_int64(statement, 0))
+  }
 }

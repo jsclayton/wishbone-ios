@@ -130,7 +130,8 @@ extension SessionModel {
     }
   }
 
-  /// Sends one unsent change, and gives the server's answer. An unclaim, a delete and a decline have none.
+  /// Sends one unsent change, and gives the server's answer. An unclaim, a delete and a decline have none. An
+  /// upload's answer is the image, and a create's is the item, each by the server's ID.
   ///
   /// An unclaim of a gift that is gone (a 404) is done: it was unclaimed, merged, or restored from elsewhere, and the
   /// giver no longer has it, which is what they asked for. So the gift leaves the copy, and nothing is said.
@@ -158,6 +159,29 @@ extension SessionModel {
     case .declineInvitation(let id):
       try await client.declineInvitation(id, key: change.key)
       return .none
+    case .uploadImage(let id):
+      // An upload whose bytes the journal doesn't hold can't be sent. It leaves, and the item goes without it.
+      guard let file = await unsentFile(id) else { return .none }
+      let image = try await client.uploadImage(file, key: change.key)
+      // An image that the user just uploaded goes into the cache under its new address.
+      await images.keep(file, for: image)
+      return .image(image)
+    case .createItem(let item):
+      return .item(try await client.createItem(item.newItem, onList: item.listID, key: change.key))
+    }
+  }
+
+  /// The bytes that the upload sends, from the journal. Nil when it holds none, or can't be read.
+  private func unsentFile(_ id: String) async -> Data? {
+    do {
+      guard let file = try await database.unsentFile(id) else {
+        Log.fault(.session, "An unsent upload has no file.")
+        return nil
+      }
+      return file
+    } catch {
+      Log.fault(.session, "The journal can't be read.", detail: "\(error)")
+      return nil
     }
   }
 

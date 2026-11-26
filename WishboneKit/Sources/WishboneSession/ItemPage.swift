@@ -133,8 +133,11 @@ extension SessionModel {
   /// claim lines. The server already hides them from a recipient. Until the next pull after an accept, though, the
   /// copy's item rows are still the giver's rows, while the list (with the journal applied) has the user as a
   /// recipient.
+  ///
+  /// A page opened by a stand-in ID shows the item still when the server's ID takes its place.
   public func itemPage(id: String) -> ItemPage? {
     guard let item = item(id: id), let list = list(id: item.listID) else { return nil }
+    let id = item.id
     let isRecipient = list.recipientIDs.contains(session.userID)
 
     let stillWanted: ItemPage.StillWanted? =
