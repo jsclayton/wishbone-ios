@@ -67,12 +67,12 @@ public enum ErrorWords {
     case .unknownFilter, .unknownSort, .cursorMismatch, .imageAttached, .resourceChanged:
       return fault
     case .unauthorized, .apiVersionRemoved, .userDeactivated, .lastRecipient, .listHasOtherRecipients, .parentLoop,
-      .storeBlocked, .unknown:
+      .storeBlocked, .cannotEditTargetList, .unknown:
       // The first two have screens of their own, and reach here only in an answer that those screens don't take.
-      // `user_deactivated` names a person, `last_recipient` and `list_has_other_recipients` a list, and
-      // `store_blocked` a store, so the screen that meets each gives its words (see `lastRecipient(of:)` and
-      // `otherRecipients(of:)`). `parent_loop` shows the server's `detail`, as the
-      // table says.
+      // `user_deactivated` names a person, `last_recipient`, `list_has_other_recipients` and
+      // `cannot_edit_target_list` a list, and `store_blocked` a store, so the screen that meets each gives its words
+      // (see `lastRecipient(of:)`, `otherRecipients(of:)` and `cannotAddTo(_:)`). `parent_loop` shows the server's
+      // `detail`, as the table says.
       return refusal.detail
     case .alreadyClaimed, .alreadyInvited, .alreadyRecipient, .alreadyInGroup, .alreadyAttached, .alreadyBlocked:
       // These count as success: see above.
@@ -111,6 +111,11 @@ public enum ErrorWords {
   public static func otherRecipients(of list: String) -> String {
     String(
       localized: "\(list) has other recipients now, so it can't be deleted. You can leave it.", bundle: #bundle)
+  }
+
+  /// The words for `cannot_edit_target_list`: the user can no longer edit the list that a move was to.
+  public static func cannotAddTo(_ list: String) -> String {
+    String(localized: "You can't add to \(list) any more.", bundle: #bundle)
   }
 
   /// The words for `user_deactivated`, which names the deactivated user that the write was for.

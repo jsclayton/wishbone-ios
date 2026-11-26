@@ -2,11 +2,13 @@ import SwiftUI
 import WishboneSession
 
 /// An item's row that opens the item's page, on a list's page and on a user's page. Its context menu has I'll get
-/// this for a giver, from `can_claim` while they have no open gift on the item, Copy link when the item has a store
-/// link, and Edit and Delete from the item's `can_edit` and `can_delete`. VoiceOver offers Open, I'll get this, Copy
-/// link, Edit and Delete as the row's actions. See Actions and Accessibility in `docs/screens/list.md`.
+/// this for a giver, from `can_claim` while they have no open gift on the item, Move to… from the item's `can_edit`
+/// when another list can take it, Copy link when the item has a store link, and Edit and Delete from the item's
+/// `can_edit` and `can_delete`. VoiceOver offers Open, I'll get this, Move to…, Copy link, Edit and Delete as the
+/// row's actions: Move to… is the way to move an item without a drag. See Actions and Accessibility in
+/// `docs/screens/list.md`.
 ///
-/// Edit opens the Edit item sheet over the page, and Delete asks first, as on the item's page.
+/// Edit and Move to… open their sheets over the page, and Delete asks first, as on the item's page.
 ///
 /// A claim from the row waits for the server, as on the item's page. A claim that made no gift says why under the
 /// row's text, and the result is announced.
@@ -30,10 +32,14 @@ struct ItemRowLink: View {
   /// Whether the confirmation of Delete shows.
   @State private var isConfirmingDelete = false
 
+  /// Whether the Move to… sheet shows.
+  @State private var isMoving = false
+
   var body: some View {
     let copyLink = session.copyLink(ofItem: item.id)
     let offersClaim = session.offersClaim(onItem: item.id) && !isClaiming
     let row = session.item(id: item.id)
+    let offersMove = session.moveTargets(ofItem: item.id) != nil
     NavigationLink(value: Page.item(id: item.id)) {
       VStack(alignment: .leading, spacing: 4) {
         ItemRowView(item: item, tileUserID: tileUserID)
@@ -48,6 +54,9 @@ struct ItemRowLink: View {
     .contextMenu {
       if offersClaim {
         claimButton
+      }
+      if offersMove {
+        MoveToButton { isMoving = true }
       }
       if let copyLink {
         CopyLinkButton(url: copyLink)
@@ -66,6 +75,9 @@ struct ItemRowLink: View {
       if offersClaim {
         claimButton
       }
+      if offersMove {
+        MoveToButton { isMoving = true }
+      }
       if let copyLink {
         CopyLinkButton(url: copyLink)
       }
@@ -81,6 +93,9 @@ struct ItemRowLink: View {
       if let row {
         EditItemSheet(item: row, session: session)
       }
+    }
+    .sheet(isPresented: $isMoving) {
+      MoveToSheet(itemID: item.id, session: session)
     }
     .alert(DeleteItemWords.title(item: item.row.title), isPresented: $isConfirmingDelete) {
       Button(role: .destructive) {

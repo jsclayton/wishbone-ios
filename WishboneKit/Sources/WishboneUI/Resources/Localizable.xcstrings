@@ -17,6 +17,17 @@
         }
       }
     },
+    "%@ couldn't be moved. %@" : {
+      "comment" : "A late refusal of Move to…: the item's title, then why the item wasn't moved",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ couldn't be moved. %2$@"
+          }
+        }
+      }
+    },
     "%@ didn't get %@?" : {
       "comment" : "The confirmation of I didn't get this, for a child: the child's name, then the item's title",
       "localizations" : {
@@ -871,6 +882,9 @@
     "More" : {
 
     },
+    "Move to…" : {
+
+    },
     "Moved to %@" : {
       "comment" : "A gift's flag: the item moved to the list"
     },
@@ -1439,6 +1453,9 @@
 
     },
     "You can only lower how many, because this list is now for you too." : {
+
+    },
+    "You can't add to %@ any more." : {
 
     },
     "You can't claim on a list that is for you." : {

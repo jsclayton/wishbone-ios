@@ -14,6 +14,12 @@ extension View {
   }
 }
 
+extension EnvironmentValues {
+  /// The ID by which the window tells the session model that it came to the foreground. Nil outside a window that
+  /// shows a session.
+  @Entry var foregroundWindow: UUID? = nil
+}
+
 private struct ForegroundReport: ViewModifier {
   let session: SessionModel
 
@@ -25,6 +31,8 @@ private struct ForegroundReport: ViewModifier {
 
   func body(content: Content) -> some View {
     content
+      // A write that shows its refusal in the window that made it, such as Move to…, names the window by this ID.
+      .environment(\.foregroundWindow, window)
       // A change of phase cancels the work of the last one. Each task says where the window is before it waits, and
       // the tasks start in the order of the changes, so the last phase wins.
       .task(id: phase) {

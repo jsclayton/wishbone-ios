@@ -36,10 +36,15 @@ public struct ItemChanges: Codable, Sendable, Equatable {
   /// first image that is left takes its place.
   public var primaryImageID: String?
 
+  /// The list to move the item to: Move to… sends it alone. The server puts the item at the end of that list, and
+  /// closes the gap on the old one. The caller must be able to edit both lists, or it is a 403
+  /// `cannot_edit_target_list`. See "A drag between lists is a move" in `docs/spec.md`.
+  public var listID: String?
+
   public init(
     title: String? = nil, notes: String? = nil, priceMinor: Int?? = nil, topPriceMinor: Int?? = nil,
     currency: String? = nil, quantity: Int? = nil, isUnlimited: Bool? = nil, imageIDs: [String]? = nil,
-    primaryImageID: String? = nil
+    primaryImageID: String? = nil, listID: String? = nil
   ) {
     self.title = title
     self.notes = notes
@@ -50,6 +55,7 @@ public struct ItemChanges: Codable, Sendable, Equatable {
     self.isUnlimited = isUnlimited
     self.imageIDs = imageIDs
     self.primaryImageID = primaryImageID
+    self.listID = listID
   }
 
   /// Whether the patch changes nothing.
@@ -67,6 +73,7 @@ public struct ItemChanges: Codable, Sendable, Equatable {
     case isUnlimited = "is_unlimited"
     case imageIDs = "image_ids"
     case primaryImageID = "primary_image_id"
+    case listID = "list_id"
   }
 
   public init(from decoder: any Decoder) throws {
@@ -80,6 +87,7 @@ public struct ItemChanges: Codable, Sendable, Equatable {
     isUnlimited = try container.decodeIfPresent(Bool.self, forKey: .isUnlimited)
     imageIDs = try container.decodeIfPresent([String].self, forKey: .imageIDs)
     primaryImageID = try container.decodeIfPresent(String.self, forKey: .primaryImageID)
+    listID = try container.decodeIfPresent(String.self, forKey: .listID)
   }
 
   public func encode(to encoder: any Encoder) throws {
@@ -93,6 +101,7 @@ public struct ItemChanges: Codable, Sendable, Equatable {
     try container.encodeIfPresent(isUnlimited, forKey: .isUnlimited)
     try container.encodeIfPresent(imageIDs, forKey: .imageIDs)
     try container.encodeIfPresent(primaryImageID, forKey: .primaryImageID)
+    try container.encodeIfPresent(listID, forKey: .listID)
   }
 
   /// A field that can be cleared: absent is nil, `null` is `.some(nil)`.
