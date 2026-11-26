@@ -84,13 +84,7 @@ struct AddScreen: View {
         Button {
           isChoosingPhoto = true
         } label: {
-          Label {
-            Text("Choose a photo", bundle: #bundle)
-              // The words wrap to as many lines as they need, so none is cut short.
-              .fixedSize(horizontal: false, vertical: true)
-          } icon: {
-            Image(systemName: "photo.on.rectangle")
-          }
+          Text("Choose a photo", bundle: #bundle)
         }
       } footer: {
         #if os(iOS)
@@ -235,13 +229,7 @@ struct AddScreen: View {
         Button {
           Task { await takePhoto() }
         } label: {
-          Label {
-            Text("Take a photo", bundle: #bundle)
-              // The words wrap to as many lines as they need, so none is cut short.
-              .fixedSize(horizontal: false, vertical: true)
-          } icon: {
-            Image(systemName: "camera")
-          }
+          Text("Take a photo", bundle: #bundle)
         }
         .disabled(camera != .allowed)
       }
