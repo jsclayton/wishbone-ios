@@ -1,17 +1,21 @@
+import PhotosUI
 import SwiftUI
 import WishboneAPI
 import WishboneSession
 
+#if os(iOS)
+  import AVFoundation
+#endif
+
 /// The Add screen: the start of adding an item. See `docs/screens/add.md`, and "Adding an item" in `docs/spec.md`.
 ///
-/// It holds the system search field, Paste, the progress line while a link is read, the line when the instance
-/// can't be reached, and the "Added" row after an add. A search pushes the add form. The screen shows nothing from
-/// a list, and a link is read on the server, never by the app.
+/// It holds the system search field, Paste, Take a photo and Choose a photo, the progress line while a link or a
+/// photo is read, the line when the instance can't be reached, and the "Added" row after an add. A search pushes the
+/// add form. The screen shows nothing from a list, and a link is read on the server, never by the app. A photo goes
+/// only to the instance.
 ///
 /// In a list's sheet, the screen is fixed to that list: a line names the list, Cancel closes the sheet, and after Add
 /// the sheet closes.
-///
-/// Take a photo and Choose a photo come later.
 ///
 /// **Provisional.** Plain default: the system search field, and the ways in as rows of a system list under it.
 struct AddScreen: View {
@@ -34,6 +38,17 @@ struct AddScreen: View {
 
   /// How many items were added here, for the success haptic.
   @State private var adds = 0
+
+  @State private var isChoosingPhoto = false
+  @State private var chosenPhoto: PhotosPickerItem?
+
+  #if os(iOS)
+    /// Whether Take a photo can open the camera. It is read again each time the app comes back, as from Settings.
+    @State private var camera = CameraAccess.forPhotos
+    @State private var isTakingPhoto = false
+    @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var scenePhase
+  #endif
 
   var body: some View {
     List {
@@ -65,7 +80,30 @@ struct AddScreen: View {
           }
         }
         .labelStyle(.titleAndIcon)
+        takeAPhoto
+        Button {
+          isChoosingPhoto = true
+        } label: {
+          Text("Choose a photo", bundle: #bundle)
+        }
+      } footer: {
+        #if os(iOS)
+          if let reason = camera.photoReason {
+            Text(reason)
+          }
+        #endif
       }
+      #if os(iOS)
+        if camera.offersSettings {
+          Section {
+            Button {
+              if let settings = URL(string: UIApplication.openSettingsURLString) { openURL(settings) }
+            } label: {
+              Text("Open Settings", bundle: #bundle)
+            }
+          }
+        }
+      #endif
     }
     .navigationTitle(Text("Add", bundle: #bundle))
     .searchable(text: $state.text, prompt: Text("Paste a link or type what you want", bundle: #bundle))
@@ -98,6 +136,22 @@ struct AddScreen: View {
       }
     }
     .sensoryFeedback(.success, trigger: adds)
+    // The system photo picker runs outside the app: it needs no photo library permission.
+    .photosPicker(isPresented: $isChoosingPhoto, selection: $chosenPhoto, matching: .images)
+    .task(id: chosenPhoto) { await searchChosenPhoto() }
+    #if os(iOS)
+      .fullScreenCover(isPresented: $isTakingPhoto) {
+        CameraPicker { taken in
+          // The camera's photo has no file yet. The JPEG at full quality keeps its orientation for the encoder.
+          guard let file = taken.jpegData(compressionQuality: 1) else { return }
+          Task { search(await Self.photo(of: file)) }
+        }
+        .ignoresSafeArea()
+      }
+      .onChange(of: scenePhase) {
+        if scenePhase == .active { camera = .forPhotos }
+      }
+    #endif
     // The screen opens with its field ready, when it is empty. Back from the form, with the text still in the
     // field, and the screen after an add, with its "Added" row, open with no keyboard. Where the system shows the
     // field as a button, in a tab bar at the top of a wide window, the field opens with a tap on that button.
@@ -137,7 +191,7 @@ struct AddScreen: View {
       Section {
         Text(CantReach.words(for: session.session.instance))
         Button {
-          search()
+          tryAgain()
         } label: {
           Text("Try again", bundle: #bundle)
         }
@@ -154,14 +208,39 @@ struct AddScreen: View {
           Text("Add it without the link", bundle: #bundle)
         }
       }
-    case .refused:
+    case .refused(let input, let refusal):
       Section {
         if let words = words(for: state.phase) {
           Text(words)
         }
-        fillItInMyself
+        // A photo that the server can't use can't be the item's image either: the words say to choose another.
+        if !(input.isPhoto && refusal.code.isAboutTheImage) {
+          fillItInMyself
+        }
+      }
+    case .unreadablePhoto:
+      // As for a photo that the server can't use: no Fill it in myself, and the words say to choose another.
+      Section {
+        if let words = words(for: state.phase) {
+          Text(words)
+        }
       }
     }
+  }
+
+  /// Take a photo: the system camera, for one photo. Where the camera is denied or turned off, the row can't open
+  /// it, and the footer says why. A device with no camera has no row.
+  @ViewBuilder private var takeAPhoto: some View {
+    #if os(iOS)
+      if camera.showsTakeAPhoto {
+        Button {
+          Task { await takePhoto() }
+        } label: {
+          Text("Take a photo", bundle: #bundle)
+        }
+        .disabled(camera != .allowed)
+      }
+    #endif
   }
 
   private var fillItInMyself: some View {
@@ -183,12 +262,16 @@ struct AddScreen: View {
       return String(localized: "Reading \(store)…", bundle: #bundle)
     case .reading(.words):
       return nil
+    case .reading(.photo):
+      return String(localized: "Looking at your photo…", bundle: #bundle)
     case .cantReach:
       return CantReach.words(for: session.session.instance)
     case .blocked(_, let store):
       return ErrorWords.blocked(store)
     case .refused(_, let refusal):
       return ErrorWords.words(for: refusal)
+    case .unreadablePhoto:
+      return ErrorWords.notAnImage
     }
   }
 
@@ -203,6 +286,27 @@ struct AddScreen: View {
   /// Searches the field's text, and pushes the form with what the search found.
   private func search() {
     guard let started = state.startSearch() else { return }
+    run(started)
+  }
+
+  /// Searches a photo that the user took or chose. The text in the field stays. A file that the device couldn't
+  /// read as an image (nil) sends nothing, and the line says why.
+  private func search(_ photo: Photo?) {
+    guard let started = state.startSearch(ofPhoto: photo) else {
+      searching?.cancel()
+      searching = nil
+      return
+    }
+    run(started)
+  }
+
+  /// Try again, after the instance couldn't be reached: the same link, words, or photo.
+  private func tryAgain() {
+    guard case .cantReach(let input) = state.phase else { return }
+    run(state.startSearch(input))
+  }
+
+  private func run(_ started: (id: UUID, input: SearchInput)) {
     searching?.cancel()
     searching = Task {
       let outcome = await session.search(started.input)
@@ -212,7 +316,45 @@ struct AddScreen: View {
     }
   }
 
+  /// Searches the photo that the user chose in the system photo picker. A photo that can't be loaded changes
+  /// nothing.
+  private func searchChosenPhoto() async {
+    guard let chosenPhoto else { return }
+    defer { self.chosenPhoto = nil }
+    guard let file = try? await chosenPhoto.loadTransferable(type: Data.self) else { return }
+    search(await Self.photo(of: file))
+  }
+
+  #if os(iOS)
+    /// Opens the camera. The first tap asks for the camera, and the camera opens only if the person allows it.
+    private func takePhoto() async {
+      if AVCaptureDevice.authorizationStatus(for: .video) == .notDetermined {
+        _ = await AVCaptureDevice.requestAccess(for: .video)
+      }
+      camera = .forPhotos
+      isTakingPhoto = camera == .allowed
+    }
+  #endif
+
+  /// The photo of the file, as a JPEG under the server's limit, made away from the main actor. Its title, when no
+  /// guess comes back, names the day it was taken. Nil when the device can't read the file as an image.
+  @concurrent nonisolated private static func photo(of file: Data) async -> Photo? {
+    Photo(file: file) { date in
+      String(localized: "Photo from \(date.formatted(date: .abbreviated, time: .omitted))", bundle: #bundle)
+    }
+  }
+
   private func announce(_ words: String) {
     AccessibilityNotification.Announcement(words).post()
+  }
+}
+
+extension ErrorCode {
+  /// Whether the server refused the file itself: too large, or not an image.
+  fileprivate var isAboutTheImage: Bool {
+    switch self {
+    case .imageTooLarge, .requestTooLarge, .imageInvalid: true
+    default: false
+    }
   }
 }

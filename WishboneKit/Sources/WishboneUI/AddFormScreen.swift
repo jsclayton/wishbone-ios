@@ -10,7 +10,7 @@ import WishboneSession
 /// answer adds the item once. It shows no claim state. Add to offers only the lists that the user can edit, and the
 /// duplicate hint reads only what the user sees on the list.
 ///
-/// A photo of the user's own comes later.
+/// A photo that the user took or chose is the item's image, above the title. It goes only to the instance.
 ///
 /// **Provisional.** Plain default: a system form, in the order of the screen's spec. Add is in the toolbar.
 struct AddFormScreen: View {
@@ -46,6 +46,11 @@ struct AddFormScreen: View {
       if let words = problemWords ?? noteWords {
         Section {
           Text(words)
+        }
+      }
+      if let photo = draft.photo {
+        Section {
+          PhotoTile(photo: photo)
         }
       }
       if !draft.images.isEmpty {
@@ -253,6 +258,8 @@ struct AddFormScreen: View {
         bundle: #bundle)
     case .nothingFound(let store):
       String(localized: "Nothing could be read from \(store). Fill it in yourself.", bundle: #bundle)
+    case .photoNotRead:
+      String(localized: "Nothing could be read from your photo. Give it a title.", bundle: #bundle)
     case .blocked(let store): ErrorWords.blocked(store)
     case nil: nil
     }
@@ -406,5 +413,39 @@ private struct ImageTile: View {
           .padding(6)
       }
     }
+  }
+}
+
+/// The photo that the user took or chose: the item's image. It is not ticked: an item from a photo has that one
+/// image. The picture is made away from the main actor, once for each photo.
+private struct PhotoTile: View {
+  let photo: Photo
+
+  @State private var preview: CGImage?
+
+  var body: some View {
+    HStack {
+      Spacer(minLength: 0)
+      Group {
+        if let preview {
+          Image(decorative: preview, scale: 1)
+            .resizable()
+            .scaledToFit()
+        } else {
+          Rectangle().fill(.quaternary)
+        }
+      }
+      .frame(maxWidth: 240, maxHeight: 240)
+      .clipShape(.rect(cornerRadius: 12))
+      Spacer(minLength: 0)
+    }
+    .accessibilityElement()
+    .accessibilityLabel(Text("Your photo", bundle: #bundle))
+    .accessibilityAddTraits(.isImage)
+    .task(id: photo.id) { preview = await Self.preview(of: photo) }
+  }
+
+  @concurrent nonisolated private static func preview(of photo: Photo) async -> CGImage? {
+    photo.preview(longestSide: 720)
   }
 }

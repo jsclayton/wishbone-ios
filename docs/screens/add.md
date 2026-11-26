@@ -26,7 +26,7 @@ The start of adding an item: paste a link, type what you want, or use a photo. T
 - **Reading a link or a photo:** a progress line, with **Fill it in myself**, which stops the wait and opens the form with what the user gave.
 - **A blocked store:** no form opens. A message, with **Add it without the link**.
 - **Can't reach {address}:** the line, with Try again and **Fill it in myself**. The text stays in the field.
-- **Camera denied:** Take a photo says why, and offers Open Settings.
+- **Camera denied:** Take a photo says why, and offers Open Settings. When a restriction, such as Screen Time, turns the camera off, it says so, with no Open Settings. A device with no camera has no Take a photo row.
 - **Over the hourly limit**, and **nothing found:** the form opens with a note. Those states are in [add-form](add-form.md).
 
 ## Windows
@@ -63,6 +63,7 @@ Decided in the spec: the prompt "Paste a link or type what you want", "Paste", "
 | Reading a photo | "Looking at your photo…" |
 | In the sheet | "Adding to {list}" |
 | Camera denied | "Wishbone needs the camera to take a photo. You can turn it on in Settings, or choose a photo." |
+| Camera turned off by a restriction | "The camera is turned off on this device, so Wishbone can't take a photo. Choose a photo." |
 
 ## Accessibility
 

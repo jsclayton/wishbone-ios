@@ -75,7 +75,10 @@ nonisolated final class AddItemJourney: JourneyTestCase {
     XCTAssertNotEqual(field.value as? String, title, "The field still has the words after Add.")
     dropKeyboard(of: app)
     XCTAssertTrue(added.waitForExistence(timeout: 30), "The Added row didn't come back.")
-    try await Audit.run(on: app, showing: "the Add screen after an add", in: self)
+    // Under the "Added" row, a larger text pushes the last way in, Choose a photo, off the screen. In the
+    // double-length pseudo-language, the Dynamic Type check then can't measure it, and calls it partially unsupported.
+    try await Audit.run(
+      on: app, showing: "the Add screen after an add", in: self, rowsThatLeaveTheScreen: ["Choose a photo"])
 
     // The row opens the item's page.
     added.tap()

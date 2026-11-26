@@ -234,17 +234,33 @@ struct DownloadBody: Encodable, Sendable {
   }
 }
 
-/// One field of a `multipart/form-data` body.
+/// One field of a `multipart/form-data` body: a string, or a file.
 struct FormField: Sendable, Equatable {
+  enum Value: Sendable, Equatable {
+    case text(String)
+
+    /// The bytes of a file, with its name and its type.
+    case file(Data, filename: String, contentType: String)
+  }
+
   let name: String
-  let value: String
+  let value: Value
 }
 
 extension Endpoint where Response == SearchBody {
   /// Searches a link or typed words. The key makes a resend after a lost connection safe: the server gives the
   /// first answer again, and reads nothing again.
   static func search(_ text: String) -> Endpoint {
-    Endpoint(route: .search, form: [FormField(name: "text", value: text)], idempotencyKey: UUID().uuidString)
+    Endpoint(route: .search, form: [FormField(name: "text", value: .text(text))], idempotencyKey: UUID().uuidString)
+  }
+
+  /// Searches a photo, as the bytes of a JPEG. The server keeps no copy of it. The key makes a resend safe, as for
+  /// a link.
+  static func search(photo jpeg: Data) -> Endpoint {
+    Endpoint(
+      route: .search,
+      form: [FormField(name: "image", value: .file(jpeg, filename: "photo.jpg", contentType: "image/jpeg"))],
+      idempotencyKey: UUID().uuidString)
   }
 }
 

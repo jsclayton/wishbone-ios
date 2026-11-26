@@ -95,7 +95,7 @@ Decided in the spec: "Scan QR code", "I don't have a link", "Signed in as {name}
 | Camera restricted, as by Screen Time | "The camera is turned off on this device, so Wishbone can't scan. Paste a link." |
 | Camera not available | "This device has no camera to scan with. Paste a link." |
 | The scanner's help | "Point the camera at the QR code of your login link." |
-| The camera's permission string | "Wishbone uses the camera to scan the QR code of a login link, and to take your profile photo." The profile gate's Take a photo shares it |
+| The camera's permission string | "Wishbone uses the camera to scan the QR code of a login link, to take your profile photo, and to take a photo of something to add to a list." The profile gate's Take a photo and the Add screen's Take a photo share it |
 | Help sheet, title | "Getting a login link" |
 | Help sheet, a family member runs it | "Someone in your family runs Wishbone. Ask them, or your parent, for a login link." |
 | Help sheet, the browser | "You use Wishbone in a browser. Open your sign-in screen there. It shows a QR code for you." |

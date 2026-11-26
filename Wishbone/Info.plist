@@ -7,7 +7,7 @@
 		<string>$(PRODUCT_BUNDLE_IDENTIFIER).refresh</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>Wishbone uses the camera to scan the QR code of a login link, and to take your profile photo.</string>
+	<string>Wishbone uses the camera to scan the QR code of a login link, to take your profile photo, and to take a photo of something to add to a list.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>NSAppTransportSecurity</key>
