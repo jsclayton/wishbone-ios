@@ -91,6 +91,55 @@ struct CopyObservationTests {
     #expect(made.last?.blockedStores.count == 2)
   }
 
+  @Test("An item that a create adds, and the server's item that takes its place, are in each snapshot in step")
+  func createInStep() async throws {
+    let robin = try await builder.person("Robin")
+    let list = try await builder.primaryList(of: robin)
+    let tent = try await builder.item("Tent", on: list, as: robin)
+    let folder = try ScratchDirectory("copy")
+    let database = try LocalDatabase.open(at: folder.url.appending(path: "database.sqlite"))
+    let observed = Observed(database, ofUser: robin.id)
+    let client = try client(for: robin)
+    let pull = Pull(client: client, database: database, userID: robin.id)
+    _ = try await pull.run()
+
+    // An item with a photo, added by hand: the upload, then the create, as the session sends them.
+    let bytes = try PhotoAddingTests.image(width: 64, height: 48, as: .png)
+    let image = StandIn.make()
+    let itemID = StandIn.make()
+    let created = CreatedItem(
+      id: itemID, listID: list.id, title: "Kettle", notes: nil, priceMinor: nil, topPriceMinor: nil, currency: nil,
+      storeLinks: [SearchStoreLink(url: "https://example.com/kettle", store: "example.com")], imageIDs: [image],
+      addedByID: robin.id, hidesClaimState: true, createdAt: .now)
+    try await database.record([
+      .init(.uploadImage(imageID: image), title: "Kettle", file: bytes), .init(.createItem(created), title: "Kettle"),
+    ])
+    let upload = try #require(try await database.firstUnsentChange())
+    let uploaded = try await client.uploadImage(bytes, key: upload.key)
+    try await database.accept(upload, answer: .image(uploaded))
+    let create = try #require(try await database.firstUnsentChange())
+    guard case .createItem(let named) = create.action else {
+      Issue.record("The create is not next")
+      return
+    }
+    let item = try await client.createItem(named.newItem, onList: list.id, key: create.key)
+    try await database.accept(create, answer: .item(item))
+    _ = try await pull.run()
+
+    let made = try await observed.end()
+    #expect(
+      made.contains { snapshot in
+        snapshot.items[list.id]?.map(\.id) == [tent.id, itemID] && snapshot.storeLinks[itemID]?.count == 1
+          && snapshot.lists.first { $0.id == list.id }?.itemCount == 2
+      })
+    let last = try #require(made.last)
+    #expect(last.items[list.id]?.map(\.id) == [tent.id, item.resource.id])
+    #expect(last.items[list.id]?.last?.primaryImage?.id == uploaded.id)
+    #expect(last.storeLinks[item.resource.id]?.map(\.url) == ["https://example.com/kettle"])
+    #expect(last.standIns == [image: uploaded.id, itemID: item.resource.id])
+    #expect(last.unsentChangeCount == 0)
+  }
+
   /// The API client of the person's own session, straight to the server.
   private func client(for person: Fixture.Person) throws -> APIClient {
     let signedIn = try person.signedIn()

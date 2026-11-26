@@ -113,6 +113,32 @@ struct UnsentChangeWordsTests {
     #expect(LateRefusalWords.line(decline) == "Declining the invitation to Cousins: You can't do this any more.")
   }
 
+  @Test(
+    """
+    A late refusal of an item added by hand names the item, a blocked store's line names the store, and a refused \
+    photo names its item
+    """
+  )
+  func lateRefusalsOfAnAddByHand() {
+    let created = CreatedItem(
+      id: "stand-in-1", listID: "3", title: "Kite", notes: nil, priceMinor: nil, topPriceMinor: nil, currency: nil,
+      storeLinks: [SearchStoreLink(url: "https://toys.example/kite", store: "toys.example")], imageIDs: [],
+      addedByID: "7", hidesClaimState: true, createdAt: Date(timeIntervalSince1970: 0))
+    let forbidden = LateRefusal(
+      id: 1, action: .createItem(created), title: "Kite",
+      refusal: .init(route: .createItem, status: 403, code: .forbidden, detail: "The server's words"))
+    let blocked = LateRefusal(
+      id: 2, action: .createItem(created), title: "Kite",
+      refusal: .init(route: .createItem, status: 422, code: .storeBlocked, detail: "The server's words"))
+    let photo = LateRefusal(
+      id: 3, action: .uploadImage(imageID: "stand-in-2"), title: "Kite",
+      refusal: .init(route: .uploadImage, status: 422, code: .imageInvalid, detail: "The server's words"))
+    #expect(LateRefusalWords.line(forbidden) == "Adding Kite: You can't do this any more.")
+    #expect(LateRefusalWords.line(blocked) == "Adding Kite: \(ErrorWords.blocked("toys.example"))")
+    #expect(ErrorWords.blocked("toys.example") == "Links from toys.example are blocked on this Wishbone.")
+    #expect(LateRefusalWords.line(photo) == "Your photo for Kite: \(ErrorWords.notAnImage)")
+  }
+
   @Test("An invitation's line says who invited whom, to which list, and only who is invited once the inviter is gone")
   func invitationLines() {
     let line = { (invited: PendingInvitation.Invited, inviter: String?, onListPage: Bool) in

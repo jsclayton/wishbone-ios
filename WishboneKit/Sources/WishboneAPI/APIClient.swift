@@ -94,9 +94,10 @@ public struct APIClient: Sendable {
   }
 
   /// `POST /images`: uploads the bytes of an image file. The image is attached to nothing until a write names its
-  /// ID, and the server deletes it a day later if nothing does.
-  public func uploadImage(_ file: Data) async throws(APIError) -> ImageSummary {
-    try await load(.uploadImage(file))
+  /// ID, and the server deletes it a day later if nothing does. `key` is the upload's `Idempotency-Key`: a resend
+  /// with the same key gets the first answer again, and the server keeps one image.
+  public func uploadImage(_ file: Data, key: String) async throws(APIError) -> ImageSummary {
+    try await load(.uploadImage(file, key: key))
   }
 
   /// `POST /images` with an address: the server downloads the image, such as a store's image from a search. It

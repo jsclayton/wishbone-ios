@@ -22,18 +22,22 @@ extension LocalDatabase {
     /// One part of the snapshot, and the tables that it reads.
     enum Part: CaseIterable, Sendable {
       case lists, items, storeLinks, recipients, invitations, gifts, unsentChangeCount, lateRefusals, blockedStores
-      case users, groups, occasions, memberships
+      case users, groups, occasions, memberships, standIns
 
       /// The tables that the part reads. A change to any of them reads the part again.
       ///
       /// The items, the store links and the recipient rows are only those of the lists in the copy, so they read
-      /// the lists too, and the store links read the items. The lists, the invitations and the gifts show each unsent
-      /// change over its row, so they read the journal too.
+      /// the lists too, and the store links read the items. The lists, the items, the store links, the invitations
+      /// and the gifts show each unsent change over its row, so they read the journal too.
       var tables: Set<String> {
         switch self {
         case .lists: [ListRow.databaseTableName, UnsentChangeRow.databaseTableName]
-        case .items: [ItemRow.databaseTableName, ListRow.databaseTableName]
-        case .storeLinks: [StoreLinkRow.databaseTableName, ItemRow.databaseTableName, ListRow.databaseTableName]
+        case .items: [ItemRow.databaseTableName, ListRow.databaseTableName, UnsentChangeRow.databaseTableName]
+        case .storeLinks:
+          [
+            StoreLinkRow.databaseTableName, ItemRow.databaseTableName, ListRow.databaseTableName,
+            UnsentChangeRow.databaseTableName,
+          ]
         case .recipients: [RecipientRow.databaseTableName, ListRow.databaseTableName]
         case .invitations: [InvitationRow.databaseTableName, UnsentChangeRow.databaseTableName]
         case .gifts: [GiftRow.databaseTableName, UnsentChangeRow.databaseTableName]
@@ -44,6 +48,7 @@ extension LocalDatabase {
         case .groups: [GroupRow.databaseTableName]
         case .occasions: [OccasionRow.databaseTableName]
         case .memberships: [MembershipRow.databaseTableName]
+        case .standIns: [StandInRow.databaseTableName]
         }
       }
 
@@ -76,6 +81,7 @@ extension LocalDatabase {
     var groups: [GroupRow] = []
     var occasions: [OccasionRow] = []
     var memberships: [MembershipRow] = []
+    var standIns: [String: String] = [:]
 
     /// Every part, read now.
     init(in database: Database) throws {
@@ -93,12 +99,17 @@ extension LocalDatabase {
           try LocalDatabase.unsentChanges(in: database),
           to: try ListRow.order(Column("name"), Column("id")).fetchAll(database))
       case .items:
-        items = try ItemRow.filter(Self.listIDs.contains(Column("listID")))
-          .order(Column("listID"), Column("position"), Column("id")).fetchAll(database)
+        // An item that a create adds shows at the end of its list, until the server accepts or refuses it.
+        items = LocalDatabase.applying(
+          try LocalDatabase.unsentChanges(in: database),
+          to: try ItemRow.filter(Self.listIDs.contains(Column("listID")))
+            .order(Column("listID"), Column("position"), Column("id")).fetchAll(database))
       case .storeLinks:
         let itemIDs = ItemRow.select(Column("id")).filter(Self.listIDs.contains(Column("listID")))
-        storeLinks = try StoreLinkRow.filter(itemIDs.contains(Column("itemID")))
-          .order(Column("itemID"), Column("position"), Column("id")).fetchAll(database)
+        storeLinks = LocalDatabase.applying(
+          try LocalDatabase.unsentChanges(in: database),
+          to: try StoreLinkRow.filter(itemIDs.contains(Column("itemID")))
+            .order(Column("itemID"), Column("position"), Column("id")).fetchAll(database))
       case .recipients:
         // The order that they became recipients, as the server gives it. Two can have the same time.
         recipients = try RecipientRow.filter(Self.listIDs.contains(Column("listID")))
@@ -113,7 +124,10 @@ extension LocalDatabase {
         let unsent = try LocalDatabase.unsentChanges(in: database)
         gifts = LocalDatabase.applying(
           unsent, to: try GiftRow.order(Column("revealAt"), Column("id")).fetchAll(database))
-      case .unsentChangeCount: unsentChangeCount = try UnsentChangeRow.fetchCount(database)
+      case .unsentChangeCount:
+        // An upload goes with its item's create, so the count is of what the user did: one for each item.
+        unsentChangeCount = try UnsentChangeRow.filter(Column("kind") != UnsentChangeRow.Kind.uploadImage.rawValue)
+          .fetchCount(database)
       case .lateRefusals: lateRefusals = try LocalDatabase.lateRefusals(in: database)
       case .blockedStores:
         blockedStores = try BlockedStoreRow.order(Column("store"), Column("id")).fetchAll(database)
@@ -123,6 +137,7 @@ extension LocalDatabase {
         occasions = try OccasionRow.order(Column("nextDate").ascNullsLast, Column("name"), Column("id")).fetchAll(
           database)
       case .memberships: memberships = try MembershipRow.order(Column("kind"), Column("ownerID")).fetchAll(database)
+      case .standIns: standIns = try LocalDatabase.standIns(in: database)
       }
     }
   }
@@ -215,6 +230,7 @@ extension LocalDatabase.Snapshot {
     if changed.contains(.groups) { groups = parts.groups }
     if changed.contains(.occasions) { occasions = parts.occasions }
     if changed.contains(.memberships) { memberships = parts.memberships }
+    if changed.contains(.standIns) { standIns = parts.standIns }
     if !changed.isDisjoint(with: [.users, .lists, .items]) {
       let listID = user?.record?.primaryListID
       primaryList = listID.flatMap { listID in lists.first { $0.id == listID } }

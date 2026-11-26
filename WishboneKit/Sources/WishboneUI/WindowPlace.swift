@@ -92,6 +92,23 @@ public struct WindowPlace: Equatable, Sendable {
     }
   }
 
+  /// Puts the server's ID in the place of each stand-in ID that it replaced, in the pages pushed on every tab, so a
+  /// page opened by a stand-in shows its thing by the server's ID. See `SessionModel.replacedStandIns`.
+  public mutating func replaceStandIns(_ standIns: [String: String]) {
+    guard !standIns.isEmpty else { return }
+    for (tab, pages) in pushed {
+      let replaced = pages.map { $0.replacingStandIns(standIns) }
+      if replaced != pages { pushed[tab] = replaced }
+    }
+  }
+
+  /// The place with the server's ID in the place of each stand-in ID that it replaced.
+  public func replacingStandIns(_ standIns: [String: String]) -> WindowPlace {
+    var place = self
+    place.replaceStandIns(standIns)
+    return place
+  }
+
   /// A sidebar shortcut: it selects the tab that owns the page, and the page replaces whatever was pushed on
   /// that tab. Back goes to the tab's first screen.
   public mutating func open(_ page: Page) {
@@ -211,6 +228,15 @@ extension WindowTab {
 }
 
 extension Page {
+  /// The page with the server's ID in the place of a stand-in ID that it replaced. Only an item can have a stand-in
+  /// ID now: an item that the user added by hand while the instance couldn't be reached.
+  func replacingStandIns(_ standIns: [String: String]) -> Page {
+    switch self {
+    case .item(let id): .item(id: standIns[id] ?? id)
+    case .list, .user, .gift, .people, .allUsers, .allGroups, .deactivatedUsers, .occasions, .sharedOccasion: self
+    }
+  }
+
   /// The page's kind of place, for a breadcrumb: never what it shows.
   var placeKind: PlaceKind {
     switch self {

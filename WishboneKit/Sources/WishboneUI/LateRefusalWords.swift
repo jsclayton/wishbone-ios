@@ -18,9 +18,22 @@ public enum LateRefusalWords {
   /// One refusal's line: what the change did, then why the server refused it, in the app's words for the code.
   public static func line(_ refusal: LateRefusal) -> String {
     let reason =
-      refusal.refusal.code == .listHasOtherRecipients
-      ? ErrorWords.otherRecipients(of: refusal.title) : ErrorWords.words(for: refusal.refusal) ?? ErrorWords.fault
+      switch (refusal.refusal.code, refusal.action) {
+      case (.listHasOtherRecipients, _): ErrorWords.otherRecipients(of: refusal.title)
+      // An item filled in by hand keeps the link that the user gave as its store link.
+      case (.storeBlocked, .createItem(let item)) where !item.storeLinks.isEmpty:
+        ErrorWords.blocked(item.storeLinks[0].store)
+      default: ErrorWords.words(for: refusal.refusal) ?? ErrorWords.fault
+      }
     switch refusal.action {
+    case .createItem:
+      return String(
+        localized: "Adding \(refusal.title): \(reason)", bundle: #bundle,
+        comment: "A late refusal of an item added by hand: the item's title, then why it wasn't added")
+    case .uploadImage:
+      return String(
+        localized: "Your photo for \(refusal.title): \(reason)", bundle: #bundle,
+        comment: "A late refusal of the photo of an item added by hand: the item's title, then why it wasn't saved")
     case .editList:
       return String(
         localized: "Editing \(refusal.title): \(reason)", bundle: #bundle,

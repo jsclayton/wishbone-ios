@@ -89,7 +89,14 @@ private struct PlacedFrame: View {
     TabFrame(session: session, place: $place)
       .onChange(of: place) { earlier, place in
         save(place.saved(for: session.session))
-        if let kind = place.opened(since: earlier) { diagnostics.leave(.placeOpened(kind)) }
+        // The server's ID in the place of a stand-in opens no new place.
+        if let kind = place.opened(since: earlier.replacingStandIns(session.replacedStandIns)) {
+          diagnostics.leave(.placeOpened(kind))
+        }
+      }
+      // An item that the user added by hand shows by the server's ID once the instance has it. See `StandIn`.
+      .onChange(of: session.replacedStandIns, initial: true) { _, standIns in
+        place.replaceStandIns(standIns)
       }
   }
 }

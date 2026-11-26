@@ -754,7 +754,7 @@ struct LocalDatabase: Sendable {
   }
 
   /// Removes the items, with their store links.
-  private static func removeItems(_ ids: [String], in database: Database) throws {
+  static func removeItems(_ ids: [String], in database: Database) throws {
     guard !ids.isEmpty else { return }
     try ItemRow.deleteAll(database, keys: ids)
     try StoreLinkRow.filter(ids.contains(Column("itemID"))).deleteAll(database)
@@ -811,6 +811,9 @@ struct LocalDatabase: Sendable {
     /// Every occasion of the copy, the soonest first, and one with no date left last.
     var occasions: [OccasionRow] = []
     var memberships: [MembershipRow] = []
+
+    /// Each stand-in ID that the server's ID took the place of, with that ID. See `StandIn`.
+    var standIns: [String: String] = [:]
   }
 }
 
