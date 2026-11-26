@@ -207,7 +207,26 @@ final class PhotoAddingTests {
       (CGImageDestinationCopyTypeIdentifiers() as? [String])?.contains(UTType.heic.identifier) == true,
       "This Mac can't write HEIC")
     let taken = "2026:07:04 15:30:00"
-    let heic = try Self.image(width: 4032, height: 3024, as: .heic, taken: taken)
+    // As a phone takes it held upright: the pixels lie on their side, and the orientation tag (6) turns them. The
+    // file says where it was taken, and the phone that took it.
+    let heic = try Self.image(
+      width: 4032, height: 3024, as: .heic, taken: taken,
+      metadata: [
+        kCGImagePropertyOrientation: 6,
+        kCGImagePropertyGPSDictionary: [
+          kCGImagePropertyGPSLatitude: 51.5, kCGImagePropertyGPSLatitudeRef: "N",
+          kCGImagePropertyGPSLongitude: 0.12, kCGImagePropertyGPSLongitudeRef: "W",
+        ],
+        kCGImagePropertyTIFFDictionary: [kCGImagePropertyTIFFMake: "Apple", kCGImagePropertyTIFFModel: "iPhone"],
+      ])
+    // The fixture holds what the test says it does.
+    let original = try #require(
+      CGImageSourceCreateWithData(heic as CFData, nil).flatMap {
+        CGImageSourceCopyPropertiesAtIndex($0, 0, nil) as? [CFString: Any]
+      })
+    #expect(original[kCGImagePropertyOrientation] as? Int == 6)
+    #expect(original[kCGImagePropertyGPSDictionary] != nil)
+    #expect((original[kCGImagePropertyTIFFDictionary] as? [CFString: Any])?[kCGImagePropertyTIFFMake] != nil)
 
     let photo = Photo(file: heic, now: .distantPast, untitled: Self.untitled)
 
@@ -215,9 +234,15 @@ final class PhotoAddingTests {
     let source = try #require(CGImageSourceCreateWithData(photo.data as CFData, nil))
     #expect(CGImageSourceGetType(source) as String? == UTType.jpeg.identifier)
     let properties = try #require(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
-    #expect(properties[kCGImagePropertyPixelWidth] as? Int == 2400)
-    #expect(properties[kCGImagePropertyPixelHeight] as? Int == 1800)
-    // None of the original's metadata goes: not the time it was taken.
+    // Upright: the sides are swapped, and no tag turns them again.
+    #expect(properties[kCGImagePropertyPixelWidth] as? Int == 1800)
+    #expect(properties[kCGImagePropertyPixelHeight] as? Int == 2400)
+    #expect([nil, 1].contains(properties[kCGImagePropertyOrientation] as? Int))
+    // None of the original's metadata goes: not where, not the phone, and not the time it was taken.
+    #expect(properties[kCGImagePropertyGPSDictionary] == nil)
+    let tiff = properties[kCGImagePropertyTIFFDictionary] as? [CFString: Any]
+    #expect(tiff?[kCGImagePropertyTIFFMake] == nil)
+    #expect(tiff?[kCGImagePropertyTIFFModel] == nil)
     let exif = properties[kCGImagePropertyExifDictionary] as? [CFString: Any]
     #expect(exif?[kCGImagePropertyExifDateTimeOriginal] == nil)
     // The title names the day from the photo's own metadata, not now.
@@ -239,8 +264,11 @@ final class PhotoAddingTests {
     #expect(properties[kCGImagePropertyPixelHeight] as? Int == 48)
   }
 
-  /// An image file of the size, with a pattern that doesn't compress to nothing, and the time it was taken.
-  static func image(width: Int, height: Int, as type: UTType, taken: String? = nil) throws -> Data {
+  /// An image file of the size, with a pattern that doesn't compress to nothing, the time it was taken, and more
+  /// metadata.
+  static func image(
+    width: Int, height: Int, as type: UTType, taken: String? = nil, metadata: [CFString: Any] = [:]
+  ) throws -> Data {
     let context = try #require(
       CGContext(
         data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
@@ -257,7 +285,7 @@ final class PhotoAddingTests {
     let image = try #require(context.makeImage())
     let output = NSMutableData()
     let destination = try #require(CGImageDestinationCreateWithData(output, type.identifier as CFString, 1, nil))
-    var properties: [CFString: Any] = [:]
+    var properties = metadata
     if let taken { properties[kCGImagePropertyExifDictionary] = [kCGImagePropertyExifDateTimeOriginal: taken] }
     CGImageDestinationAddImage(destination, image, properties as CFDictionary)
     try #require(CGImageDestinationFinalize(destination))
