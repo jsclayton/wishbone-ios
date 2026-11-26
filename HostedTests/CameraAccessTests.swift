@@ -45,4 +45,31 @@ struct CameraAccessTests {
     // The simulator has no camera, so the signed-out screen there shows the "no camera" state.
     #expect(CameraAccess.current == .notAvailable)
   }
+
+  @Test("Take a photo: denied says why and offers Open Settings, restricted says so, and no camera has no row")
+  func whatTakeAPhotoShows() {
+    let allowed = CameraAccess(authorization: .notDetermined, isSupported: true)
+    #expect(allowed.showsTakeAPhoto)
+    #expect(allowed.photoReason == nil)
+
+    let denied = CameraAccess(authorization: .denied, isSupported: true)
+    #expect(denied.showsTakeAPhoto)
+    #expect(
+      denied.photoReason
+        == "Wishbone needs the camera to take a photo. You can turn it on in Settings, or choose a photo.")
+    #expect(denied.offersSettings)
+
+    let restricted = CameraAccess(authorization: .restricted, isSupported: true)
+    #expect(restricted.showsTakeAPhoto)
+    #expect(
+      restricted.photoReason
+        == "The camera is turned off on this device, so Wishbone can't take a photo. Choose a photo.")
+    #expect(!restricted.offersSettings)
+
+    // A device with no camera, as the simulator: Choose a photo is the way in.
+    let notAvailable = CameraAccess(authorization: .authorized, isSupported: false)
+    #expect(!notAvailable.showsTakeAPhoto)
+    #expect(notAvailable.photoReason == nil)
+    #expect(CameraAccess.forPhotos == .notAvailable)
+  }
 }

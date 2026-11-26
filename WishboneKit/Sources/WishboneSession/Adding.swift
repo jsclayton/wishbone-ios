@@ -7,14 +7,17 @@ import WishboneAPI
 // A search waits for the server, by nature. So does an add that a search filled in: the form stays open while the
 // instance can't be reached, and Add tries again with the same `Idempotency-Key`, so the item is added once.
 
-/// What the user gave the Add screen: a link, or typed words. The server decides what a search reads. This only
-/// names the store while a link is read, and fills the form for "Fill it in myself".
+/// What the user gave the Add screen: a link, typed words, or a photo. The server decides what a search reads. This
+/// only names the store while a link is read, and fills the form for "Fill it in myself".
 public enum SearchInput: Sendable, Equatable {
   /// A web address, with its store: the host, with no `www.`.
   case link(String, store: String)
 
   /// Anything else, as typed.
   case words(String)
+
+  /// A photo that the user took or chose.
+  case photo(Photo)
 
   /// The input of the text, with no space at either end. Nil for text that is only spaces.
   public init?(_ typed: String) {
@@ -32,10 +35,16 @@ public enum SearchInput: Sendable, Equatable {
     }
   }
 
-  /// The text that goes to the server.
-  public var text: String {
+  /// Whether the user gave a photo.
+  public var isPhoto: Bool {
+    if case .photo = self { true } else { false }
+  }
+
+  /// The text that goes to the server. Nil for a photo, which goes as a file.
+  public var text: String? {
     switch self {
     case .link(let text, _), .words(let text): text
+    case .photo: nil
     }
   }
 }
@@ -81,6 +90,10 @@ public struct ItemDraft: Sendable, Equatable {
   }
 
   public var images: [Image]
+
+  /// The photo that the user took or chose: the item's image. On Add it is uploaded before the images that the
+  /// search found, so it is the primary image.
+  public var photo: Photo?
   public var title: String
   public var priceMinor: Int?
 
@@ -107,6 +120,9 @@ public struct ItemDraft: Sendable, Equatable {
     /// Nothing could be read from the link's store.
     case nothingFound(store: String)
 
+    /// Nothing could be read from the photo, so the form asks for a title. This includes an instance with no model.
+    case photoNotRead
+
     /// The add was refused with `store_blocked`, and the link was dropped from the form.
     case blocked(store: String)
   }
@@ -126,11 +142,12 @@ public struct ItemDraft: Sendable, Equatable {
   /// gets a new key: the server refuses a key again with another body.
   private var key: (value: String, item: NewItem, listID: String)?
 
-  /// The images that an earlier Add uploaded, by their store address.
+  /// The images that an earlier Add uploaded: a store's image by its address, and the photo by its ID.
   private var uploads: [String: String] = [:]
 
   /// The form that a search of the input filled in. A link that nothing could be read from gets the note that
-  /// names its store. Typed words are never read, so they get no note.
+  /// names its store. Typed words are never read, so they get no note. A photo is the item's image, and with no
+  /// guess its title is "Photo from {date}", with the note that asks for a title.
   public init(result: SearchResult, of input: SearchInput) {
     let link = result.storeLinks.first
     images = result.imageURLs.enumerated().map { index, url in Image(url: url, isTicked: index == 0) }
@@ -142,8 +159,17 @@ public struct ItemDraft: Sendable, Equatable {
     options = result.options.map { Option(name: $0.name, values: $0.values, choice: $0.selected) }
     notes = result.notes ?? ""
     notesWereCut = result.notesCut
-    if !result.found, case .link(_, let store) = input {
+    switch input {
+    case .link(_, let store) where !result.found:
       note = .nothingFound(store: link?.store ?? store)
+    case .photo(let photo):
+      self.photo = photo
+      if !result.found || title.allSatisfy(\.isWhitespace) {
+        title = String(photo.untitled.prefix(Self.titleLimit))
+        note = .photoNotRead
+      }
+    case .link, .words:
+      break
     }
   }
 
@@ -152,8 +178,9 @@ public struct ItemDraft: Sendable, Equatable {
     self.init(given: .words(""))
   }
 
-  /// The form with only what the user gave, from "Fill it in myself": a link as the store link, or typed words as
-  /// the title. A search over the hourly limit gives it too, with its note.
+  /// The form with only what the user gave, from "Fill it in myself": a link as the store link, typed words as the
+  /// title, or a photo as the image, with no title. A search over the hourly limit gives it too, with its note: a
+  /// photo then has the title "Photo from {date}".
   public init(given input: SearchInput, note: Note? = nil) {
     self.note = note
     images = []
@@ -169,6 +196,10 @@ public struct ItemDraft: Sendable, Equatable {
       storeLink = SearchStoreLink(url: url, store: store)
     case .words(let words):
       title = String(words.prefix(Self.titleLimit))
+      storeLink = nil
+    case .photo(let photo):
+      self.photo = photo
+      title = note == nil ? "" : String(photo.untitled.prefix(Self.titleLimit))
       storeLink = nil
     }
   }
@@ -239,7 +270,8 @@ public struct ItemDraft: Sendable, Equatable {
   /// Whether the two forms hold the same typed fields. The list is not one of them: a pick in Add to is not a
   /// typed change, so Back after it asks nothing.
   public static func == (first: ItemDraft, second: ItemDraft) -> Bool {
-    first.images == second.images && first.title == second.title && first.priceMinor == second.priceMinor
+    first.images == second.images && first.photo == second.photo && first.title == second.title
+      && first.priceMinor == second.priceMinor
       && first.topPriceMinor == second.topPriceMinor && first.currency == second.currency
       && first.storeLink == second.storeLink && first.options == second.options && first.notes == second.notes
       && first.notesWereCut == second.notesWereCut && first.note == second.note
@@ -297,7 +329,7 @@ public struct AddScreenState: Sendable, Equatable {
     /// The field, and the ways in.
     case empty
 
-    /// A search runs: "Reading {store}…" for a link.
+    /// A search runs: "Reading {store}…" for a link, and "Looking at your photo…" for a photo.
     case reading(SearchInput)
 
     /// The instance didn't answer the search: "Can't reach {address}", with Try again and Fill it in myself.
@@ -340,6 +372,12 @@ public struct AddScreenState: Sendable, Equatable {
   /// A search of the field's text starts. Nil when the field is empty. The search's ID names its answer.
   public mutating func startSearch() -> (id: UUID, input: SearchInput)? {
     guard let input = SearchInput(text) else { return nil }
+    return startSearch(input)
+  }
+
+  /// A search of the input starts: a photo that the user took or chose, or Try again of the one that couldn't reach
+  /// the instance. The field's text stays as it is.
+  public mutating func startSearch(_ input: SearchInput) -> (id: UUID, input: SearchInput) {
     let id = UUID()
     searching = id
     phase = .reading(input)
@@ -418,7 +456,11 @@ extension SessionModel {
   public func search(_ input: SearchInput) async -> SearchOutcome {
     guard !hasEnded else { return .failed }
     do {
-      let result = try await client.search(input.text)
+      let result =
+        switch input {
+        case .photo(let photo): try await client.search(photo: photo.data)
+        case .link(let text, _), .words(let text): try await client.search(text)
+        }
       guard !hasEnded else { return .failed }
       return .form(ItemDraft(result: result, of: input))
     } catch {
@@ -435,7 +477,7 @@ extension SessionModel {
     }
   }
 
-  /// Add: uploads each ticked image with `POST /images`, then adds the item to the draft's list: the one picked in
+  /// Add: uploads the photo, then each ticked image, with `POST /images`, then adds the item to the draft's list: the one picked in
   /// Add to, the one the form is fixed to, or the user's primary list. The server puts it at the end of the list.
   /// The copy has the item at once. See "Which list" and "After Add" in `docs/spec.md`.
   ///
@@ -450,6 +492,17 @@ extension SessionModel {
     var imageWasLeftOut = false
     do {
       var imageIDs: [String] = []
+      // The photo is the item's image: its bytes go up first, so it is the primary image.
+      if let photo = draft.photo {
+        let key = "photo:\(photo.id.uuidString)"
+        if let id = draft.upload(of: key) {
+          imageIDs.append(id)
+        } else {
+          let uploaded = try await client.uploadImage(photo.data)
+          draft.keep(upload: uploaded.id, of: key)
+          imageIDs.append(uploaded.id)
+        }
+      }
       for image in draft.tickedImages {
         if let id = draft.upload(of: image.url) {
           imageIDs.append(id)

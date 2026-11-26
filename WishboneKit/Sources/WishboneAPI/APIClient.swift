@@ -108,7 +108,18 @@ public struct APIClient: Sendable {
   /// `POST /search`: reads a link, or takes typed words as they are, and gives what the add form shows. It saves
   /// nothing. A link is read on the server, never by the app.
   public func search(_ text: String) async throws(APIError) -> SearchResult {
-    let body = try await load(.search(text))
+    try Self.only(await load(.search(text)))
+  }
+
+  /// `POST /search` with a photo, as the bytes of a JPEG: the server guesses a title, and a price when the photo
+  /// shows one. With no model on the instance, nothing is found. It refuses a file over its limit with 413
+  /// `image_too_large` (or `request_too_large`), and a file that isn't an image with 422 `image_invalid`.
+  public func search(photo jpeg: Data) async throws(APIError) -> SearchResult {
+    try Self.only(await load(.search(photo: jpeg)))
+  }
+
+  /// The one result of a search.
+  private static func only(_ body: SearchBody) throws(APIError) -> SearchResult {
     guard let result = body.results.first else {
       throw .undecodable(.init(route: .search, keyPath: "results"))
     }
@@ -581,14 +592,25 @@ public struct APIClient: Sendable {
     }
   }
 
-  /// A `multipart/form-data` body of text fields.
+  /// A `multipart/form-data` body of text fields and files.
   private static func multipart(_ form: [FormField], boundary: String) -> Data {
-    var body = ""
+    var body = Data()
     for field in form {
-      body += "--\(boundary)\r\nContent-Disposition: form-data; name=\"\(field.name)\"\r\n\r\n\(field.value)\r\n"
+      switch field.value {
+      case .text(let text):
+        body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(field.name)\"\r\n\r\n".utf8))
+        body.append(Data(text.utf8))
+      case .file(let bytes, let filename, let contentType):
+        body.append(
+          Data(
+            ("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(field.name)\"; filename=\"\(filename)\"\r\n"
+              + "Content-Type: \(contentType)\r\n\r\n").utf8))
+        body.append(bytes)
+      }
+      body.append(Data("\r\n".utf8))
     }
-    body += "--\(boundary)--\r\n"
-    return Data(body.utf8)
+    body.append(Data("--\(boundary)--\r\n".utf8))
+    return body
   }
 
   /// Whether a write is safe to send once more when its connection was lost before its answer: it is idempotent by

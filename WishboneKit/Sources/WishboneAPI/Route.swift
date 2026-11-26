@@ -174,8 +174,8 @@ public enum Route: String, Sendable, CaseIterable {
     case .claim: fields(of: ClaimBody.CodingKeys.self)
     case .updateGift: fields(of: GiftChanges.CodingKeys.self)
     case .acknowledgeGift: fields(of: AcknowledgeBody.CodingKeys.self)
-    // A search sends a form, not JSON: its one field is the text.
-    case .search: ["text"]
+    // A search sends a form, not JSON: its one field is the text, or the photo.
+    case .search: ["text", "image"]
     case .createItem:
       fields(of: NewItem.CodingKeys.self, lists: ["store_links": fields(of: NewStoreLink.CodingKeys.self)])
     // An upload sends the bytes of a file, or JSON with the address of one for the server to download.

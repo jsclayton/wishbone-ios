@@ -1,6 +1,7 @@
 #if os(iOS)
   import AVFoundation
   import Foundation
+  import UIKit
   import VisionKit
 
   /// Whether the scanner can use the camera, and what Scan QR code shows for it. See "The signed-out screen" in
@@ -74,6 +75,41 @@
     /// Whether the screen offers Open Settings, which can turn the camera on.
     public var offersSettings: Bool {
       self == .denied
+    }
+
+    // MARK: - Take a photo
+
+    /// The access for Take a photo on the Add screen: the system camera, which any device with a camera has. See
+    /// "The empty Add screen" in `docs/spec.md`.
+    public static var forPhotos: CameraAccess {
+      CameraAccess(
+        authorization: AVCaptureDevice.authorizationStatus(for: .video),
+        isSupported: UIImagePickerController.isSourceTypeAvailable(.camera)
+      )
+    }
+
+    /// Whether the Add screen shows Take a photo. A device with no camera, such as the simulator, has only Choose
+    /// a photo.
+    public var showsTakeAPhoto: Bool {
+      self != .notAvailable
+    }
+
+    /// Why Take a photo can't open the camera. Nil when it can, and when the row doesn't show.
+    public var photoReason: String? {
+      switch self {
+      case .allowed, .notAvailable:
+        nil
+      case .denied:
+        String(
+          localized:
+            "Wishbone needs the camera to take a photo. You can turn it on in Settings, or choose a photo.",
+          bundle: #bundle
+        )
+      case .restricted:
+        String(
+          localized: "The camera is turned off on this device, so Wishbone can't take a photo. Choose a photo.",
+          bundle: #bundle)
+      }
     }
   }
 #endif
