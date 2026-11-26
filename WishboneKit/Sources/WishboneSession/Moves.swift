@@ -36,11 +36,18 @@ public enum ShiftRule {
   /// item's old place on its old list goes up one place, and then every item at its new place or after it on its new
   /// list goes down one. The items of other lists stay where they are. On one list, this is the server's reorder.
   public static func shifting(_ others: [Place], moving old: Place, to new: Place) -> [Place] {
+    closing(others, leaving: old).map { place in
+      guard place.listID == new.listID, place.position >= new.position else { return place }
+      return Place(id: place.id, listID: place.listID, position: place.position + 1)
+    }
+  }
+
+  /// The other items' places after the item left its place, in the order given: the first half of the rule. Every
+  /// item after the place on its list goes up one, as the server closes the gap that a delete leaves.
+  public static func closing(_ others: [Place], leaving old: Place) -> [Place] {
     others.map { place in
-      var position = place.position
-      if place.listID == old.listID, position > old.position { position -= 1 }
-      if place.listID == new.listID, position >= new.position { position += 1 }
-      return Place(id: place.id, listID: place.listID, position: position)
+      guard place.listID == old.listID, place.position > old.position else { return place }
+      return Place(id: place.id, listID: place.listID, position: place.position - 1)
     }
   }
 }
@@ -88,5 +95,62 @@ extension SessionModel {
       guard let window, windowsInForeground.contains(window) else { return }
       await showLateRefusals(in: window)
     }
+  }
+}
+
+extension SessionModel {
+  /// Reorder: puts the item beside another item on its own list, as an unsent change: after it, or before it. It
+  /// shows there at once, in every window, and the other items on the list shift as the server's shift rule moves
+  /// them. It asks nothing first, and says nothing about gifts. See "Every drag has a way without dragging" and "Where
+  /// an item can land" in `docs/spec.md`, and Reorder in `docs/screens/list.md`.
+  ///
+  /// The neighbour is the item that the user dropped it beside, as the list's page drew the items (see
+  /// `ItemNeighbour.init(movingFrom:to:in:)`). The change keeps it, and the place that the list shows now. The first
+  /// send reads the place from the neighbour again, as the copy has it then, when every change before it has its
+  /// answer. So the item lands beside the neighbour on the server too: also where the neighbour is an item that waits
+  /// to be created or moved in, whose place the list can only guess while items that the user doesn't see, such as
+  /// the ones that others claimed in full, come before it on the server.
+  ///
+  /// A sync sends it, with only `position`. When the server refuses it in that sync while `window` is in the
+  /// foreground, the refusal shows there at once, as a move's does. It returns when the change is in the journal and
+  /// published, and doesn't wait for the sync.
+  ///
+  /// It does nothing for an item that the copy doesn't hold, on a list that the user can't edit, for a neighbour that
+  /// isn't on that list, and where the item is beside the neighbour already.
+  public func reorderItem(_ id: String, beside neighbour: ItemNeighbour, from window: UUID? = nil) async {
+    guard !hasEnded, let item = item(id: id), item.canEdit, list(id: item.listID)?.canEdit == true,
+      let beside = items(onList: item.listID).first(where: { $0.id == serverID(of: neighbour.itemID) }),
+      beside.id != item.id
+    else { return }
+    let neighbour: ItemNeighbour =
+      switch neighbour {
+      case .after: .after(beside.id)
+      case .before: .before(beside.id)
+      }
+    let position = neighbour.place(movingFrom: item.position, besideAt: beside.position)
+    guard position != item.position else { return }
+    do {
+      try await database.record([
+        LocalDatabase.NewChange(
+          .reorderItem(ItemReorder(itemID: item.id, position: position, neighbour: neighbour)), title: item.title)
+      ])
+    } catch {
+      Log.fault(.session, "The journal can't take an unsent change.", detail: "\(error)")
+      return
+    }
+    await publishNow()
+    Task {
+      await syncNow()
+      guard let window, windowsInForeground.contains(window) else { return }
+      await showLateRefusals(in: window)
+    }
+  }
+}
+
+extension ListPage {
+  /// Whether the page offers Reorder, the toolbar's Edit button: the user can edit the list, and the page shows it in
+  /// List order. A list shown by price or by newest takes no reorder. See Reorder in `docs/screens/list.md`.
+  public func offersReorder(sortedBy sort: ListSort) -> Bool {
+    sort == .listOrder && list.canEdit
   }
 }

@@ -112,6 +112,13 @@ public struct UnsentChange: Sendable, Equatable, Identifiable {
     /// its old list and the new one each count it as the server will. An item that a create in the journal adds is
     /// named by its stand-in ID, as for an edit. See "A drag between lists is a move" in `docs/spec.md`.
     case moveItem(ItemMove)
+
+    /// Reorder: `PATCH /items/{id}` with only `position`, the item's new place on its own list, from 0. The item shows
+    /// beside the item that the user dropped it next to at once, and the other items on its list shift as the
+    /// server's shift rule moves them. The first send reads the place from that item, as the copy has it then, and
+    /// keeps it, so a resend sends the same place. An item that a create in the journal adds is named by its stand-in
+    /// ID, as for an edit, and so is such a neighbour. See "Where an item can land" in `docs/spec.md`.
+    case reorderItem(ItemReorder)
   }
 }
 
@@ -136,6 +143,70 @@ public struct ItemMove: Sendable, Equatable {
     self.fromListID = fromListID
     self.toListID = toListID
     self.toListName = toListName
+  }
+}
+
+/// A reorder of an item on its list: the item, the item that the user dropped it beside, and its place. See
+/// `UnsentChange.Action.reorderItem`.
+public struct ItemReorder: Sendable, Equatable {
+  /// The item, by the server's ID, or by its stand-in ID while its create waits.
+  public let itemID: String
+
+  /// The item's new place on its list, from 0: the `position` that the reorder sends. Until the first send, it is the
+  /// place that the list showed when the user made the reorder, which is a guess where the neighbour waits to be
+  /// created or moved in. The first send reads it again from the neighbour, and keeps it.
+  public let position: Int
+
+  /// The item that the user dropped it beside, until the first send reads the place from it. Nil after that, and in a
+  /// row that an earlier version of the app wrote, which sends its place as it is.
+  public let neighbour: ItemNeighbour?
+
+  public init(itemID: String, position: Int, neighbour: ItemNeighbour? = nil) {
+    self.itemID = itemID
+    self.position = position
+    self.neighbour = neighbour
+  }
+
+  /// The reorder with its place read from the neighbour's place on the item's list, `places`, by item ID: the
+  /// places as the server has them, or as the list shows them. With no neighbour, or one that isn't on the item's
+  /// list there, it keeps the place that it has. Either way, it has no neighbour any more.
+  func resolved(in places: [String: ShiftRule.Place]) -> ItemReorder {
+    guard let neighbour, let item = places[itemID], let beside = places[neighbour.itemID], beside.id != item.id,
+      beside.listID == item.listID
+    else { return ItemReorder(itemID: itemID, position: position) }
+    return ItemReorder(itemID: itemID, position: neighbour.place(movingFrom: item.position, besideAt: beside.position))
+  }
+}
+
+/// The item that a reorder puts an item beside: after it or before it, by its ID.
+public enum ItemNeighbour: Sendable, Equatable {
+  case after(String)
+  case before(String)
+
+  /// The neighbour's ID.
+  public var itemID: String {
+    switch self {
+    case .after(let id), .before(let id): id
+    }
+  }
+
+  /// The neighbour of a list's move, as the page drew the items: `ids`, in List order, with the item to move at
+  /// `index` and `offset` the index before which it goes, in the order before the move. Down the list, it goes after
+  /// the item before that index, and up it, before the item at it. Nil when the move leaves the item where it is, or
+  /// is off the list.
+  public init?(movingFrom index: Int, to offset: Int, in ids: [String]) {
+    guard ids.indices.contains(index), offset >= 0, offset <= ids.count, offset != index, offset != index + 1
+    else { return nil }
+    self = offset > index ? .after(ids[offset - 1]) : .before(ids[offset])
+  }
+
+  /// The place on one list that an item at `from` takes to go beside the neighbour at `at`, as the server's reorder
+  /// moves it: the items between the two shift one place toward the item's old place.
+  func place(movingFrom from: Int, besideAt at: Int) -> Int {
+    switch self {
+    case .after: from < at ? at : at + 1
+    case .before: from < at ? at - 1 : at
+    }
   }
 }
 
@@ -415,6 +486,7 @@ struct UnsentChangeRow: Codable, Sendable, FetchableRecord, MutablePersistableRe
     case editStoreLink
     case deleteStoreLink
     case moveItem
+    case reorderItem
   }
 
   mutating func didInsert(_ inserted: InsertionSuccess) {
@@ -591,6 +663,24 @@ extension LocalDatabase {
     }
   }
 
+  /// The change to send, with a reorder's place read from its neighbour as the copy has it now. The journal sends in
+  /// order, so every change before it has its answer, and the copy has the server's places, the ones of a create's or
+  /// a move's item included. The row keeps the place, with no neighbour, before the change is sent, so a resend after
+  /// a lost answer sends the same body under the same key. Any other change, and a reorder that has no neighbour, is
+  /// as it is.
+  func resolvingPlace(of change: UnsentChange) async throws -> UnsentChange {
+    guard case .reorderItem(let reorder) = change.action, let neighbour = reorder.neighbour else { return change }
+    return try await self.change { database in
+      let rows = try ItemRow.fetchAll(database, keys: [reorder.itemID, neighbour.itemID])
+      let action = UnsentChange.Action.reorderItem(
+        reorder.resolved(in: Dictionary(rows.map { ($0.id, $0.place) }) { first, _ in first }))
+      try database.execute(
+        sql: "UPDATE \(UnsentChangeRow.databaseTableName.quotedDatabaseIdentifier) SET patch = ? WHERE id = ?",
+        arguments: [try action.patch(), change.id])
+      return UnsentChange(id: change.id, action: action, title: change.title, key: change.key)
+    }
+  }
+
   /// The bytes that the upload with the stand-in ID sends. Nil when the journal holds none.
   func unsentFile(_ id: String) async throws -> Data? {
     try await writer.read { database in try UnsentFileRow.fetchOne(database, key: id)?.data }
@@ -609,7 +699,9 @@ extension LocalDatabase {
   /// An unclaim has no answer: the gift leaves the copy with the change. A list's answer is the list, and a delete
   /// has none: the list leaves the copy with its items and its recipient rows. An accept's answer is the list too,
   /// and a decline has none. Either way, the invitation leaves the copy. An item's edit has the item as its answer,
-  /// and a delete has none: the item leaves the copy with its store links. A store link's price edit has the link as
+  /// and a delete has none: the item leaves the copy with its store links, and the gap that it leaves on its list
+  /// closes. A create's item, and a delete, count on the list as the server counts. A move's answer and a reorder's are
+  /// the item in its new place, and the others shift (see `saveMoved`). A store link's price edit has the link as
   /// its answer, which takes the place of its row, and a Remove has none: the link leaves the copy. The item's own
   /// row waits for the next pull, which the send comes before.
   func accept(_ change: UnsentChange, answer: UnsentChange.Answer) async throws {
@@ -626,9 +718,10 @@ extension LocalDatabase {
         _ = try InvitationRow.deleteOne(database, key: invitation.invitationID)
       case .declineInvitation(let id): _ = try InvitationRow.deleteOne(database, key: id)
       case .uploadImage(let id): _ = try UnsentFileRow.deleteOne(database, key: id)
-      case .createItem, .editItem: try item.map { try Self.saveAnswered($0, in: database) }
-      case .moveItem: try item.map { try Self.saveMoved($0, in: database) }
-      case .deleteItem(let id, _): try Self.removeItems([id], in: database)
+      case .createItem: try item.map { try Self.saveCreated($0, in: database) }
+      case .editItem: try item.map { try Self.saveAnswered($0, in: database) }
+      case .moveItem, .reorderItem: try item.map { try Self.saveMoved($0, in: database) }
+      case .deleteItem(let id, _): try Self.removeDeleted(id, in: database)
       case .editStoreLink: try storeLink.map { try Self.saveAnswered($0, in: database) }
       case .deleteStoreLink(_, let id): _ = try StoreLinkRow.deleteOne(database, key: id)
       default: break
@@ -713,6 +806,9 @@ extension LocalDatabase {
   /// on the new one shift. Each list counts the item where it is now. The next pull corrects any drift. See
   /// `ShiftRule`.
   ///
+  /// A reorder's answer is saved the same way: the item's place on its list, or on the list that another device moved
+  /// it to meanwhile, which the answer gives.
+  ///
   /// An item that the copy doesn't hold, which went away under the move, is saved as the answer gives it, with
   /// nothing shifted.
   private static func saveMoved(_ answer: Versioned<Item>, in database: Database) throws {
@@ -728,13 +824,40 @@ extension LocalDatabase {
         try row.with(position: place.position).update(database)
       }
       if old.listID != new.listID {
-        for (listID, delta) in [(old.listID, -1), (new.listID, 1)] {
-          guard let list = try ListRow.fetchOne(database, key: listID) else { continue }
-          try list.with(itemCount: max(0, list.itemCount + delta)).update(database)
-        }
+        try count(-1, onList: old.listID, in: database)
+        try count(1, onList: new.listID, in: database)
       }
     }
     try saveAnswered(answer, in: database)
+  }
+
+  /// Saves the item that a create's answer gave, as `saveAnswered` does, and its list counts it, as the server does.
+  /// An item that the copy holds already, which a pull brought, is counted already.
+  private static func saveCreated(_ item: Versioned<Item>, in database: Database) throws {
+    if try ItemRow.fetchOne(database, key: item.resource.id) == nil {
+      try count(1, onList: item.resource.listID, in: database)
+    }
+    try saveAnswered(item, in: database)
+  }
+
+  /// Counts the items of the list one more or one fewer, as the server's answer to a change of an item left it.
+  private static func count(_ delta: Int, onList id: String, in database: Database) throws {
+    guard let list = try ListRow.fetchOne(database, key: id) else { return }
+    try list.with(itemCount: max(0, list.itemCount + delta)).update(database)
+  }
+
+  /// Removes the item that a delete took out: its list counts it no more, and the gap that it leaves closes, as the
+  /// server did in the same transaction (see `ShiftRule`). So the places of the copy stay the server's, for a reorder sent after it.
+  private static func removeDeleted(_ id: String, in database: Database) throws {
+    if let gone = try ItemRow.fetchOne(database, key: id) {
+      try count(-1, onList: gone.listID, in: database)
+      let others = try ItemRow.filter(Column("listID") == gone.listID && Column("id") != id).fetchAll(database)
+      let closed = ShiftRule.closing(others.map(\.place), leaving: gone.place)
+      for (row, place) in zip(others, closed) where place.position != row.position {
+        try row.with(position: place.position).update(database)
+      }
+    }
+    try removeItems([id], in: database)
   }
 
   /// Saves the store link that a price edit's answer gave, in the place of its row, where the copy still holds it. No
@@ -831,42 +954,83 @@ extension LocalDatabase {
     return invitations.filter { !answered.contains($0.id) }
   }
 
-  /// The items, with the unsent changes to them applied in the journal's order: each item that a create adds goes
-  /// after the last item of its list, by its stand-in ID, an edit shows over its row, a move takes it after the last
-  /// item of the other list, and a delete takes it out. So an edit, a move or a delete of an item that a create adds,
-  /// by its stand-in ID, shows too. The items are in the copy's order: by list, then by place. A moved item and an
-  /// added one go after the items of the copy, and each list's page puts its items in their places.
+  /// The items, with the unsent changes to them applied in the journal's order, and the server's shift rule with each
+  /// one, so the places are the ones that the server will have after each change (see `ShiftRule`):
   ///
-  /// The old list keeps the gap that a moved item leaves, until the server answers: its items keep their order.
+  /// - A create adds its item after the last item of its list, by its stand-in ID.
+  /// - An edit shows over its row.
+  /// - A delete takes the item out, and closes the gap on its list.
+  /// - A move takes the item after the last item of the other list, and closes the gap on its old one.
+  /// - A reorder puts the item beside its neighbour, or at its place when it has none, or last for a place past the
+  ///   end, and the others in between shift.
+  ///
+  /// A create's or a move's place is a guess where the list has items that the user doesn't see, such as the ones that
+  /// others claimed in full: the server puts the item after them. A reorder beside such an item still shows beside it,
+  /// and its first send reads the server's place.
+  ///
+  /// So an edit, a move, a reorder or a delete of an item that a create adds, by its stand-in ID, shows too. A change
+  /// to an item that isn't there, which a pull removed, changes nothing. The items are in the copy's order: by list,
+  /// then by place.
   static func applying(_ changes: [UnsentChange], to items: [ItemRow]) -> [ItemRow] {
     guard changes.contains(where: \.action.isToAnItem) else { return items }
-    var last: [String: Int] = [:]
-    for item in items {
-      last[item.listID] = max(last[item.listID] ?? -1, item.position)
-    }
     var rows = items
     for change in changes {
       switch change.action {
       case .createItem(let item):
-        let position = (last[item.listID] ?? -1) + 1
-        last[item.listID] = position
-        rows.append(ItemRow(standingInFor: item, at: position))
+        rows.append(ItemRow(standingInFor: item, at: end(of: item.listID, in: rows)))
       case .editItem(let id, let changes):
         guard let index = rows.firstIndex(where: { $0.id == id }) else { continue }
         rows[index] = rows[index].with(changes)
       case .deleteItem(let id, _):
-        rows.removeAll { $0.id == id }
+        guard let index = rows.firstIndex(where: { $0.id == id }) else { continue }
+        let gone = rows.remove(at: index)
+        rows = shifting(rows, from: gone.place, to: nil)
       case .moveItem(let move):
         guard let index = rows.firstIndex(where: { $0.id == move.itemID }), rows[index].listID != move.toListID
         else { continue }
-        let position = (last[move.toListID] ?? -1) + 1
-        last[move.toListID] = position
-        rows.append(rows.remove(at: index).moved(to: move.toListID, at: position))
+        let item = rows.remove(at: index)
+        let new = ShiftRule.Place(id: item.id, listID: move.toListID, position: end(of: move.toListID, in: rows))
+        rows = shifting(rows, from: item.place, to: new)
+        rows.append(item.moved(to: new.listID, at: new.position))
+      case .reorderItem(let reorder):
+        guard let index = rows.firstIndex(where: { $0.id == reorder.itemID }) else { continue }
+        // Beside its neighbour, where the list shows it now: a create's or a move's place here is a guess, which the
+        // first send reads again from the server's.
+        let position = reorder.resolved(in: Dictionary(rows.map { ($0.id, $0.place) }) { first, _ in first }).position
+        let item = rows.remove(at: index)
+        // A place past the end is the last place, as the server takes it: after the last of the other items, once the
+        // gap that the item leaves has closed.
+        let last = end(of: item.listID, in: shifting(rows, from: item.place, to: nil))
+        let new = ShiftRule.Place(id: item.id, listID: item.listID, position: min(position, last))
+        rows = shifting(rows, from: item.place, to: new)
+        rows.append(item.with(position: new.position))
       default:
         continue
       }
     }
-    return rows
+    return rows.sorted { first, second in
+      guard first.listID == second.listID else {
+        return first.listID.utf8.lexicographicallyPrecedes(second.listID.utf8)
+      }
+      guard first.position == second.position else { return first.position < second.position }
+      return first.id.utf8.lexicographicallyPrecedes(second.id.utf8)
+    }
+  }
+
+  /// The place after the last item of the list, among the rows: where the server puts an item that a create or a move
+  /// adds to it.
+  private static func end(of listID: String, in rows: [ItemRow]) -> Int {
+    rows.lazy.filter { $0.listID == listID }.map(\.position).max().map { $0 + 1 } ?? 0
+  }
+
+  /// The rows, with the server's shift rule applied for an item that left the old place for the new one. With no new
+  /// place, the item left its list for good, and only the gap closes.
+  private static func shifting(_ rows: [ItemRow], from old: ShiftRule.Place, to new: ShiftRule.Place?) -> [ItemRow] {
+    let places = rows.map(\.place)
+    let shifted = new.map { ShiftRule.shifting(places, moving: old, to: $0) } ?? ShiftRule.closing(places, leaving: old)
+    return zip(rows, shifted).map { row, place in
+      place.position == row.position ? row : row.with(position: place.position)
+    }
   }
 
   /// The store links, with the store links of each item that a create adds, in the order that the user gave them,
@@ -916,7 +1080,7 @@ extension LocalDatabase {
       case .unclaim: rows.remove(at: index)
       case .acknowledge(_, let flag): rows[index] = gift.answering(flag, now: now)
       case .editList, .deleteList, .acceptInvitation, .declineInvitation, .uploadImage, .createItem, .editItem,
-        .deleteItem, .editStoreLink, .deleteStoreLink, .moveItem:
+        .deleteItem, .editStoreLink, .deleteStoreLink, .moveItem, .reorderItem:
         continue
       case .setOccasion(_, let occasion):
         picked = true
@@ -981,6 +1145,8 @@ extension UnsentChange.Action {
       id
     case .moveItem(let move):
       move.itemID
+    case .reorderItem(let reorder):
+      reorder.itemID
     }
   }
 
@@ -989,7 +1155,7 @@ extension UnsentChange.Action {
   var isToAGift: Bool {
     switch self {
     case .editList, .deleteList, .acceptInvitation, .declineInvitation, .uploadImage, .createItem, .editItem,
-      .deleteItem, .editStoreLink, .deleteStoreLink, .moveItem:
+      .deleteItem, .editStoreLink, .deleteStoreLink, .moveItem, .reorderItem:
       false
     default: true
     }
@@ -998,7 +1164,7 @@ extension UnsentChange.Action {
   /// Whether the change adds an item, or changes one: what the items of the copy show over their rows.
   var isToAnItem: Bool {
     switch self {
-    case .createItem, .editItem, .deleteItem, .moveItem: true
+    case .createItem, .editItem, .deleteItem, .moveItem, .reorderItem: true
     default: false
     }
   }
@@ -1014,7 +1180,7 @@ extension UnsentChange.Action {
     case .lowerQuantity(_, let quantity): GiftChanges(quantity: quantity)
     case .setOccasion(_, let occasion): GiftChanges(occasionID: occasion.id)
     case .unclaim, .acknowledge, .editList, .deleteList, .acceptInvitation, .declineInvitation, .uploadImage,
-      .createItem, .editItem, .deleteItem, .editStoreLink, .deleteStoreLink, .moveItem:
+      .createItem, .editItem, .deleteItem, .editStoreLink, .deleteStoreLink, .moveItem, .reorderItem:
       GiftChanges()
     }
   }
@@ -1039,6 +1205,7 @@ extension UnsentChange.Action {
     case .editStoreLink: .editStoreLink
     case .deleteStoreLink: .deleteStoreLink
     case .moveItem: .moveItem
+    case .reorderItem: .reorderItem
     }
   }
 
@@ -1049,7 +1216,7 @@ extension UnsentChange.Action {
   /// item's list, which counts one fewer until the server answers. A store link's price edit keeps its item, the
   /// price, and when it was made, and a Remove keeps its item: the request's path names both. A move keeps the list
   /// that it sends, with that list's name and the list that the item left, which the lists show until the server
-  /// answers.
+  /// answers. A reorder keeps the place that it sends, and nothing else.
   fileprivate func patch() throws -> String {
     let data =
       switch self {
@@ -1063,6 +1230,7 @@ extension UnsentChange.Action {
       case .editStoreLink(let edit): try JSONEncoder().encode(StoreLinkEditPatch(edit))
       case .deleteStoreLink(let itemID, _): try JSONEncoder().encode(StoreLinkDeletionPatch(itemID: itemID))
       case .moveItem(let move): try JSONEncoder().encode(MovePatch(move))
+      case .reorderItem(let reorder): try JSONEncoder().encode(ReorderPatch(reorder))
       default: try JSONEncoder().encode(giftChanges)
       }
     return String(decoding: data, as: UTF8.self)
@@ -1129,6 +1297,10 @@ extension UnsentChange.Action {
       guard let patch = try? JSONDecoder().decode(MovePatch.self, from: Data(patch.utf8)) else { return nil }
       self = .moveItem(patch.move(targetID))
       return
+    case .reorderItem:
+      guard let patch = ReorderPatch(patch) else { return nil }
+      self = .reorderItem(patch.reorder(targetID))
+      return
     case .markBought, .setFromLabel, .setNote, .lowerQuantity:
       break
     }
@@ -1147,7 +1319,7 @@ extension UnsentChange.Action {
       guard let quantity = changes.quantity else { return nil }
       self = .lowerQuantity(giftID: targetID, quantity: quantity)
     case .unclaim, .acknowledge, .setOccasion, .editList, .deleteList, .acceptInvitation, .declineInvitation,
-      .uploadImage, .createItem, .editItem, .deleteItem, .editStoreLink, .deleteStoreLink, .moveItem:
+      .uploadImage, .createItem, .editItem, .deleteItem, .editStoreLink, .deleteStoreLink, .moveItem, .reorderItem:
       return nil
     }
   }
@@ -1235,6 +1407,40 @@ private struct StoreLinkEditPatch: Codable {
 
   func edit(_ storeLinkID: String) -> StoreLinkEdit {
     StoreLinkEdit(itemID: itemID, storeLinkID: storeLinkID, priceMinor: priceMinor, editedAt: editedAt)
+  }
+}
+
+/// A reorder, as the journal keeps it: the `position` that it sends, and the item that the user dropped it beside,
+/// `after` or `before`, until the first send reads the place from it. A row with only `position`, which the first send
+/// leaves, or which an earlier version of the app wrote, sends it as it is. A row with any other field, a place below
+/// 0, or both neighbours can't be read.
+private struct ReorderPatch: Codable {
+  let position: Int
+  let after: String?
+  let before: String?
+
+  init(_ reorder: ItemReorder) {
+    position = reorder.position
+    switch reorder.neighbour {
+    case .after(let id): (after, before) = (id, nil)
+    case .before(let id): (after, before) = (nil, id)
+    case nil: (after, before) = (nil, nil)
+    }
+  }
+
+  /// The patch of a row of the journal. Nil for one that can't be read.
+  init?(_ text: String) {
+    guard let object = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any],
+      Set(object.keys).isSubset(of: ["position", "after", "before"]),
+      let patch = try? JSONDecoder().decode(Self.self, from: Data(text.utf8)), patch.position >= 0,
+      patch.after == nil || patch.before == nil
+    else { return nil }
+    self = patch
+  }
+
+  func reorder(_ itemID: String) -> ItemReorder {
+    let neighbour: ItemNeighbour? = after.map(ItemNeighbour.after) ?? before.map(ItemNeighbour.before)
+    return ItemReorder(itemID: itemID, position: position, neighbour: neighbour)
   }
 }
 
@@ -1477,6 +1683,11 @@ extension ItemRow {
   /// pull compares it with the server's.
   fileprivate func with(position: Int) -> ItemRow {
     moved(to: listID, at: position)
+  }
+
+  /// The item's place, as the shift rule takes it.
+  fileprivate var place: ShiftRule.Place {
+    ShiftRule.Place(id: id, listID: listID, position: position)
   }
 }
 

@@ -37,14 +37,17 @@ struct MoveJournalTests {
       version: "\"1\"")
   }
 
-  @Test("A moved item shows after the last item of the other list, the old list keeps its order, and both count it")
+  @Test(
+    "A moved item shows after the last item of the other list, the old list closes its gap, and both lists count it"
+  )
   func atTheEnd() throws {
     let rows = [
       item("1", on: "a", at: 0), item("2", on: "a", at: 1), item("3", on: "a", at: 2), item("4", on: "b", at: 6),
     ]
     let shown = LocalDatabase.applying([change(move("2", from: "a", to: "b"))], to: rows)
     #expect(shown.filter { $0.listID == "a" }.map(\.id) == ["1", "3"])
-    #expect(shown.filter { $0.listID == "a" }.map(\.position) == [0, 2])
+    // The gap closes, as the server's shift rule closes it, so a reorder after the move reads the server's places.
+    #expect(shown.filter { $0.listID == "a" }.map(\.position) == [0, 1])
     #expect(shown.filter { $0.listID == "b" }.map(\.id) == ["4", "2"])
     #expect(shown.filter { $0.listID == "b" }.map(\.position) == [6, 7])
     // Everything else about the item stays as the server sent it.

@@ -8,13 +8,14 @@ import WishboneSession
 /// Claim state shows only as the server sends it, and the page never says who claimed. Leave, and Make {child}
 /// leave, wait for the server. Edit list and Delete list are unsent changes: each shows at once, in every window. A
 /// pending invitation to the list, for the user or their child, is at the top, with Accept and Decline.
-/// Add item, from `can_edit`, opens the Add screen in a sheet, fixed to the list. The other actions that change the
-/// list or its items come later.
+/// Add item, from `can_edit`, opens the Add screen in a sheet, fixed to the list. Reorder, from `can_edit` and in
+/// List order only, is the toolbar's Edit button: the system's edit mode, with handles. Each move is an unsent change.
+/// The other actions that change the list or its items come later.
 ///
 /// **Provisional.** Plain default: a system list. The name is the navigation title, the recipients and the
 /// description are the first section, and the items are rows with the image at the leading edge. Edit list and Sort
-/// are in the toolbar's menu. Leave, Make {child} leave and Delete list are destructive rows in the last section, and
-/// each confirmation is an alert.
+/// are in the toolbar's menu, and Reorder is the toolbar's Edit button. Leave, Make {child} leave and Delete list are
+/// destructive rows in the last section, and each confirmation is an alert.
 struct ListPageScreen: View {
   let page: ListPage
   let session: SessionModel
@@ -24,6 +25,14 @@ struct ListPageScreen: View {
 
   /// The order of the items. It belongs to this window's page, and is never saved.
   @State private var sort = ListSort.listOrder
+
+  #if os(iOS)
+    /// Whether the items show their handles, for Reorder. It ends when Reorder is no longer offered.
+    @State private var editMode = EditMode.inactive
+  #endif
+
+  /// The window that a refused reorder shows in.
+  @Environment(\.foregroundWindow) private var window
 
   /// The leaver whose confirmation shows.
   @State private var confirming: Leaver?
@@ -64,10 +73,13 @@ struct ListPageScreen: View {
         if let noItems = page.noItems {
           NoItemsLine(noItems: noItems)
         }
-        ForEach(page.items(sortedBy: sort)) { item in
+        let items = page.items(sortedBy: sort)
+        ForEach(items) { item in
           ItemRowLink(item: item, tileUserID: page.list.recipientIDs.first ?? "", session: session, pages: $pages)
         }
-        if page.list.canEdit {
+        .onMove(perform: offersReorder ? { reorder(items, from: $0, to: $1) } : nil)
+        // In edit mode, the system disables the row, so it shows only outside it: edit mode is for Reorder.
+        if page.list.canEdit && !isReordering {
           AddItemRow(session: session, listID: page.list.id)
         }
       }
@@ -133,6 +145,13 @@ struct ListPageScreen: View {
       .navigationBarTitleDisplayMode(.inline)
     #endif
     .toolbar {
+      #if os(iOS)
+        if offersReorder {
+          ToolbarItem(placement: .primaryAction) {
+            EditButton()
+          }
+        }
+      #endif
       ToolbarItem(placement: .primaryAction) {
         Menu {
           if page.list.canEdit {
@@ -170,10 +189,40 @@ struct ListPageScreen: View {
         }
       }
     }
+    #if os(iOS)
+      .environment(\.editMode, $editMode)
+      .onChange(of: offersReorder) {
+        if !offersReorder { editMode = .inactive }
+      }
+    #endif
   }
 }
 
 extension ListPageScreen {
+  /// Whether Reorder is offered: the user can edit the list, and it shows in List order.
+  private var offersReorder: Bool {
+    page.offersReorder(sortedBy: sort)
+  }
+
+  /// Whether the items show their handles, for Reorder.
+  private var isReordering: Bool {
+    #if os(iOS)
+      editMode.isEditing
+    #else
+      false
+    #endif
+  }
+
+  /// Reorder: the item goes beside the item that it was dropped next to, among the items as the page drew them, as an
+  /// unsent change. The system's edit mode moves one item at a time.
+  private func reorder(_ items: [UserPage.Item], from source: IndexSet, to destination: Int) {
+    guard let index = source.first, items.indices.contains(index),
+      let neighbour = ItemNeighbour(movingFrom: index, to: destination, in: items.map(\.id))
+    else { return }
+    let id = items[index].id
+    Task { await session.reorderItem(id, beside: neighbour, from: window) }
+  }
+
   /// A row for Leave, or for Make {child} leave. Its label names the list, and the child. It asks for a
   /// confirmation first.
   private func leaveRow(_ leaver: Leaver) -> some View {

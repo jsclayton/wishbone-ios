@@ -136,6 +136,21 @@ struct UnsentChangeWordsTests {
     }
   }
 
+  @Test("A refused reorder reads as a refused move, with the words for the code, and no word about gifts")
+  func lateRefusalsOfReorders() {
+    let reorder = UnsentChange.Action.reorderItem(ItemReorder(itemID: "4", position: 0, neighbour: .before("2")))
+    let forbidden = APIError.Refusal(route: .updateItem, status: 403, code: .forbidden, detail: "The server's words")
+    let gone = APIError.Refusal(route: .updateItem, status: 404, code: .notFound, detail: "The server's words")
+    let refusedForbidden = LateRefusalWords.line(LateRefusal(id: 1, action: reorder, title: "Kite", refusal: forbidden))
+    let refusedGone = LateRefusalWords.line(LateRefusal(id: 2, action: reorder, title: "Kite", refusal: gone))
+    #expect(refusedForbidden == "Kite couldn't be moved. You can't do this any more.")
+    #expect(refusedGone == "Kite couldn't be moved. This is gone, or it isn't shared with you.")
+    for line in [refusedForbidden, refusedGone] {
+      #expect(!line.localizedStandardContains("gift"))
+      #expect(!line.localizedStandardContains("claim"))
+    }
+  }
+
   @Test("A late refusal of a store link's price edit or its Remove names the item's edit")
   func lateRefusalsOfStoreLinks() {
     let forbidden = APIError.Refusal(
