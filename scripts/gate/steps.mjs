@@ -22,11 +22,12 @@ export const allowedSkips = [];
 /**
  * The limit of the simulator step of each shard of the journeys (parts.mjs), when CI runs the shards side by side.
  * Each shard's step has the simulator's start, the hosted tests if the shard has them, and its journeys, twice: in
- * the four settings, and in the double-length pseudo-language. The shard boots its simulator while its job sets up,
- * so the start took seconds in run 45885449080, not about 6 minutes. In that run, journeys-1 (testSignIn alone)
- * took 19m21s, and the shards cut from it are about 17 to 22 minutes. Each limit is about twice that, so that it
- * holds a second run of its journeys in the four settings for the named flake "the app's launch gets no process ID
- * on a busy machine", and a resend for the named flake "a change of setting doesn't show in the app".
+ * the four settings, and in the double-length pseudo-language. A shard boots its simulator while its job sets up,
+ * so the start took seconds in run 45885449080, not about 6 minutes. The shard that builds the package boots in its
+ * step. In that run, journeys-1 (testSignIn alone) took 19m21s, and the shards cut from it are about 17 to 22
+ * minutes. Each limit is about twice that, so that it holds a second run of its journeys in the four settings for
+ * the named flake "the app's launch gets no process ID on a busy machine", and a resend for the named flake "a
+ * change of setting doesn't show in the app".
  */
 export const shardLimitMs = {
   'journeys-1': 40 * minute,

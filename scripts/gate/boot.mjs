@@ -5,11 +5,22 @@
 // always does.
 //
 // It makes the simulator when the runner has none, as the simulator step does, so the step uses this one.
+//
+// `node scripts/gate/boot.mjs <shard>` boots nothing for the shard that builds the package and runs its tests
+// first (parts.mjs): beside a first boot, that build took more than its limit of 8 minutes in run 45893856729,
+// where it took 2m23s on a quiet runner. That shard's simulator step boots the simulator when the package is done.
 
 import { spawn } from 'node:child_process';
+import process from 'node:process';
 
+import { shardNamed } from './parts.mjs';
 import { findOrMakeSimulator } from './simulator.mjs';
 
+const shard = process.argv[2] === undefined ? undefined : shardNamed(process.argv[2]);
+if (shard?.package) {
+  console.log(`  ${shard.name} builds the package first, so its simulator boots in its simulator step.`);
+  process.exit(0);
+}
 const simulator = findOrMakeSimulator();
 // `simctl boot` ends when the simulator has started to boot. Detached, it goes on after this script ends.
 spawn('xcrun', ['simctl', 'boot', simulator], { detached: true, stdio: 'ignore' }).unref();
