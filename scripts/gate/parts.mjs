@@ -26,49 +26,109 @@ import { countNames, duration, readFloor } from './gate.mjs';
  * one shard, as `Class/function`, and a gate test holds that. A shard's tests run in XCTest's order, by class and
  * then by function, whatever the order here.
  *
- * A screen that two shards reach is audited in the four settings in each of them, because each shard's settings
- * helper knows only its own run. So a journey goes with the journeys that reach its screens, where the times allow.
- * Each shard's simulator step has a limit of its own (`shardLimitMs` in scripts/gate/steps.mjs).
+ * **A screen's first audit stays with the journey that audits it first in one sequential run.** The settings helper
+ * audits each screen once in a run, the first time that a journey reaches it, and one run of `just gate` runs the
+ * journeys in XCTest's order. So in one run, ClaimJourney audits Home, a person's page and Giving, and the journeys
+ * after it don't audit them again. A shard whose journey reached Home without ClaimJourney audited Home in that
+ * journey's state, and failed where the sequential run never looked (runs 45893856729, 45901661533 and 45907072555).
+ * So each shard that holds a journey that audits a screen holds the screen's first auditor too, and a gate test holds
+ * that (`firstAuditProblems`). Each shard's simulator step has a limit of its own (`shardLimitMs` in
+ * scripts/gate/steps.mjs).
  *
- * The shards are cut from each journey's time on CI in run 45885449080, in the four settings and then in double
- * length: SignInJourney/testSignIn 11m56s and 2m51s, MoveJourney 6m52s and 3m10s, SignOutJourney 8m02s and 1m38s,
- * PeopleJourney 7m35s, AddItemJourney 6m00s and 2m01s, ClaimJourney 4m57s and 1m16s, DropGiftJourney 4m08s and
- * 1m11s, ReorderJourney 1m41s, FirstSyncFailedJourney 1m21s and 39s, testSignInToTheProfileGate 1m21s, and the
- * hosted tests 4m27s. Each run of the journeys adds about 2 to 4 minutes of Xcode's own. `hosted: true` runs the
- * hosted tests, and `package: true` builds the package and runs its tests (about 5m20s) first, while the shard's
- * simulator boots.
+ * Each journey's time on CI in run 45885449080, in the four settings and then in double length: SignInJourney/
+ * testSignIn 11m56s and 2m51s, MoveJourney 6m52s and 3m10s, SignOutJourney 8m02s and 1m38s, PeopleJourney 7m35s,
+ * AddItemJourney 6m00s and 2m01s, ClaimJourney 4m57s and 1m16s, DropGiftJourney 4m08s and 1m11s, ReorderJourney
+ * 1m41s, FirstSyncFailedJourney 1m21s and 39s, testSignInToTheProfileGate 1m21s, and the hosted tests 4m27s. Each
+ * run of the journeys adds about 2 to 4 minutes of Xcode's own. `hosted: true` runs the hosted tests, and
+ * `package: true` builds the package and runs its tests (about 5 minutes) first.
  */
 export const shards = [
   {
+    // Home, a person's page and Giving: ClaimJourney audits them first, before DropGiftJourney, PeopleJourney and
+    // SignInJourney/testSignIn reach them.
     name: 'journeys-1',
-    tests: ['SignInJourney/testSignIn'],
+    tests: ['ClaimJourney/testClaim', 'DropGiftJourney/testDropGift', 'PeopleJourney/testPeople', 'SignInJourney/testSignIn'],
   },
   {
     name: 'journeys-2',
-    hosted: true,
-    tests: ['ClaimJourney/testClaim', 'DropGiftJourney/testDropGift'],
-  },
-  {
-    name: 'journeys-3',
+    package: true,
     tests: [
-      'FirstSyncFailedJourney/testFirstSyncFailed',
-      'MoveJourney/testMove',
-      'ReorderJourney/testReorder',
       'ScreenshotTests/testATimeOutWhileAScreenshotIsTakenIsHeldBackAndNoted',
       'ScreenshotTests/testOnlyXCTestsTimeOutIsHeldBackAndOnlyWhileAScreenshotIsTaken',
-      'SignInJourney/testSignInToTheProfileGate',
+      'SignOutJourney/testSignOut',
     ],
   },
   {
-    name: 'journeys-4',
-    package: true,
-    tests: ['SignOutJourney/testSignOut'],
+    name: 'journeys-3',
+    tests: ['FirstSyncFailedJourney/testFirstSyncFailed', 'MoveJourney/testMove', 'ReorderJourney/testReorder'],
   },
   {
-    name: 'journeys-5',
-    tests: ['AddItemJourney/testAddItem', 'PeopleJourney/testPeople'],
+    name: 'journeys-4',
+    hosted: true,
+    tests: ['AddItemJourney/testAddItem', 'SignInJourney/testSignInToTheProfileGate'],
   },
 ];
+
+/**
+ * The screens that each journey audits, read from the Swift files of `JourneyTests/`: `{ 'Class/function':
+ * ['Home', ...] }`. A screen is the name that a journey gives `Audit.run(on:showing:in:)`, as a string, or as the
+ * loop's variable of a `for <name> in ["…", …]` before it in the same function. A test's screens are its own, and
+ * those of the functions of its file that it calls, and that they call.
+ */
+export function journeyAudits(directory) {
+  const audits = {};
+  for (const file of readdirSync(directory).filter((name) => name.endsWith('.swift'))) {
+    const source = readFileSync(path.join(directory, file), 'utf8');
+    const journey = /\bclass (\w+): JourneyTestCase\b/.exec(source)?.[1];
+    if (journey === undefined) continue;
+    const starts = [...source.matchAll(/\bfunc (\w+)\(/g)];
+    const functions = new Map(
+      starts.map((match, index) => [match[1], source.slice(match.index, starts[index + 1]?.index ?? source.length)]),
+    );
+    const own = (body) => {
+      const screens = [...body.matchAll(/showing: "([^"]+)"/g)].map((match) => match[1]);
+      for (const match of body.matchAll(/showing: (\w+)\b/g)) {
+        const loops = [...body.slice(0, match.index).matchAll(new RegExp(`for ${match[1]} in \\[([^\\]]*)\\]`, 'g'))];
+        screens.push(...[...(loops.at(-1)?.[1] ?? '').matchAll(/"([^"]+)"/g)].map((one) => one[1]));
+      }
+      return screens;
+    };
+    const reached = (name, seen = new Set()) => {
+      if (seen.has(name)) return [];
+      seen.add(name);
+      const body = functions.get(name) ?? '';
+      const called = [...body.matchAll(/\b(\w+)\(\)/g)].map((match) => match[1]).filter((one) => one !== name && functions.has(one));
+      return [...own(body), ...called.flatMap((one) => reached(one, seen))];
+    };
+    for (const name of functions.keys()) {
+      if (name.startsWith('test')) audits[`${journey}/${name}`] = [...new Set(reached(name))];
+    }
+  }
+  return audits;
+}
+
+/**
+ * What breaks the rule that a screen's first audit stays with the journey that audits it first in one sequential
+ * run, as one line each: a shard that holds a journey that audits a screen but not the screen's first auditor.
+ * `audits` is what `journeyAudits` gives. The sequential run's order is XCTest's: by class, then by function.
+ */
+export function firstAuditProblems(shardList, audits) {
+  const order = Object.keys(audits).sort();
+  const first = new Map();
+  for (const test of order) for (const screen of audits[test]) if (!first.has(screen)) first.set(screen, test);
+  const problems = [];
+  for (const shard of shardList) {
+    for (const test of shard.tests) {
+      for (const screen of audits[test] ?? []) {
+        const owner = first.get(screen);
+        if (owner !== test && !shard.tests.includes(owner)) {
+          problems.push(`${shard.name}: ${test} audits ${screen}, which ${owner} audits first in one sequential run, in another shard`);
+        }
+      }
+    }
+  }
+  return problems;
+}
 
 /** The shard of that name, or an error that names the shards. */
 export function shardNamed(name) {

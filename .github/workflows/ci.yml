@@ -144,14 +144,14 @@ jobs:
   # gate's own steps for some of its checks, with their limits and named flakes:
   # - Gate: build lints, builds the test server, and builds the app and its
   #   test bundles once, for the shards.
-  # - Gate: journeys-1 to journeys-5 each run a shard of the journeys, on a
+  # - Gate: journeys-1 to journeys-4 each run a shard of the journeys, on a
   #   runner and a simulator of their own, from the build job's build. One
   #   shard runs the hosted tests too, and one builds the package and its tests
   #   and runs them, while its simulator boots.
   # - Gate result adds the parts' counts up, checks that each journey ran once,
   #   holds the counts against the floor, and gives the gate's line.
-  # GitHub runs at most 5 macOS jobs at once on this plan. A run has 6: the
-  # build job alone, then the five shards at once, so a run never waits for its
+  # GitHub runs at most 5 macOS jobs at once on this plan. A run has 5: the
+  # build job alone, then the four shards at once, so a run never waits for its
   # own jobs. It waits only for macOS jobs of other runs, such as a PR's Lint.
   #
   # Each job's timeout-minutes is above the sum of the limits of its part's
@@ -253,7 +253,7 @@ jobs:
       MISE_ENABLE_TOOLS: node,just
     if: github.event_name == 'workflow_dispatch'
     runs-on: xcode-27
-    timeout-minutes: 70
+    timeout-minutes: 80
     strategy:
       # Every shard runs to its end, so one run shows each shard's result, and
       # "Re-run failed jobs" runs only the shard that failed.
@@ -261,7 +261,7 @@ jobs:
       matrix:
         # The shards in scripts/gate/parts.mjs. A gate test holds the two lists
         # to one.
-        shard: [journeys-1, journeys-2, journeys-3, journeys-4, journeys-5]
+        shard: [journeys-1, journeys-2, journeys-3, journeys-4]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

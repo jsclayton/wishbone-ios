@@ -8,7 +8,19 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { runGate } from './gate.mjs';
-import { bundleName, partNames, parts, readParts, shardNamed, shardProblem, shards, sumParts, writePart } from './parts.mjs';
+import {
+  bundleName,
+  firstAuditProblems,
+  journeyAudits,
+  partNames,
+  parts,
+  readParts,
+  shardNamed,
+  shardProblem,
+  shards,
+  sumParts,
+  writePart,
+} from './parts.mjs';
 import { journeyTargets, journeyTimeLines, parseArguments, resultBundles } from './simulator.mjs';
 import { gateSteps } from './steps.mjs';
 
@@ -99,7 +111,11 @@ test('the simulator script takes a shard, and runs only its journeys, with the h
   assert.throws(() => parseArguments(['--shard=journeys-9']), /no shard is named journeys-9/);
   assert.throws(() => parseArguments(['--shard=journeys-1', '--shard=journeys-2']), /one shard, not 2/);
   assert.deepEqual(journeyTargets(undefined), ['JourneyTests']);
-  assert.deepEqual(journeyTargets(shardNamed('journeys-1')), ['JourneyTests/SignInJourney/testSignIn']);
+  assert.deepEqual(journeyTargets(shardNamed('journeys-3')), [
+    'JourneyTests/FirstSyncFailedJourney/testFirstSyncFailed',
+    'JourneyTests/MoveJourney/testMove',
+    'JourneyTests/ReorderJourney/testReorder',
+  ]);
   const hosted = shards.find((shard) => shard.hosted);
   const other = shards.find((shard) => !shard.hosted);
   assert.equal(resultBundles('/run', hosted).hosted.length, 1);
@@ -202,4 +218,34 @@ test("a journey's time is on a line of its own after its run, the slowest first"
     '    JourneyTests.A/testA(): 1m01s',
   ]);
   assert.deepEqual(journeyTimeLines(undefined), []);
+});
+
+test("a screen's first audit stays with the journey that audits it first in one sequential run", () => {
+  const audits = journeyAudits(path.join(root, 'JourneyTests'));
+  assert.deepEqual(Object.keys(audits).sort(), journeyTests(), 'the audits are read for every journey');
+  assert.deepEqual(firstAuditProblems(shards, audits), []);
+});
+
+test("the journeys' screens are read from their files, through the functions that a test calls", () => {
+  const audits = journeyAudits(path.join(root, 'JourneyTests'));
+  // ClaimJourney is first to reach Home, a person's page and Giving in XCTest's order.
+  assert.deepEqual(audits['ClaimJourney/testClaim'], ['Home', "a person's page", "an item's page", 'Giving']);
+  // testSignIn reaches its screens through signIn() and instanceGoesAway(), and two of them in a loop.
+  for (const screen of ['the signed-out screen', 'Home', 'Lists', 'Gifts', 'the unreachable view']) {
+    assert.ok(audits['SignInJourney/testSignIn'].includes(screen), `testSignIn audits ${screen}`);
+  }
+  assert.deepEqual(audits['SignInJourney/testSignInToTheProfileGate'], ['the profile gate']);
+  const screens = new Set(Object.values(audits).flat());
+  assert.equal(screens.size, 25, 'one sequential run audited 25 screens (run 45872041349)');
+});
+
+test('the rule fails a shard that holds a later auditor of a screen but not its first', () => {
+  const audits = { 'A/testA': ['Home'], 'B/testB': ['Home', 'Giving'], 'C/testC': ['Giving'] };
+  assert.deepEqual(firstAuditProblems([{ name: 'one', tests: ['A/testA', 'B/testB', 'C/testC'] }], audits), []);
+  assert.deepEqual(firstAuditProblems([{ name: 'one', tests: ['A/testA'] }, { name: 'two', tests: ['B/testB', 'C/testC'] }], audits), [
+    'two: B/testB audits Home, which A/testA audits first in one sequential run, in another shard',
+  ]);
+  assert.deepEqual(firstAuditProblems([{ name: 'one', tests: ['A/testA', 'B/testB'] }, { name: 'two', tests: ['C/testC'] }], audits), [
+    'two: C/testC audits Giving, which B/testB audits first in one sequential run, in another shard',
+  ]);
 });
