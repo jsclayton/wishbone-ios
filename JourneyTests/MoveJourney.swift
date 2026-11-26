@@ -48,7 +48,12 @@ nonisolated final class MoveJourney: JourneyTestCase {
 
     // The Lists tab, with Emma's lists under her name, then her primary list's page with the item.
     lists.tap()
-    let listRow = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", primary.name)).firstMatch
+    // A list's row and a picker's row read words made from a format. In the double-length pseudo-language, iOS puts
+    // the format's places before the doubled words, so the journey finds them by the words that they contain.
+    // The primary list is named for Emma, and Toys reads her name too, as its recipient: the row reads the list's
+    // name, then its recipients' names.
+    let listRow = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "\(primary.name), \(emma.name)"))
+      .firstMatch
     XCTAssertTrue(listRow.waitForExistence(timeout: 30), "The Lists tab has no row for Emma's list.")
     listRow.tap()
     let itemRow = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", kite.title)).firstMatch
@@ -66,13 +71,13 @@ nonisolated final class MoveJourney: JourneyTestCase {
     // The picker: Dana's own list, and Emma's other list under her name, with her name, never the list it is on.
     let picker = app.navigationBars[Audit.words("Move to…")]
     XCTAssertTrue(picker.waitForExistence(timeout: 10), "Move to… didn't open the picker.")
-    let target = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", toys.name)).firstMatch
+    let target = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "\(toys.name) · ")).firstMatch
     XCTAssertTrue(target.waitForExistence(timeout: 10), "The picker has no row for Emma's other list.")
     XCTAssertTrue(target.label.contains(emma.name), "The picker's row doesn't name the list's recipient.")
     // The item's page under the sheet has a button with the list's name, so the check is for a picker's row, which
     // reads the list's name, then its recipients' names: "{list} · {names}".
     XCTAssertFalse(
-      app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "\(primary.name) · ")).firstMatch.exists,
+      app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "\(primary.name) · ")).firstMatch.exists,
       "The picker offers the list that the item is on.")
     try await Audit.run(on: app, showing: "the Move to… picker", in: self)
 
