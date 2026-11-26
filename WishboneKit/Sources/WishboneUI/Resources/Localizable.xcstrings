@@ -22,7 +22,7 @@
       "localizations" : {
         "en" : {
           "stringUnit" : {
-            "state" : "new",
+            "state" : "translated",
             "value" : "%1$@ couldn't be moved. %2$@"
           }
         }
