@@ -394,7 +394,7 @@ test("each Gate job's limit in CI is above the sum of its part's step limits, wi
     assert.ok(start >= 0, `the workflow has the job ${job}`);
     return Number(/^\s+timeout-minutes: (\d+)$/m.exec(ci.slice(start))[1]);
   };
-  const jobs = { build: 'gate-build', package: 'gate-package', ...Object.fromEntries(shards.map((shard) => [shard.name, 'gate-journeys'])) };
+  const jobs = { build: 'gate-build', ...Object.fromEntries(shards.map((shard) => [shard.name, 'gate-journeys'])) };
   assert.deepEqual(Object.keys(jobs), partNames, 'each part has its job');
   for (const part of partNames) {
     const sum = gateSteps({ root, runDirectory: '/run', part }).reduce((total, step) => total + step.limitMs / 60_000, 0);

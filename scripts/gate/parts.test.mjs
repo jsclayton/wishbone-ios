@@ -43,9 +43,11 @@ const record = (part, { counts = {}, ui = [], at = '2026-11-26T10:00:00.000Z', t
 /** One record for each part, as a green run gives them: each shard ran its own journeys. */
 const greenRun = () => [
   record('build'),
-  record('package', { counts: { package: 673 } }),
   ...shards.map((shard) =>
-    record(shard.name, { counts: { hosted: shard.hosted ? 89 : 0, ui: shard.tests.length }, ui: shard.tests.map((name) => `JourneyTests.${bundleName(name)}`) }),
+    record(shard.name, {
+      counts: { package: shard.package ? 673 : 0, hosted: shard.hosted ? 89 : 0, ui: shard.tests.length },
+      ui: shard.tests.map((name) => `JourneyTests.${bundleName(name)}`),
+    }),
   ),
 ];
 
@@ -56,9 +58,10 @@ test('the shards run every journey of JourneyTests, each in exactly one shard', 
   assert.deepEqual([...sharded].sort(), journeyTests(), 'the shards hold every journey, and only journeys');
 });
 
-test('every shard runs at least one journey, and one shard runs the hosted tests', () => {
+test('every shard runs at least one journey, one shard runs the hosted tests, and one the package tests', () => {
   for (const shard of shards) assert.ok(shard.tests.length > 0, `${shard.name} runs a journey`);
   assert.equal(shards.filter((shard) => shard.hosted === true).length, 1);
+  assert.equal(shards.filter((shard) => shard.package === true).length, 1);
 });
 
 test("the CI workflow's journeys jobs are the shards", () => {
@@ -74,17 +77,17 @@ test("each of the gate's steps is in a part, so the parts together run the whole
   for (const part of partNames) {
     for (const name of parts[part]) assert.ok(names.includes(name), `the part ${part} names the step ${name}, which the gate has`);
   }
-  // Each step runs in one part, but the server and the simulator step. The build part builds the server for the
-  // journeys, and the package part reuses it or builds it for itself. Each shard is a simulator step of its own.
-  const once = names.filter((name) => name !== 'server' && name !== 'simulator');
+  // Each step runs in one part, but the simulator step: each shard is a simulator step of its own. The shard that
+  // runs the package tests builds them first.
+  const once = names.filter((name) => name !== 'simulator');
   for (const name of once) assert.equal(partNames.filter((part) => parts[part].includes(name)).length, 1, `${name} is in one part`);
-  for (const shard of shards) assert.deepEqual(parts[shard.name], ['simulator']);
+  for (const shard of shards) assert.deepEqual(parts[shard.name], shard.package ? ['package-build', 'package', 'simulator'] : ['simulator']);
 });
 
 test("a shard's simulator step runs only its shard, with the shard's own limit", () => {
-  const [step] = gateSteps({ root, runDirectory: '/run', part: 'journeys-2' });
+  const [step] = gateSteps({ root, runDirectory: '/run', part: 'journeys-3' });
   assert.equal(step.name, 'simulator');
-  assert.equal(step.command.at(-1), '--shard=journeys-2');
+  assert.equal(step.command.at(-1), '--shard=journeys-3');
   const whole = gateSteps({ root, runDirectory: '/run' }).find((one) => one.name === 'simulator');
   assert.ok(!whole.command.some((arg) => arg.startsWith('--shard')), '`just gate` runs every journey');
   assert.ok(step.limitMs < whole.limitMs, "a shard's limit is below the whole step's");
@@ -135,8 +138,8 @@ test("the sum's time is the parts' span, from the first start to the last end", 
 test('the sum fails when a part is missing, failed, is there twice, or is not one of the gate', () => {
   const run = greenRun();
   assert.equal(sumParts(run.filter((one) => one.part !== 'journeys-3'), { floor }).lines.at(-1), 'GATE FAIL no result for journeys-3');
-  const failed = greenRun().map((one) => (one.part === 'package' ? { ...one, ok: false } : one));
-  assert.equal(sumParts(failed, { floor }).lines.at(-1), 'GATE FAIL package failed');
+  const failed = greenRun().map((one) => (one.part === 'journeys-4' ? { ...one, ok: false } : one));
+  assert.equal(sumParts(failed, { floor }).lines.at(-1), 'GATE FAIL journeys-4 failed');
   assert.equal(sumParts([...run, record('build')], { floor }).lines.at(-1), 'GATE FAIL more than one result for build');
   assert.equal(sumParts([...run, record('journeys-9')], { floor }).lines.at(-1), "GATE FAIL a part that the gate doesn't have: journeys-9");
 });

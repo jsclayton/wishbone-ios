@@ -3,12 +3,12 @@
 //
 // `just gate` on a Mac doesn't use this: it runs every step, one after another, as one run.
 //
-// - The build part lints, builds the test server, and builds the app and its test bundles. The journeys' parts
-//   run what it built, so nothing is built twice.
-// - The package part builds the package and its tests for macOS, and runs them. Only it builds them.
-// - Each journeys part (a shard) runs some of the journeys, in the four settings of the audit and in the
-//   double-length pseudo-language, on a simulator of its own. One of them runs the hosted tests too. Each journey
-//   is in one shard, so it runs once in each setting, as in one run of the gate.
+// - The build part lints, builds the test server, and builds the app and its test bundles. The shards run what it
+//   built, so nothing is built twice.
+// - Each shard runs some of the journeys, in the four settings of the audit and in the double-length
+//   pseudo-language, on a simulator of its own. Each journey is in one shard, so it runs once in each setting, as
+//   in one run of the gate. One shard runs the hosted tests too, and one builds the package and its tests for macOS
+//   and runs them, first, while its simulator boots.
 //
 // Each part writes a record of its result (`writePart`). `node scripts/gate/parts.mjs <folder>` reads the records in
 // the folder, checks that every part passed and that the shards ran each journey once, adds the counts up, holds
@@ -27,9 +27,16 @@ import { countNames, duration, readFloor } from './gate.mjs';
  * then by function, whatever the order here.
  *
  * A screen that two shards reach is audited in the four settings in each of them, because each shard's settings
- * helper knows only its own run. So the shards are cut along the screens that the journeys share: a journey goes
- * with the journeys that reach its screens. Each shard's simulator step has a limit of its own (`shardLimitMs` in
- * scripts/gate/steps.mjs).
+ * helper knows only its own run. So a journey goes with the journeys that reach its screens, where the times allow.
+ * Each shard's simulator step has a limit of its own (`shardLimitMs` in scripts/gate/steps.mjs).
+ *
+ * The shards are cut from each journey's time on CI in run 45885449080, in the four settings and then in double
+ * length: SignInJourney/testSignIn 11m56s and 2m51s, MoveJourney 6m52s and 3m10s, SignOutJourney 8m02s and 1m38s,
+ * PeopleJourney 7m35s, AddItemJourney 6m00s and 2m01s, ClaimJourney 4m57s and 1m16s, DropGiftJourney 4m08s and
+ * 1m11s, ReorderJourney 1m41s, FirstSyncFailedJourney 1m21s and 39s, testSignInToTheProfileGate 1m21s, and the
+ * hosted tests 4m27s. Each run of the journeys adds about 2 to 4 minutes of Xcode's own. `hosted: true` runs the
+ * hosted tests, and `package: true` builds the package and runs its tests (about 5m20s) first, while the shard's
+ * simulator boots.
  */
 export const shards = [
   {
@@ -38,22 +45,28 @@ export const shards = [
   },
   {
     name: 'journeys-2',
-    tests: ['ClaimJourney/testClaim', 'DropGiftJourney/testDropGift', 'MoveJourney/testMove'],
+    hosted: true,
+    tests: ['ClaimJourney/testClaim', 'DropGiftJourney/testDropGift'],
   },
   {
     name: 'journeys-3',
-    tests: ['AddItemJourney/testAddItem', 'FirstSyncFailedJourney/testFirstSyncFailed', 'SignOutJourney/testSignOut'],
-  },
-  {
-    name: 'journeys-4',
-    hosted: true,
     tests: [
-      'PeopleJourney/testPeople',
+      'FirstSyncFailedJourney/testFirstSyncFailed',
+      'MoveJourney/testMove',
       'ReorderJourney/testReorder',
       'ScreenshotTests/testATimeOutWhileAScreenshotIsTakenIsHeldBackAndNoted',
       'ScreenshotTests/testOnlyXCTestsTimeOutIsHeldBackAndOnlyWhileAScreenshotIsTaken',
       'SignInJourney/testSignInToTheProfileGate',
     ],
+  },
+  {
+    name: 'journeys-4',
+    package: true,
+    tests: ['SignOutJourney/testSignOut'],
+  },
+  {
+    name: 'journeys-5',
+    tests: ['AddItemJourney/testAddItem', 'PeopleJourney/testPeople'],
   },
 ];
 
@@ -88,13 +101,12 @@ export function shardProblem(names, shard) {
 
 /**
  * The steps of each part, by the steps' names in scripts/gate/steps.mjs. The steps of all the parts are the
- * gate's steps, and each step is in one part, but the server step: the build part builds the server, for the
- * journeys' parts, and the package part reuses it or builds it for itself.
+ * gate's steps. The build part builds the test server, and hands it to the shards with the build. Each shard runs
+ * a simulator step of its own, and the shard with `package: true` builds the package and runs its tests first.
  */
 export const parts = {
   build: ['lint', 'server', 'build'],
-  package: ['server', 'package-build', 'package'],
-  ...Object.fromEntries(shards.map((shard) => [shard.name, ['simulator']])),
+  ...Object.fromEntries(shards.map((shard) => [shard.name, [...(shard.package ? ['package-build', 'package'] : []), 'simulator']])),
 };
 
 /** The names of the parts, in the order that the sum names them. */

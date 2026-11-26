@@ -143,17 +143,16 @@ jobs:
   # It runs in parts side by side (scripts/gate/parts.mjs), each part the
   # gate's own steps for some of its checks, with their limits and named flakes:
   # - Gate: build lints, builds the test server, and builds the app and its
-  #   test bundles once, for the journeys' jobs.
-  # - Gate: package builds the package and its tests, and runs them. It needs
-  #   nothing from the build job, so it starts with it.
-  # - Gate: journeys runs the shards of the journeys, each on a runner and a
-  #   simulator of its own, from the build job's build. One shard runs the
-  #   hosted tests too.
+  #   test bundles once, for the shards.
+  # - Gate: journeys-1 to journeys-5 each run a shard of the journeys, on a
+  #   runner and a simulator of their own, from the build job's build. One
+  #   shard runs the hosted tests too, and one builds the package and its tests
+  #   and runs them, while its simulator boots.
   # - Gate result adds the parts' counts up, checks that each journey ran once,
   #   holds the counts against the floor, and gives the gate's line.
-  # GitHub runs at most 5 macOS jobs at once on this plan: the build and package
-  # jobs start together, then the four shards when the build ends. The package
-  # job ends first on the runs measured, so the shards rarely wait for a runner.
+  # GitHub runs at most 5 macOS jobs at once on this plan. A run has 6: the
+  # build job alone, then the five shards at once, so a run never waits for its
+  # own jobs. It waits only for macOS jobs of other runs, such as a PR's Lint.
   #
   # Each job's timeout-minutes is above the sum of the limits of its part's
   # steps (scripts/gate/steps.mjs), with room for the job's own steps before the
@@ -247,83 +246,6 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  gate-package:
-    name: "Gate: package"
-    env:
-      MISE_ENABLE_TOOLS: node,just,go,actionlint,shellcheck
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: xcode-27
-    timeout-minutes: 40
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ inputs.sha || github.sha }}
-      - name: Select Xcode
-        run: |
-          sudo xcode-select --switch "/Applications/Xcode_${XCODE_VERSION}.app"
-          xcodebuild -version
-      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
-        with:
-          install_args: node just go actionlint shellcheck
-          minimum_release_age: 3d
-      # Go builds the test server, so a change of Go builds it again.
-      - name: Read Go's version
-        id: go
-        run: echo "version=$(go env GOVERSION)" >> "$GITHUB_OUTPUT"
-      # The three caches that docs/development.md names. Each is keyed on a
-      # file, and is skipped until that file exists:
-      # - The pin file is the one file named `server-pin` that holds the commit
-      #   of the test server. The server is built under build/server/. Its key
-      #   also holds Go's version, and the scripts that hold the build's recipe:
-      #   `just server` builds again when one of them changes, and a cache with
-      #   the old key would never get the new build.
-      # - Package.resolved appears with the first remote package.
-      - name: Cache the built test server
-        if: hashFiles('**/server-pin*') != ''
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: build/server
-          key: server-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.version }}-${{ hashFiles('**/server-pin*', 'scripts/server/build.mjs', 'scripts/server/pin.mjs') }}
-      - name: Cache Go's caches
-        if: hashFiles('**/server-pin*') != ''
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/Library/Caches/go-build
-            ~/go/pkg/mod
-          key: go-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', '**/server-pin*') }}
-          restore-keys: go-${{ runner.os }}-${{ runner.arch }}-
-      - name: Cache SwiftPM's cache
-        if: hashFiles('**/Package.resolved') != ''
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/Library/Caches/org.swift.swiftpm
-          key: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Package.resolved') }}
-          restore-keys: swiftpm-${{ runner.os }}-${{ runner.arch }}-
-      - name: Gate, the package part
-        run: node scripts/gate/main.mjs --part=package
-      # The part's record, for the Gate result job, which adds the parts up.
-      - if: always() && hashFiles('build/gate/part-*.json') != ''
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: gate-part-package
-          path: build/gate/part-*.json
-          retention-days: 7
-      # The gate's logs and results, and the build's log. The gate keeps them
-      # inside the checkout. They are uploaded when the part fails, and when
-      # the part ran a run of the journeys again for a named flake and passed:
-      # then the first try's result bundle and log, with `-first` at the end of
-      # their names (keepFirstTry in scripts/gate/simulator.mjs), are kept too.
-      - if: failure() || hashFiles('build/gate/**/*-first.log', 'build/gate/**/*-first.xcresult/**') != ''
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: gate-results-package
-          path: |
-            build/gate/
-            build/xcodebuild.log
-          if-no-files-found: ignore
-          retention-days: 7
-
   gate-journeys:
     name: "Gate: ${{ matrix.shard }}"
     needs: gate-build
@@ -331,7 +253,7 @@ jobs:
       MISE_ENABLE_TOOLS: node,just
     if: github.event_name == 'workflow_dispatch'
     runs-on: xcode-27
-    timeout-minutes: 50
+    timeout-minutes: 70
     strategy:
       # Every shard runs to its end, so one run shows each shard's result, and
       # "Re-run failed jobs" runs only the shard that failed.
@@ -339,7 +261,7 @@ jobs:
       matrix:
         # The shards in scripts/gate/parts.mjs. A gate test holds the two lists
         # to one.
-        shard: [journeys-1, journeys-2, journeys-3, journeys-4]
+        shard: [journeys-1, journeys-2, journeys-3, journeys-4, journeys-5]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -348,20 +270,32 @@ jobs:
         run: |
           sudo xcode-select --switch "/Applications/Xcode_${XCODE_VERSION}.app"
           xcodebuild -version
-      # The simulator's first boot on a new runner takes minutes. It goes on
-      # while the job installs its tools and gets the build.
-      - name: Start the simulator's boot
-        run: node scripts/gate/boot.mjs
       - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
         with:
           install_args: node just
           minimum_release_age: 3d
+      # The simulator's first boot on a new runner takes minutes. It goes on
+      # while the job gets the build and unpacks it. It starts after the tools
+      # are installed: in run 45885449080, two shards that booted first failed
+      # mise's install, with "sigstore refused the bundle: error refreshing TUF
+      # metadata", while the jobs with no boot beside it passed it.
+      - name: Start the simulator's boot
+        run: node scripts/gate/boot.mjs
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: gate-build
           path: build
       - name: Unpack the build
         run: tar -xf build/gate-build.tar && rm build/gate-build.tar
+      # The shard that builds the package resolves its packages from this
+      # cache, as the build job does.
+      - name: Cache SwiftPM's cache
+        if: hashFiles('**/Package.resolved') != ''
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/Library/Caches/org.swift.swiftpm
+          key: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Package.resolved') }}
+          restore-keys: swiftpm-${{ runner.os }}-${{ runner.arch }}-
       - name: Gate, the shard ${{ matrix.shard }}
         env:
           SHARD: ${{ matrix.shard }}
@@ -390,7 +324,7 @@ jobs:
 
   gate-result:
     name: Gate result
-    needs: [gate-build, gate-package, gate-journeys]
+    needs: [gate-build, gate-journeys]
     # It runs when a part failed too, so that its line says which.
     if: always() && github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-26.04
@@ -414,7 +348,7 @@ jobs:
 
   ci-ok:
     name: CI OK
-    needs: [changes, lint, gate-build, gate-package, gate-journeys, gate-result]
+    needs: [changes, lint, gate-build, gate-journeys, gate-result]
     if: always() && (github.event_name != 'pull_request' || !github.event.pull_request.draft)
     runs-on: ubuntu-26.04
     timeout-minutes: 5

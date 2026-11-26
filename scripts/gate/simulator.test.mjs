@@ -913,7 +913,7 @@ test("CI uploads the gate's files after a pass too, when a first try was kept, f
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const [bundle, log] = keepFirstTry(directory, path.join(directory, 'journeys-settings.xcresult'), 'journeys-settings.log')
     .map((kept) => path.basename(kept).replace(/^journeys-settings/, ''));
-  for (const job of ['gate-build', 'gate-package', 'gate-journeys']) {
+  for (const job of ['gate-build', 'gate-journeys']) {
     const start = ci.indexOf(`\n  ${job}:\n`);
     assert.ok(start >= 0, `the workflow has the job ${job}`);
     const body = ci.slice(start + 1, ci.indexOf('\n  gate-', start + 1) === -1 ? undefined : ci.indexOf('\n  gate-', start + 1));
