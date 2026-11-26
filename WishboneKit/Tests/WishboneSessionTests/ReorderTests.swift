@@ -71,16 +71,17 @@ final class ReorderTests {
   }
 
   /// The list's items as the server has them for the person and as the copy has them agree: the same items, at the
-  /// same places, whole from 0, and the list counts them as the server does.
+  /// same places, whole from 0, and the list counts them as the server does. For a person who doesn't see every item,
+  /// such as a parent who isn't a recipient, the places have gaps: `isWhole` is false.
   private func expectAgrees(
-    _ listIDs: [String], of session: SessionModel, as person: Fixture.Person,
+    _ listIDs: [String], of session: SessionModel, as person: Fixture.Person, isWhole: Bool = true,
     sourceLocation: SourceLocation = #_sourceLocation
   ) async throws {
     for listID in listIDs {
       let rows = try await person.signedIn().all("/lists/\(listID)/items")
       let server = rows.map { "\($0["id"].string ?? "")@\($0["position"].number.map { Int($0) } ?? -1)" }
       let whole = rows.indices.map { "\(rows[$0]["id"].string ?? "")@\($0)" }
-      #expect(server == whole, "The server's places are whole from 0", sourceLocation: sourceLocation)
+      #expect(!isWhole || server == whole, "The server's places are whole from 0", sourceLocation: sourceLocation)
       let copy = session.items(onList: listID).map { "\($0.id)@\($0.position)" }
       #expect(copy == server, "The copy has the server's places", sourceLocation: sourceLocation)
       let count = try await person.signedIn().get("/lists/\(listID)")["item_count"].number.map { Int($0) }
@@ -124,7 +125,7 @@ final class ReorderTests {
 
     // Held at the request, so what shows at once can't be the server's answer.
     let hold = instance.conditioner.hold(Self.update, at: .request)
-    await session.reorderItem(drum.id, toOffset: 0)
+    await session.reorderItem(drum.id, beside: .before(try #require(robin.items["Ball"]).id))
     #expect(inCopy(robin.primary.id, of: session) == ["Drum", "Ball", "Bat", "Cap"])
     #expect(session.items(onList: robin.primary.id).map(\.position) == [0, 1, 2, 3])
     #expect(
@@ -160,7 +161,7 @@ final class ReorderTests {
     // The pull after the reorder waits, so the copy shows what the answer and the shift rule left.
     let pull = instance.conditioner.hold(Self.versions, at: .request)
     // Bat goes after Drum, the last.
-    await session.reorderItem(bat, toOffset: 4)
+    await session.reorderItem(bat, beside: .after(try id(of: "Drum", on: robin.primary.id, in: session)))
     #expect(inCopy(robin.primary.id, of: session) == ["Ball", "Cap", "Drum", "Bat"])
     await pull.waitUntilHeld()
     await until { session.unsentChangeCount == 0 }
@@ -201,14 +202,16 @@ final class ReorderTests {
     let theirs = try #require(session.listPage(id: lego.id))
     #expect(!theirs.list.canEdit)
     #expect(ListSort.allCases.allSatisfy { !theirs.offersReorder(sortedBy: $0) })
-    await session.reorderItem(brick.id, toOffset: 2)
+    await session.reorderItem(brick.id, beside: .after(try id(of: "Plate", on: lego.id, in: session)))
     #expect(session.unsentChangeCount == 0)
     #expect(inCopy(lego.id, of: session) == ["Brick", "Plate"])
 
-    // An offset that leaves the item where it is, or that is off the list, does nothing.
+    // A neighbour that leaves the item where it is, the item itself, or one on another list does nothing.
     let bat = try id(of: "Bat", on: primary.id, in: session)
-    for offset in [1, 2, -1, 4] {
-      await session.reorderItem(bat, toOffset: offset)
+    let ball = try id(of: "Ball", on: primary.id, in: session)
+    let cap = try id(of: "Cap", on: primary.id, in: session)
+    for neighbour: ItemNeighbour in [.after(ball), .before(cap), .after(bat), .before(brick.id), .after("0")] {
+      await session.reorderItem(bat, beside: neighbour)
     }
     #expect(session.unsentChangeCount == 0)
     #expect(inCopy(primary.id, of: session) == ["Ball", "Bat", "Cap"])
@@ -223,7 +226,7 @@ final class ReorderTests {
     let cap = try id(of: "Cap", on: robin.primary.id, in: session)
     instance.conditioner.dropEverything()
 
-    await session.reorderItem(cap, toOffset: 1)
+    await session.reorderItem(cap, beside: .before(try id(of: "Bat", on: robin.primary.id, in: session)))
     #expect(inCopy(robin.primary.id, of: session) == ["Ball", "Cap", "Bat"])
     await until { session.isInstanceUnreachable }
     #expect(session.unsentChangeCount == 1)
@@ -252,11 +255,14 @@ final class ReorderTests {
     instance.conditioner.dropEverything()
 
     // Ball to the end, Drum to the top, Bat after Cap.
-    await session.reorderItem(try id(of: "Ball", on: list, in: session), toOffset: 4)
+    await session.reorderItem(
+      try id(of: "Ball", on: list, in: session), beside: .after(try id(of: "Drum", on: list, in: session)))
     #expect(inCopy(list, of: session) == ["Bat", "Cap", "Drum", "Ball"])
-    await session.reorderItem(try id(of: "Drum", on: list, in: session), toOffset: 0)
+    await session.reorderItem(
+      try id(of: "Drum", on: list, in: session), beside: .before(try id(of: "Bat", on: list, in: session)))
     #expect(inCopy(list, of: session) == ["Drum", "Bat", "Cap", "Ball"])
-    await session.reorderItem(try id(of: "Bat", on: list, in: session), toOffset: 3)
+    await session.reorderItem(
+      try id(of: "Bat", on: list, in: session), beside: .after(try id(of: "Cap", on: list, in: session)))
     #expect(inCopy(list, of: session) == ["Drum", "Cap", "Bat", "Ball"])
     #expect(session.items(onList: list).map(\.position) == [0, 1, 2, 3])
     await until { session.isInstanceUnreachable }
@@ -309,7 +315,7 @@ final class ReorderTests {
     // Robin leaves Lego in a browser. They still see it, through the group, as a giver, and the copy doesn't know.
     try await robin.signedIn().send("DELETE", "/lists/\(lego.id)/recipients/\(robin.id)").expecting(204)
     let pull = instance.conditioner.hold(Self.versions, at: .request)
-    await session.reorderItem(wheel, toOffset: 0, from: window)
+    await session.reorderItem(wheel, beside: .before(try id(of: "Brick", on: lego.id, in: session)), from: window)
     #expect(inCopy(lego.id, of: session) == ["Wheel", "Brick", "Plate"])
 
     // Rolled back before the pull: every item is back in its place.
@@ -326,7 +332,7 @@ final class ReorderTests {
     #expect(alert.refusals.map(\.title) == ["Wheel"])
     let refusal = try #require(alert.refusals.first)
     #expect(refusal.refusal.status == 403)
-    #expect(refusal.action == .reorderItem(itemID: wheel, position: 0))
+    #expect(refusal.action == .reorderItem(ItemReorder(itemID: wheel, position: 0)))
     #expect(diagnostics.faults == [.refusedWrite(.updateItem, code: "forbidden")])
     session.lateRefusalsShown(in: window)
     session.leftForeground(window: window)
@@ -350,7 +356,7 @@ final class ReorderTests {
     try await robin.person.signedIn().send("DELETE", "/items/\(cap.id)").expecting(204)
 
     let pull = instance.conditioner.hold(Self.versions, at: .request)
-    await session.reorderItem(cap.id, toOffset: 0)
+    await session.reorderItem(cap.id, beside: .before(try #require(robin.items["Ball"]).id))
     #expect(inCopy(robin.primary.id, of: session) == ["Cap", "Ball", "Bat"])
     await pull.waitUntilHeld()
     await until { session.unsentChangeCount == 0 }
@@ -379,7 +385,7 @@ final class ReorderTests {
       .expecting(200)
 
     let pull = instance.conditioner.hold(Self.versions, at: .request)
-    await session.reorderItem(cap.id, toOffset: 0)
+    await session.reorderItem(cap.id, beside: .before(try #require(robin.items["Ball"]).id))
     await pull.waitUntilHeld()
     await until { session.unsentChangeCount == 0 }
     #expect(try await onServer(robin.toys.id, as: robin.person) == ["Cap", "Doll", "Eel"])
@@ -408,7 +414,8 @@ final class ReorderTests {
 
     await session.deleteItem(try id(of: "Ball", on: list, in: session))
     // Drum goes before Bat, now the first.
-    await session.reorderItem(try id(of: "Drum", on: list, in: session), toOffset: 0)
+    await session.reorderItem(
+      try id(of: "Drum", on: list, in: session), beside: .before(try id(of: "Bat", on: list, in: session)))
     #expect(inCopy(list, of: session) == ["Drum", "Bat", "Cap"])
     #expect(session.items(onList: list).map(\.position) == [0, 1, 2])
     await until { session.isInstanceUnreachable }
@@ -445,12 +452,12 @@ final class ReorderTests {
 
     // Cap to the top of its list, then to Toys.
     let cap = try id(of: "Cap", on: primary, in: session)
-    await session.reorderItem(cap, toOffset: 0)
+    await session.reorderItem(cap, beside: .before(try id(of: "Ball", on: primary, in: session)))
     await session.moveItem(cap, toList: toys)
     // Ball to Toys, then to the top of Toys.
     let ball = try id(of: "Ball", on: primary, in: session)
     await session.moveItem(ball, toList: toys)
-    await session.reorderItem(ball, toOffset: 0)
+    await session.reorderItem(ball, beside: .before(try id(of: "Doll", on: toys, in: session)))
     #expect(inCopy(primary, of: session) == ["Bat"])
     #expect(inCopy(toys, of: session) == ["Ball", "Doll", "Eel", "Cap"])
     #expect(session.items(onList: toys).map(\.position) == [0, 1, 2, 3])
@@ -495,7 +502,7 @@ final class ReorderTests {
       return
     }
     #expect(StandIn.isStandIn(added.id))
-    await session.reorderItem(added.id, toOffset: 0)
+    await session.reorderItem(added.id, beside: .before(try id(of: "Ball", on: list, in: session)))
     #expect(inCopy(list, of: session) == [title, "Ball", "Bat"])
     await until { session.isInstanceUnreachable }
 
@@ -539,7 +546,7 @@ final class ReorderTests {
 
     // The server reorders Cap, and its answer is lost on the way back.
     let hold = instance.conditioner.hold(Self.update, at: .answer)
-    await session.reorderItem(cap, toOffset: 0)
+    await session.reorderItem(cap, beside: .before(ball))
     await hold.waitUntilHeld()
     instance.conditioner.dropEverything()
     await until { session.isInstanceUnreachable }
@@ -547,7 +554,7 @@ final class ReorderTests {
     #expect(try await onServer(list, as: robin.person) == ["Cap", "Ball", "Bat"])
 
     // Before the resend, Ball goes to the end.
-    await session.reorderItem(ball, toOffset: 3)
+    await session.reorderItem(ball, beside: .after(try id(of: "Bat", on: list, in: session)))
     #expect(inCopy(list, of: session) == ["Cap", "Bat", "Ball"])
 
     instance.conditioner.passEverything()
@@ -565,6 +572,8 @@ final class ReorderTests {
     #expect(zip(keys, places).filter { $0.0 == firstKey }.count >= 2)
     #expect(zip(keys, places).filter { $0.0 != firstKey }.map(\.1) == [2])
     #expect(try patches.map(fields).allSatisfy { $0 == ["position"] })
+    // Under one key, the body never changes between tries.
+    #expect(Set(zip(keys, patches).filter { $0.0 == firstKey }.map(\.1.body)).count == 1)
     #expect(try await onServer(list, as: robin.person) == ["Cap", "Bat", "Ball"])
     try await expectAgrees([list], of: session, as: robin.person)
 
@@ -572,6 +581,120 @@ final class ReorderTests {
     _ = await syncing.value
     try await untilInStep(session, as: robin.person)
     try await expectAgrees([list], of: session, as: robin.person)
+    #expect(session.lateRefusals.isEmpty)
+  }
+
+  // MARK: - Beside an item whose place the list guesses
+
+  /// A child's primary list, A, B, Z, where Morgan claimed Z in full, so the parent, who isn't a recipient, sees only
+  /// A and B. Z is last on the server, so the server puts a created or moved-in item after it.
+  private func childsList() async throws -> (
+    parent: Fixture.Person, child: Fixture.Person, list: Fixture.List, session: SessionModel
+  ) {
+    let builder = instance.builder
+    let parent = try await builder.person("Pat")
+    let child = try await builder.person("Emma", parents: [parent])
+    let morgan = try await builder.person("Morgan")
+    _ = try await builder.group("Family", users: [child, morgan, parent])
+    let list = try await builder.primaryList(of: child)
+    for title in ["A", "B"] {
+      _ = try await builder.item(title, on: list, as: child)
+    }
+    let z = try await builder.item("Z", on: list, as: child)
+    _ = try await builder.claim(z, as: morgan)
+    let session = try await signedIn(as: parent)
+    #expect(session.list(id: list.id)?.canEdit == true)
+    #expect(session.items(onList: list.id).map { "\($0.title)@\($0.position)" } == ["A@0", "B@1"])
+    return (parent, child, list, session)
+  }
+
+  @Test(
+    """
+    A parent who isn't a recipient drags an item past the last one they see, with a hidden item last: it lands after \
+    it, before the hidden one, and the copy and the server agree
+    """
+  )
+  func pastAHiddenItem() async throws {
+    let (parent, child, list, session) = try await childsList()
+    await session.reorderItem(
+      try id(of: "A", on: list.id, in: session), beside: .after(try id(of: "B", on: list.id, in: session)))
+    #expect(inCopy(list.id, of: session) == ["B", "A"])
+    await until { session.unsentChangeCount == 0 }
+    #expect(try await onServer(list.id, as: child) == ["B", "A", "Z"])
+    try await untilInStep(session, as: parent)
+    try await expectAgrees([list.id], of: session, as: parent, isWhole: false)
+  }
+
+  @Test(
+    """
+    A parent adds an item with no connection, then drags another after it, on a list whose last item they don't see: \
+    on the server and in the copy, the item lands after the new one
+    """
+  )
+  func afterAnAddedItem() async throws {
+    let (parent, child, list, session) = try await childsList()
+    instance.conditioner.dropEverything()
+    var form = ItemDraft(given: .words("Kite"))
+    form.listID = list.id
+    guard case .added(let added) = await session.add(&form) else {
+      Issue.record("The add gave no item")
+      return
+    }
+    await session.reorderItem(try id(of: "A", on: list.id, in: session), beside: .after(added.id))
+    #expect(inCopy(list.id, of: session) == ["B", "Kite", "A"])
+    await until { session.isInstanceUnreachable }
+
+    instance.conditioner.passEverything()
+    let pull = instance.conditioner.hold(Self.versions, at: .request)
+    let syncing = Task { await session.syncNow() }
+    await pull.waitUntilHeld()
+    await until { session.unsentChangeCount == 0 }
+    // The create's answer put Kite after Z. The reorder read Kite's place from it, and A went after Kite.
+    #expect(try await onServer(list.id, as: child) == ["B", "Z", "Kite", "A"])
+    #expect(inCopy(list.id, of: session) == ["B", "Kite", "A"])
+    try await expectAgrees([list.id], of: session, as: parent, isWhole: false)
+
+    pull.release()
+    _ = await syncing.value
+    try await untilInStep(session, as: parent)
+    #expect(inCopy(list.id, of: session) == ["B", "Kite", "A"])
+    try await expectAgrees([list.id], of: session, as: parent, isWhole: false)
+    #expect(session.lateRefusals.isEmpty)
+  }
+
+  @Test(
+    """
+    A parent moves an item in from the child's other list with no connection, then drags another after it, on a \
+    list whose last item they don't see: on the server and in the copy, the item lands after the moved one
+    """
+  )
+  func afterAMovedItem() async throws {
+    let (parent, child, list, session) = try await childsList()
+    let other = try await instance.builder.list("Other", of: child)
+    let kite = try await instance.builder.item("Kite", on: other, as: child)
+    await session.syncNow()
+    await until { session.item(id: kite.id) != nil }
+    instance.conditioner.dropEverything()
+
+    await session.moveItem(kite.id, toList: list.id)
+    await session.reorderItem(try id(of: "A", on: list.id, in: session), beside: .after(kite.id))
+    #expect(inCopy(list.id, of: session) == ["B", "Kite", "A"])
+    await until { session.isInstanceUnreachable }
+
+    instance.conditioner.passEverything()
+    let pull = instance.conditioner.hold(Self.versions, at: .request)
+    let syncing = Task { await session.syncNow() }
+    await pull.waitUntilHeld()
+    await until { session.unsentChangeCount == 0 }
+    #expect(try await onServer(list.id, as: child) == ["B", "Z", "Kite", "A"])
+    #expect(inCopy(list.id, of: session) == ["B", "Kite", "A"])
+    try await expectAgrees([list.id, other.id], of: session, as: parent, isWhole: false)
+
+    pull.release()
+    _ = await syncing.value
+    try await untilInStep(session, as: parent)
+    #expect(inCopy(list.id, of: session) == ["B", "Kite", "A"])
+    try await expectAgrees([list.id, other.id], of: session, as: parent, isWhole: false)
     #expect(session.lateRefusals.isEmpty)
   }
 }

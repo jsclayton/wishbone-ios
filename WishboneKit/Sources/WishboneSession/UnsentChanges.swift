@@ -92,7 +92,8 @@ extension SessionModel {
       let change: UnsentChange
       do {
         guard let next = try await database.firstUnsentChange() else { return .succeeded }
-        change = next
+        // A reorder's place is read from its neighbour now, and kept, before the first send.
+        change = try await database.resolvingPlace(of: next)
       } catch {
         return copyFailed(error, "The journal can't be read.")
       }
@@ -190,9 +191,11 @@ extension SessionModel {
     case .moveItem(let move):
       // Only `list_id`: never a field that the user didn't change.
       return .item(try await client.updateItem(move.itemID, ItemChanges(listID: move.toListID), key: change.key))
-    case .reorderItem(let id, let position):
-      // Only `position`, as for a move: never a field that the user didn't change.
-      return .item(try await client.updateItem(id, ItemChanges(position: position), key: change.key))
+    case .reorderItem(let reorder):
+      // Only `position`, as for a move: never a field that the user didn't change. `sendEach` has read the place from
+      // the neighbour already.
+      return .item(
+        try await client.updateItem(reorder.itemID, ItemChanges(position: reorder.position), key: change.key))
     }
   }
 

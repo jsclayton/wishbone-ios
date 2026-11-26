@@ -213,12 +213,14 @@ extension ListPageScreen {
     #endif
   }
 
-  /// Reorder: the item goes to its new place among the items as they show, as an unsent change. The system's edit
-  /// mode moves one item at a time.
+  /// Reorder: the item goes beside the item that it was dropped next to, among the items as the page drew them, as an
+  /// unsent change. The system's edit mode moves one item at a time.
   private func reorder(_ items: [UserPage.Item], from source: IndexSet, to destination: Int) {
-    guard let index = source.first, items.indices.contains(index) else { return }
+    guard let index = source.first, items.indices.contains(index),
+      let neighbour = ItemNeighbour(movingFrom: index, to: destination, in: items.map(\.id))
+    else { return }
     let id = items[index].id
-    Task { await session.reorderItem(id, toOffset: destination, from: window) }
+    Task { await session.reorderItem(id, beside: neighbour, from: window) }
   }
 
   /// A row for Leave, or for Make {child} leave. Its label names the list, and the child. It asks for a

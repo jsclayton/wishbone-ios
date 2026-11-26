@@ -114,10 +114,11 @@ public struct UnsentChange: Sendable, Equatable, Identifiable {
     case moveItem(ItemMove)
 
     /// Reorder: `PATCH /items/{id}` with only `position`, the item's new place on its own list, from 0. The item shows
-    /// there at once, and the other items on its list shift as the server's shift rule moves them. The place is read
-    /// as the server will read it: after every change before it in the journal. An item that a create in the journal
-    /// adds is named by its stand-in ID, as for an edit. See "Where an item can land" in `docs/spec.md`.
-    case reorderItem(itemID: String, position: Int)
+    /// beside the item that the user dropped it next to at once, and the other items on its list shift as the
+    /// server's shift rule moves them. The first send reads the place from that item, as the copy has it then, and
+    /// keeps it, so a resend sends the same place. An item that a create in the journal adds is named by its stand-in
+    /// ID, as for an edit, and so is such a neighbour. See "Where an item can land" in `docs/spec.md`.
+    case reorderItem(ItemReorder)
   }
 }
 
@@ -142,6 +143,70 @@ public struct ItemMove: Sendable, Equatable {
     self.fromListID = fromListID
     self.toListID = toListID
     self.toListName = toListName
+  }
+}
+
+/// A reorder of an item on its list: the item, the item that the user dropped it beside, and its place. See
+/// `UnsentChange.Action.reorderItem`.
+public struct ItemReorder: Sendable, Equatable {
+  /// The item, by the server's ID, or by its stand-in ID while its create waits.
+  public let itemID: String
+
+  /// The item's new place on its list, from 0: the `position` that the reorder sends. Until the first send, it is the
+  /// place that the list showed when the user made the reorder, which is a guess where the neighbour waits to be
+  /// created or moved in. The first send reads it again from the neighbour, and keeps it.
+  public let position: Int
+
+  /// The item that the user dropped it beside, until the first send reads the place from it. Nil after that, and in a
+  /// row that an earlier version of the app wrote, which sends its place as it is.
+  public let neighbour: ItemNeighbour?
+
+  public init(itemID: String, position: Int, neighbour: ItemNeighbour? = nil) {
+    self.itemID = itemID
+    self.position = position
+    self.neighbour = neighbour
+  }
+
+  /// The reorder with its place read from the neighbour's place on the item's list, `places`, by item ID: the
+  /// places as the server has them, or as the list shows them. With no neighbour, or one that isn't on the item's
+  /// list there, it keeps the place that it has. Either way, it has no neighbour any more.
+  func resolved(in places: [String: ShiftRule.Place]) -> ItemReorder {
+    guard let neighbour, let item = places[itemID], let beside = places[neighbour.itemID], beside.id != item.id,
+      beside.listID == item.listID
+    else { return ItemReorder(itemID: itemID, position: position) }
+    return ItemReorder(itemID: itemID, position: neighbour.place(movingFrom: item.position, besideAt: beside.position))
+  }
+}
+
+/// The item that a reorder puts an item beside: after it or before it, by its ID.
+public enum ItemNeighbour: Sendable, Equatable {
+  case after(String)
+  case before(String)
+
+  /// The neighbour's ID.
+  public var itemID: String {
+    switch self {
+    case .after(let id), .before(let id): id
+    }
+  }
+
+  /// The neighbour of a list's move, as the page drew the items: `ids`, in List order, with the item to move at
+  /// `index` and `offset` the index before which it goes, in the order before the move. Down the list, it goes after
+  /// the item before that index, and up it, before the item at it. Nil when the move leaves the item where it is, or
+  /// is off the list.
+  public init?(movingFrom index: Int, to offset: Int, in ids: [String]) {
+    guard ids.indices.contains(index), offset >= 0, offset <= ids.count, offset != index, offset != index + 1
+    else { return nil }
+    self = offset > index ? .after(ids[offset - 1]) : .before(ids[offset])
+  }
+
+  /// The place on one list that an item at `from` takes to go beside the neighbour at `at`, as the server's reorder
+  /// moves it: the items between the two shift one place toward the item's old place.
+  func place(movingFrom from: Int, besideAt at: Int) -> Int {
+    switch self {
+    case .after: from < at ? at : at + 1
+    case .before: from < at ? at - 1 : at
+    }
   }
 }
 
@@ -598,6 +663,24 @@ extension LocalDatabase {
     }
   }
 
+  /// The change to send, with a reorder's place read from its neighbour as the copy has it now. The journal sends in
+  /// order, so every change before it has its answer, and the copy has the server's places, the ones of a create's or
+  /// a move's item included. The row keeps the place, with no neighbour, before the change is sent, so a resend after
+  /// a lost answer sends the same body under the same key. Any other change, and a reorder that has no neighbour, is
+  /// as it is.
+  func resolvingPlace(of change: UnsentChange) async throws -> UnsentChange {
+    guard case .reorderItem(let reorder) = change.action, let neighbour = reorder.neighbour else { return change }
+    return try await self.change { database in
+      let rows = try ItemRow.fetchAll(database, keys: [reorder.itemID, neighbour.itemID])
+      let action = UnsentChange.Action.reorderItem(
+        reorder.resolved(in: Dictionary(rows.map { ($0.id, $0.place) }) { first, _ in first }))
+      try database.execute(
+        sql: "UPDATE \(UnsentChangeRow.databaseTableName.quotedDatabaseIdentifier) SET patch = ? WHERE id = ?",
+        arguments: [try action.patch(), change.id])
+      return UnsentChange(id: change.id, action: action, title: change.title, key: change.key)
+    }
+  }
+
   /// The bytes that the upload with the stand-in ID sends. Nil when the journal holds none.
   func unsentFile(_ id: String) async throws -> Data? {
     try await writer.read { database in try UnsentFileRow.fetchOne(database, key: id)?.data }
@@ -878,8 +961,12 @@ extension LocalDatabase {
   /// - An edit shows over its row.
   /// - A delete takes the item out, and closes the gap on its list.
   /// - A move takes the item after the last item of the other list, and closes the gap on its old one.
-  /// - A reorder puts the item at its place on its list, or last for a place past the end, and the others in between
-  ///   shift.
+  /// - A reorder puts the item beside its neighbour, or at its place when it has none, or last for a place past the
+  ///   end, and the others in between shift.
+  ///
+  /// A create's or a move's place is a guess where the list has items that the user doesn't see, such as the ones that
+  /// others claimed in full: the server puts the item after them. A reorder beside such an item still shows beside it,
+  /// and its first send reads the server's place.
   ///
   /// So an edit, a move, a reorder or a delete of an item that a create adds, by its stand-in ID, shows too. A change
   /// to an item that isn't there, which a pull removed, changes nothing. The items are in the copy's order: by list,
@@ -905,8 +992,11 @@ extension LocalDatabase {
         let new = ShiftRule.Place(id: item.id, listID: move.toListID, position: end(of: move.toListID, in: rows))
         rows = shifting(rows, from: item.place, to: new)
         rows.append(item.moved(to: new.listID, at: new.position))
-      case .reorderItem(let id, let position):
-        guard let index = rows.firstIndex(where: { $0.id == id }) else { continue }
+      case .reorderItem(let reorder):
+        guard let index = rows.firstIndex(where: { $0.id == reorder.itemID }) else { continue }
+        // Beside its neighbour, where the list shows it now: a create's or a move's place here is a guess, which the
+        // first send reads again from the server's.
+        let position = reorder.resolved(in: Dictionary(rows.map { ($0.id, $0.place) }) { first, _ in first }).position
         let item = rows.remove(at: index)
         // A place past the end is the last place, as the server takes it: after the last of the other items, once the
         // gap that the item leaves has closed.
@@ -1055,8 +1145,8 @@ extension UnsentChange.Action {
       id
     case .moveItem(let move):
       move.itemID
-    case .reorderItem(let id, _):
-      id
+    case .reorderItem(let reorder):
+      reorder.itemID
     }
   }
 
@@ -1140,7 +1230,7 @@ extension UnsentChange.Action {
       case .editStoreLink(let edit): try JSONEncoder().encode(StoreLinkEditPatch(edit))
       case .deleteStoreLink(let itemID, _): try JSONEncoder().encode(StoreLinkDeletionPatch(itemID: itemID))
       case .moveItem(let move): try JSONEncoder().encode(MovePatch(move))
-      case .reorderItem(_, let position): try JSONEncoder().encode(ItemChanges(position: position))
+      case .reorderItem(let reorder): try JSONEncoder().encode(ReorderPatch(reorder))
       default: try JSONEncoder().encode(giftChanges)
       }
     return String(decoding: data, as: UTF8.self)
@@ -1208,10 +1298,8 @@ extension UnsentChange.Action {
       self = .moveItem(patch.move(targetID))
       return
     case .reorderItem:
-      guard let changes = try? JSONDecoder().decode(ItemChanges.self, from: Data(patch.utf8)),
-        let position = changes.position, position >= 0, changes == ItemChanges(position: position)
-      else { return nil }
-      self = .reorderItem(itemID: targetID, position: position)
+      guard let patch = ReorderPatch(patch) else { return nil }
+      self = .reorderItem(patch.reorder(targetID))
       return
     case .markBought, .setFromLabel, .setNote, .lowerQuantity:
       break
@@ -1319,6 +1407,40 @@ private struct StoreLinkEditPatch: Codable {
 
   func edit(_ storeLinkID: String) -> StoreLinkEdit {
     StoreLinkEdit(itemID: itemID, storeLinkID: storeLinkID, priceMinor: priceMinor, editedAt: editedAt)
+  }
+}
+
+/// A reorder, as the journal keeps it: the `position` that it sends, and the item that the user dropped it beside,
+/// `after` or `before`, until the first send reads the place from it. A row with only `position`, which the first send
+/// leaves, or which an earlier version of the app wrote, sends it as it is. A row with any other field, a place below
+/// 0, or both neighbours can't be read.
+private struct ReorderPatch: Codable {
+  let position: Int
+  let after: String?
+  let before: String?
+
+  init(_ reorder: ItemReorder) {
+    position = reorder.position
+    switch reorder.neighbour {
+    case .after(let id): (after, before) = (id, nil)
+    case .before(let id): (after, before) = (nil, id)
+    case nil: (after, before) = (nil, nil)
+    }
+  }
+
+  /// The patch of a row of the journal. Nil for one that can't be read.
+  init?(_ text: String) {
+    guard let object = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any],
+      Set(object.keys).isSubset(of: ["position", "after", "before"]),
+      let patch = try? JSONDecoder().decode(Self.self, from: Data(text.utf8)), patch.position >= 0,
+      patch.after == nil || patch.before == nil
+    else { return nil }
+    self = patch
+  }
+
+  func reorder(_ itemID: String) -> ItemReorder {
+    let neighbour: ItemNeighbour? = after.map(ItemNeighbour.after) ?? before.map(ItemNeighbour.before)
+    return ItemReorder(itemID: itemID, position: position, neighbour: neighbour)
   }
 }
 

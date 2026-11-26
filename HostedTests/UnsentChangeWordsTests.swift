@@ -138,7 +138,7 @@ struct UnsentChangeWordsTests {
 
   @Test("A refused reorder reads as a refused move, with the words for the code, and no word about gifts")
   func lateRefusalsOfReorders() {
-    let reorder = UnsentChange.Action.reorderItem(itemID: "4", position: 0)
+    let reorder = UnsentChange.Action.reorderItem(ItemReorder(itemID: "4", position: 0, neighbour: .before("2")))
     let forbidden = APIError.Refusal(route: .updateItem, status: 403, code: .forbidden, detail: "The server's words")
     let gone = APIError.Refusal(route: .updateItem, status: 404, code: .notFound, detail: "The server's words")
     let refusedForbidden = LateRefusalWords.line(LateRefusal(id: 1, action: reorder, title: "Kite", refusal: forbidden))
