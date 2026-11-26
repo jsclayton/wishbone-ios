@@ -20,7 +20,9 @@
     /// can't turn it on, so the screen offers no Open Settings.
     case restricted
 
-    /// The device has no camera that the system's data scanner can use, as in the simulator.
+    /// The device has no camera for the feature. For the scanner (`current`), that is a camera that the system's
+    /// data scanner can use, which the simulator lacks. For Take a photo (`forPhotos`), it is any camera for the
+    /// system camera picker, which the iOS 27 simulator reports that it has.
     case notAvailable
 
     /// The access for the camera's permission and for whether the device can scan.
@@ -88,8 +90,7 @@
       )
     }
 
-    /// Whether the Add screen shows Take a photo. A device with no camera, such as the simulator, has only Choose
-    /// a photo.
+    /// Whether the Add screen shows Take a photo. A device with no camera has only Choose a photo.
     public var showsTakeAPhoto: Bool {
       self != .notAvailable
     }
