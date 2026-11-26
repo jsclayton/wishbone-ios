@@ -76,7 +76,7 @@ struct FaultReportTests {
 
     let device = relaunched(as: session, storage: .folder(folder.url))
     #expect(device.session != nil)
-    #expect(diagnostics.faults == [.copyDropped(from: 3, to: 5)])
+    #expect(diagnostics.faults == [.copyDropped(from: 3, to: 6)])
   }
 
   @Test("An answer that can't be decoded is captured as its route and key path, never a value")

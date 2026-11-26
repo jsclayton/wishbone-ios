@@ -515,7 +515,7 @@ struct UnsentChangesTests {
     let diagnostics = RecordingDiagnostics()
     let relaunched = instance.device(storage: .folder(folder.url), diagnostics: diagnostics)
     let session = try #require(relaunched.session)
-    #expect(diagnostics.faults.contains(.copyDropped(from: 1, to: 5)))
+    #expect(diagnostics.faults.contains(.copyDropped(from: 1, to: 6)))
     // The copy is gone, and the change is not.
     #expect(session.gift(id: seeded.gift.id) == nil)
     #expect(session.unsentChangeCount == 1)

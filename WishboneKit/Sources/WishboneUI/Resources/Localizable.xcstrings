@@ -859,7 +859,7 @@
       "localizations" : {
         "en" : {
           "stringUnit" : {
-            "state" : "new",
+            "state" : "translated",
             "value" : "Making %1$@: %2$@"
           }
         }
