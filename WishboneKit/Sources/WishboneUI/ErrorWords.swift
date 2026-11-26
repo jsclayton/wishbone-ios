@@ -55,10 +55,12 @@ public enum ErrorWords {
       return String(localized: "You can't do this to a primary list.", bundle: #bundle)
     case .unknownFilter, .unknownSort, .cursorMismatch, .imageAttached, .resourceChanged:
       return fault
-    case .unauthorized, .apiVersionRemoved, .userDeactivated, .lastRecipient, .parentLoop, .storeBlocked, .unknown:
+    case .unauthorized, .apiVersionRemoved, .userDeactivated, .lastRecipient, .listHasOtherRecipients, .parentLoop,
+      .storeBlocked, .unknown:
       // The first two have screens of their own, and reach here only in an answer that those screens don't take.
-      // `user_deactivated` names a person, `last_recipient` a list, and `store_blocked` a store, so the screen that
-      // meets each gives its words (see `lastRecipient(of:)`). `parent_loop` shows the server's `detail`, as the
+      // `user_deactivated` names a person, `last_recipient` and `list_has_other_recipients` a list, and
+      // `store_blocked` a store, so the screen that meets each gives its words (see `lastRecipient(of:)` and
+      // `otherRecipients(of:)`). `parent_loop` shows the server's `detail`, as the
       // table says.
       return refusal.detail
     case .alreadyClaimed, .alreadyInvited, .alreadyRecipient, .alreadyInGroup, .alreadyAttached, .alreadyBlocked:
@@ -92,6 +94,12 @@ public enum ErrorWords {
   public static func lastRecipient(of list: String) -> String {
     String(
       localized: "You're the only recipient of \(list), so you can't leave it. You can delete it.", bundle: #bundle)
+  }
+
+  /// The words for `list_has_other_recipients`: the list has another recipient now, so it can't be deleted.
+  public static func otherRecipients(of list: String) -> String {
+    String(
+      localized: "\(list) has other recipients now, so it can't be deleted. You can leave it.", bundle: #bundle)
   }
 
   /// The words for `user_deactivated`, which names the deactivated user that the write was for.

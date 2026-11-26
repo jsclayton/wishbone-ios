@@ -359,6 +359,22 @@ public struct APIClient: Sendable {
     _ = try await load(.unblockStore(id))
   }
 
+  /// `PATCH /lists/{id}`: a merge patch of the list's name or description, with no `If-Match`. `key` is the unsent
+  /// change's own `Idempotency-Key`. Gives back the list, with the version that the answer carried. A parent who can
+  /// edit the list only through a deactivated child gets a 403 `user_deactivated`.
+  public func updateList(_ id: String, _ changes: ListChanges, key: String) async throws(APIError)
+    -> Versioned<ListResource>
+  {
+    try await versioned(.updateList(id, changes, key: key))
+  }
+
+  /// `DELETE /lists/{id}`: deletes the extra list and its items, with no `If-Match`. `key` is the unsent change's
+  /// own `Idempotency-Key`. A primary list is a 403 `primary_list`, and a list with another recipient a 403
+  /// `list_has_other_recipients`. It never refuses because of the list's gifts.
+  public func deleteList(_ id: String, key: String) async throws(APIError) {
+    _ = try await load(.deleteList(id, key: key))
+  }
+
   /// `DELETE /lists/{id}/recipients/{user_id}`: the user leaves the list, or their parent makes them leave.
   public func leave(list listID: String, userID: String) async throws(APIError) {
     _ = try await load(.leaveList(listID, userID: userID))

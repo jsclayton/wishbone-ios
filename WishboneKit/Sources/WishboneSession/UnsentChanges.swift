@@ -91,13 +91,13 @@ extension SessionModel {
         return copyFailed(error, "The journal can't be read.")
       }
       do {
-        let answer: Versioned<Gift>?
+        let answer: UnsentChange.Answer
         do {
           answer = try await send(change)
         } catch .undecodable {
           // The instance took the change, and its answer can't be read. The client has captured it. The change is
           // sent, and the pull brings the row.
-          answer = nil
+          answer = .none
         }
         // The session ended while the answer was on its way. The database is gone, and stays gone.
         guard !hasEnded, !Task.isCancelled else { return .cancelled }
@@ -130,24 +130,29 @@ extension SessionModel {
     }
   }
 
-  /// Sends one unsent change, and gives the server's answer. An unclaim has none.
+  /// Sends one unsent change, and gives the server's answer. An unclaim and a delete have none.
   ///
   /// An unclaim of a gift that is gone (a 404) is done: it was unclaimed, merged, or restored from elsewhere, and the
   /// giver no longer has it, which is what they asked for. So the gift leaves the copy, and nothing is said.
-  private func send(_ change: UnsentChange) async throws(APIError) -> Versioned<Gift>? {
+  private func send(_ change: UnsentChange) async throws(APIError) -> UnsentChange.Answer {
     switch change.action {
     case .markBought(let id, _), .setFromLabel(let id, _), .setNote(let id, _), .lowerQuantity(let id, _),
       .setOccasion(let id, _):
-      return try await client.updateGift(id, change.action.giftChanges, key: change.key)
+      return .gift(try await client.updateGift(id, change.action.giftChanges, key: change.key))
     case .unclaim(let id):
       do {
         try await client.unclaimGift(id, key: change.key)
       } catch .refused(let refusal) where refusal.status == 404 {
         // Gone already.
       }
-      return nil
+      return .none
     case .acknowledge(let id, let flag):
-      return try await client.acknowledgeGift(id, codes: [flag], key: change.key)
+      return .gift(try await client.acknowledgeGift(id, codes: [flag], key: change.key))
+    case .editList(let id, let changes):
+      return .list(try await client.updateList(id, changes, key: change.key))
+    case .deleteList(let id):
+      try await client.deleteList(id, key: change.key)
+      return .none
     }
   }
 

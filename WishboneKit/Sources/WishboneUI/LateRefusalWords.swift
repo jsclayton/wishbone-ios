@@ -17,8 +17,18 @@ public enum LateRefusalWords {
 
   /// One refusal's line: what the change did, then why the server refused it, in the app's words for the code.
   public static func line(_ refusal: LateRefusal) -> String {
-    let reason = ErrorWords.words(for: refusal.refusal) ?? ErrorWords.fault
+    let reason =
+      refusal.refusal.code == .listHasOtherRecipients
+      ? ErrorWords.otherRecipients(of: refusal.title) : ErrorWords.words(for: refusal.refusal) ?? ErrorWords.fault
     switch refusal.action {
+    case .editList:
+      return String(
+        localized: "Editing \(refusal.title): \(reason)", bundle: #bundle,
+        comment: "A late refusal of Edit list: the list's name, then why the change wasn't saved")
+    case .deleteList:
+      return String(
+        localized: "Deleting \(refusal.title): \(reason)", bundle: #bundle,
+        comment: "A late refusal of Delete list: the list's name, then why the change wasn't saved")
     case .markBought(_, true):
       return String(
         localized: "Marking \(refusal.title) bought: \(reason)", bundle: #bundle,

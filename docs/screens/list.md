@@ -26,11 +26,13 @@ From top to bottom:
 7. For a recipient: the list's other pending invitations, each with who invited them and Withdraw, and **Invite**.
 8. **Leave**, **Make {child} leave**, and **Delete list**, from their `can_*` fields.
 
-**Provisional.** Plain default: a system list. The name is the navigation title, the recipients and the description are the first section, and the items are rows with the image at the leading edge. An item with no image has a tile in its recipient's person color. Each web link in the description also has a link row under its block. Edit list, Sort, and Open in New Window are in the toolbar's menu, and Reorder is the toolbar's Edit button. Leave and Make {child} leave are destructive rows in the last section, and each confirmation is an alert, with the warning after its line.
+**Provisional.** Plain default: a system list. The name is the navigation title, the recipients and the description are the first section, and the items are rows with the image at the leading edge. An item with no image has a tile in its recipient's person color. Each web link in the description also has a link row under its block. Edit list, Sort, and Open in New Window are in the toolbar's menu, and Reorder is the toolbar's Edit button. Leave, Make {child} leave, and Delete list are destructive rows in the last section, and each confirmation is an alert, with the warning after its line.
 
 ### Edit list
 
 A sheet with **Name** and **Description**.
+
+**Provisional.** Plain default: a system form, with Cancel and Save in the toolbar. Save shows the change at once, in every window, and closes the sheet. A blank name can't be saved, and a blank description clears it. While the sheet has typed changes, a swipe down doesn't close it, and Cancel asks first.
 
 ### Invite
 
@@ -105,6 +107,11 @@ Decided in the spec: "Move to…", "Reorder", "Add item", "Open in New Window".
 | Make leave, confirmation | "Make {name} leave {list}? {name} can be invited again." |
 | Leave, Make leave, the rows | "Leave", "Make {name} leave". Each row's label reads the action in full: "Leave {list}", "Make {name} leave {list}" |
 | Delete, confirmation | "Delete {list} and its items? This can't be undone." |
+| Delete, the row | "Delete list". The row's label reads the action in full: "Delete {list} and its items" |
+| Edit list, the sheet | "Name", "Description", "Cancel", "Save" |
+| Edit list, Cancel with typed changes | "Discard your changes?", with "Discard" and "Keep editing" |
+| A late refusal of Edit list | "Editing {list}: {reason}" |
+| A late refusal of Delete list | "Deleting {list}: {reason}" |
 | Edit list, title | "Edit list" |
 | Invite, title | "Invite to {list}" |
 | Nobody to invite | "There's nobody else to invite. You can invite people you can see who aren't on this list." |
