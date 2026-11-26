@@ -76,6 +76,7 @@ Decided in the spec: "Add to", "Not sure", "Already on this list: {title}", "Pho
 | Nothing found, a link | "Nothing could be read from {store}. Fill it in yourself." |
 | Blocked on add | "Links from {store} are blocked on this Wishbone." |
 | Nothing found, a photo | "Nothing could be read from your photo. Give it a title." |
+| The user's photo, for VoiceOver | "Your photo" |
 | Title | "Add item" |
 | Fields | "Title", "Price", "Up to", "Store", "Notes" |
 | Title is empty | "Give the item a title." |
@@ -86,6 +87,7 @@ Decided in the spec: "Add to", "Not sure", "Already on this list: {title}", "Pho
 ## Accessibility
 
 - Each image is a button that reads "Photo {n} of {m}", "selected" or "not selected", and "primary" for the first.
+- The user's photo, from Take a photo or Choose a photo, is an image that reads "Your photo". It is not a button, and it has no tick.
 - Add is disabled, and says why, until the form has a title.
 - The note at the top is the first element, so VoiceOver reads why the form is blank before the fields.
 - The share extension is held to the same rules as the app.
