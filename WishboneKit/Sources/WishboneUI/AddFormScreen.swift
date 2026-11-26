@@ -39,7 +39,9 @@ struct AddFormScreen: View {
 
   var body: some View {
     Form {
-      if let words = problemWords {
+      // The note, or why the last Add gave no item, is the form's first element: VoiceOver reads why the form is
+      // blank before the fields.
+      if let words = problemWords ?? noteWords {
         Section {
           Text(words)
         }
@@ -217,13 +219,26 @@ struct AddFormScreen: View {
     draft != opened
   }
 
-  /// The line at the top after an Add that gave no item.
+  /// The note at the top when search did not fill in the form, or when an add dropped a blocked link.
+  private var noteWords: String? {
+    switch draft.note {
+    case .overLimit:
+      String(
+        localized:
+          "This link wasn't read: you've read 30 links and photos in the last hour. Fill it in yourself, or try again later.",
+        bundle: #bundle)
+    case .nothingFound(let store):
+      String(localized: "Nothing could be read from \(store). Fill it in yourself.", bundle: #bundle)
+    case .blocked(let store): ErrorWords.blocked(store)
+    case nil: nil
+    }
+  }
+
+  /// The line at the top after an Add that gave no item. A blocked store's line is the draft's note.
   private var problemWords: String? {
     switch problem {
     case .unreachable: CantReach.words(for: session.session.instance)
-    case .refused(let refusal) where refusal.code == .storeBlocked:
-      String(
-        localized: "Links from \(draft.storeLink?.store ?? "") are blocked on this Wishbone.", bundle: #bundle)
+    case .refused(let refusal) where refusal.code == .storeBlocked: nil
     case .refused(let refusal): ErrorWords.words(for: refusal)
     case .failed: ErrorWords.fault
     case .added, nil: nil
@@ -244,7 +259,7 @@ struct AddFormScreen: View {
         didAdd(item)
       } else {
         problem = outcome
-        if let words = problemWords { AccessibilityNotification.Announcement(words).post() }
+        if let words = problemWords ?? noteWords { AccessibilityNotification.Announcement(words).post() }
       }
     }
   }

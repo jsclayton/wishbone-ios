@@ -98,6 +98,22 @@ public struct ItemDraft: Sendable, Equatable {
   /// Whether the search cut longer typed text to the longest notes.
   public let notesWereCut: Bool
 
+  /// Why the form is not filled in, for the note at the top of the form. See "When search can't fill in the
+  /// form" in `docs/spec.md`.
+  public enum Note: Sendable, Equatable {
+    /// The search was over the hourly limit: the link was not read.
+    case overLimit
+
+    /// Nothing could be read from the link's store.
+    case nothingFound(store: String)
+
+    /// The add was refused with `store_blocked`, and the link was dropped from the form.
+    case blocked(store: String)
+  }
+
+  /// The note at the top of the form, or nil when the search filled it in.
+  public internal(set) var note: Note?
+
   /// The add's `Idempotency-Key`, and the item that it was made for. A changed item gets a new key: the server
   /// refuses a key again with another body.
   private var key: (value: String, item: NewItem)?
@@ -105,8 +121,9 @@ public struct ItemDraft: Sendable, Equatable {
   /// The images that an earlier Add uploaded, by their store address.
   private var uploads: [String: String] = [:]
 
-  /// The form that a search filled in.
-  public init(result: SearchResult) {
+  /// The form that a search of the input filled in. A link that nothing could be read from gets the note that
+  /// names its store. Typed words are never read, so they get no note.
+  public init(result: SearchResult, of input: SearchInput) {
     let link = result.storeLinks.first
     images = result.imageURLs.enumerated().map { index, url in Image(url: url, isTicked: index == 0) }
     title = String((result.title ?? "").prefix(Self.titleLimit))
@@ -117,11 +134,20 @@ public struct ItemDraft: Sendable, Equatable {
     options = result.options.map { Option(name: $0.name, values: $0.values, choice: $0.selected) }
     notes = result.notes ?? ""
     notesWereCut = result.notesCut
+    if !result.found, case .link(_, let store) = input {
+      note = .nothingFound(store: link?.store ?? store)
+    }
+  }
+
+  /// A blank form, from "Add it without the link".
+  public init() {
+    self.init(given: .words(""))
   }
 
   /// The form with only what the user gave, from "Fill it in myself": a link as the store link, or typed words as
-  /// the title.
-  public init(given input: SearchInput) {
+  /// the title. A search over the hourly limit gives it too, with its note.
+  public init(given input: SearchInput, note: Note? = nil) {
+    self.note = note
     images = []
     priceMinor = nil
     topPriceMinor = nil
@@ -198,14 +224,17 @@ public struct ItemDraft: Sendable, Equatable {
     first.images == second.images && first.title == second.title && first.priceMinor == second.priceMinor
       && first.topPriceMinor == second.topPriceMinor && first.currency == second.currency
       && first.storeLink == second.storeLink && first.options == second.options && first.notes == second.notes
-      && first.notesWereCut == second.notesWereCut
+      && first.notesWereCut == second.notesWereCut && first.note == second.note
   }
 }
 
 /// How a search ended.
 public enum SearchOutcome: Sendable, Equatable {
-  /// The form to open, filled in.
-  case found(ItemDraft)
+  /// The form to open: filled in, or with a note that says why it is not.
+  case form(ItemDraft)
+
+  /// The link's store is blocked on this instance (`store_blocked`). No form opens.
+  case blocked(store: String)
 
   /// The instance can't be reached. The text stays in the field.
   case unreachable
@@ -222,6 +251,9 @@ public struct AddedItem: Sendable, Equatable {
   public let id: String
   public let title: String
   public let listName: String
+
+  /// Whether the server couldn't save a ticked image (`image_fetch_failed`), so the item was added without it.
+  public let imageWasLeftOut: Bool
 }
 
 /// How an add ended. See "After Add" in `docs/spec.md`.
@@ -232,7 +264,7 @@ public enum AddOutcome: Sendable, Equatable {
   /// The instance can't be reached. The form stays open, and Add tries again.
   case unreachable
 
-  /// The server refused the add.
+  /// The server refused the add. For `store_blocked`, the form's link is dropped, and its note says so.
   case refused(APIError.Refusal)
 
   /// A fault of the app, or a session that ended.
@@ -252,6 +284,10 @@ public struct AddScreenState: Sendable, Equatable {
 
     /// The instance didn't answer the search: "Can't reach {address}", with Try again and Fill it in myself.
     case cantReach(SearchInput)
+
+    /// The link's store is blocked: "Links from {store} are blocked on this Wishbone.", with Add it without the
+    /// link. No form opens.
+    case blocked(SearchInput, store: String)
 
     /// The server refused the search, with its words.
     case refused(SearchInput, APIError.Refusal)
@@ -286,9 +322,11 @@ public struct AddScreenState: Sendable, Equatable {
     guard id == searching, case .reading(let input) = phase else { return nil }
     searching = nil
     switch outcome {
-    case .found(let draft):
+    case .form(let draft):
       phase = .empty
       return draft
+    case .blocked(let store):
+      phase = .blocked(input, store: store)
     case .unreachable:
       phase = .cantReach(input)
     case .refused(let refusal):
@@ -304,12 +342,19 @@ public struct AddScreenState: Sendable, Equatable {
   public mutating func fillItInMyself() -> ItemDraft? {
     let input: SearchInput? =
       switch phase {
-      case .reading(let input), .cantReach(let input), .refused(let input, _): input
+      case .reading(let input), .cantReach(let input), .refused(let input, _), .blocked(let input, _): input
       case .empty: SearchInput(text)
       }
     searching = nil
     phase = .empty
-    return input.map(ItemDraft.init(given:))
+    return input.map { ItemDraft(given: $0) }
+  }
+
+  /// "Add it without the link", after a blocked store: a blank form.
+  public mutating func addWithoutTheLink() -> ItemDraft {
+    searching = nil
+    phase = .empty
+    return ItemDraft()
   }
 
   /// The field's text changed: a line about an earlier search goes.
@@ -336,16 +381,25 @@ extension SessionModel {
   /// Search: reads a link, or takes typed words as they are, with `POST /search`, and gives the form to open. A
   /// link is read on the server, never by the app. See "The empty Add screen" in `docs/spec.md`.
   ///
+  /// When search can't fill in the form, it says why: a blocked store opens no form, and a search over the hourly
+  /// limit opens the form with only what the user gave, and the note. See "When search can't fill in the form" in
+  /// `docs/spec.md`.
+  ///
   /// Diagnostics: never here. The client reports each error as its side asks.
   public func search(_ input: SearchInput) async -> SearchOutcome {
     guard !hasEnded else { return .failed }
     do {
       let result = try await client.search(input.text)
       guard !hasEnded else { return .failed }
-      return .found(ItemDraft(result: result))
+      return .form(ItemDraft(result: result, of: input))
     } catch {
       switch await writeOutcome(of: error) {
       case .unreachable: return .unreachable
+      case .refused(let refusal) where refusal.code == .rateLimited:
+        return .form(ItemDraft(given: input, note: .overLimit))
+      case .refused(let refusal) where refusal.code == .storeBlocked:
+        guard case .link(_, let store) = input else { return .refused(refusal) }
+        return .blocked(store: store)
       case .refused(let refusal): return .refused(refusal)
       case .failed: return .failed
       }
@@ -357,11 +411,13 @@ extension SessionModel {
   ///
   /// The draft keeps the add's key and the images uploaded, so a second Add after a lost answer adds the item
   /// once. An image that the server can't fetch (`image_fetch_failed`) is left out, and the item is added without
-  /// it.
+  /// it, and the added item says so. An add refused with `store_blocked` drops the link from the draft, and sets
+  /// its note, so a second Add adds the item without the link.
   ///
   /// Diagnostics: never here. The client reports each error as its side asks.
   public func add(_ draft: inout ItemDraft) async -> AddOutcome {
     guard !hasEnded, let list = primaryList else { return .failed }
+    var imageWasLeftOut = false
     do {
       var imageIDs: [String] = []
       for image in draft.tickedImages {
@@ -374,6 +430,7 @@ extension SessionModel {
           draft.keep(upload: uploaded.id, of: image.url)
           imageIDs.append(uploaded.id)
         } catch APIError.refused(let refusal) where refusal.code == .imageFetchFailed {
+          imageWasLeftOut = true
           continue
         }
       }
@@ -384,10 +441,19 @@ extension SessionModel {
       try await database.save([added], answering: true)
       // A sync that runs now may have asked before the add. Its pull keeps the item, and one more sync asks after it.
       syncAgainIfSyncing()
-      return .added(AddedItem(id: added.resource.id, title: added.resource.title, listName: list.name))
+      return .added(
+        AddedItem(
+          id: added.resource.id, title: added.resource.title, listName: list.name,
+          imageWasLeftOut: imageWasLeftOut))
     } catch {
       switch await writeOutcome(of: error) {
       case .unreachable: return .unreachable
+      case .refused(let refusal) where refusal.code == .storeBlocked:
+        if let link = draft.storeLink {
+          draft.storeLink = nil
+          draft.note = .blocked(store: link.store)
+        }
+        return .refused(refusal)
       case .refused(let refusal): return .refused(refusal)
       case .failed: return .failed
       }

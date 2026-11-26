@@ -77,6 +77,7 @@ final class AddingTests {
     #expect(draft.images.map(\.isTicked) == [true, false, false])
     #expect(draft.options == [.init(name: "Size", values: ["S", "M", "L"], choice: "M")])
     #expect(!draft.notesWereCut)
+    #expect(draft.note == nil)
     // The screen is back to its field, with the text still in it, under the pushed form.
     #expect(state.phase == .empty)
     #expect(state.text == page.url.absoluteString)
@@ -95,6 +96,7 @@ final class AddingTests {
     draft.images[2].isTicked = true
 
     let item = try added(await session.add(&draft))
+    #expect(!item.imageWasLeftOut)
     state.didAdd(item)
 
     let list = try #require(session.primaryList)
@@ -137,6 +139,8 @@ final class AddingTests {
     #expect(draft.images.isEmpty)
     #expect(draft.options.isEmpty)
     #expect(draft.hasTitle)
+    // Typed words are never read, so the form has no note.
+    #expect(draft.note == nil)
 
     let item = try added(await session.add(&draft))
     await until { session.item(id: item.id) != nil }
@@ -254,7 +258,7 @@ final class AddingTests {
     // The search's answer comes after, and changes nothing: no form, and the screen as it was.
     hold.release()
     let late = await reading.value
-    guard case .found = late else {
+    guard case .form = late else {
       Issue.record("The held search ended with \(late)")
       return
     }
@@ -325,27 +329,110 @@ final class AddingTests {
     await until { session.item(id: item.id) != nil }
   }
 
-  @Test("A link from a blocked store is refused, and diagnostics capture no fault, only the request")
-  func blockedStoreIsNoFault() async throws {
-    let blocked = try await instance.builder.blockedStore()
+  @Test("A link from the family's blocked store opens no form, and Add it without the link gives a blank form")
+  func blockedStoreOpensNoForm() async throws {
+    let family = try await instance.builder.standardFamily()
     let diagnostics = RecordingDiagnostics()
     let (session, _) = try await signedIn(diagnostics: diagnostics)
     var state = AddScreenState()
-    let link = "https://\(blocked.store)/products/kite"
+    let link = "https://\(family.blockedStore.store)/products/kite"
 
     #expect(await search(link, in: session, state: &state) == nil)
-    guard case .refused(_, let refusal) = state.phase else {
-      Issue.record("The search of a blocked store ended with \(state.phase)")
-      return
-    }
-    #expect(refusal.status == 422)
-    #expect(refusal.code == .storeBlocked)
+    #expect(state.phase == .blocked(.link(link, store: family.blockedStore.store), store: family.blockedStore.store))
+    #expect(state.text == link)
     // A blocked store is the operator's setting, not the app's fault. The request's breadcrumb still records it.
     #expect(diagnostics.faults.isEmpty, "\(diagnostics.faults)")
     #expect(diagnostics.breadcrumbs.contains(.request(.search, .clientError)))
+
+    // Add it without the link: a blank form, with no link and no note.
+    let draft = state.addWithoutTheLink()
+    #expect(draft == ItemDraft())
+    #expect(draft.storeLink == nil)
+    #expect(draft.title.isEmpty)
+    #expect(draft.images.isEmpty)
+    #expect(draft.note == nil)
+    #expect(state.phase == .empty)
   }
 
-  @Test("An image that the server can't download is left out, and diagnostics capture no fault, only the request")
+  @Test("A store blocked after the search: the add is refused, the link is dropped with the line, and Add again works")
+  func storeBlockedAtTheAdd() async throws {
+    let diagnostics = RecordingDiagnostics()
+    let (session, person) = try await signedIn(diagnostics: diagnostics)
+    var state = AddScreenState()
+    // A store that no page answers for: nothing is read from it, and the form has the link.
+    let store = "shop-\(instance.builder.tag).example"
+    let link = "https://\(store)/products/kite"
+    var draft = try #require(await search(link, in: session, state: &state))
+    #expect(draft.storeLink?.store == store)
+    #expect(draft.note == .nothingFound(store: store))
+    draft.title = "Kite \(instance.builder.tag)"
+
+    // The admin blocks the store while the form is open.
+    let blocked = try await instance.builder.blockedStore("shop")
+    #expect(blocked.store == store)
+
+    guard case .refused(let refusal) = await session.add(&draft) else {
+      Issue.record("The add of a blocked store's link was not refused")
+      return
+    }
+    #expect(refusal.code == .storeBlocked)
+    // The form stays, with the line that names the store, and with no link. The rest is as the user left it.
+    #expect(draft.storeLink == nil)
+    #expect(draft.note == .blocked(store: store))
+    #expect(draft.title == "Kite \(instance.builder.tag)")
+    // A blocked store is never captured, on any route.
+    #expect(diagnostics.faults.isEmpty, "\(diagnostics.faults)")
+
+    // A second Add adds the item, without the link.
+    let item = try added(await session.add(&draft))
+    let saved = try await onServer(item.id, as: person)
+    #expect(saved["title"].string == "Kite \(instance.builder.tag)")
+    #expect(saved["store_links"].array?.isEmpty == true)
+    await until { session.item(id: item.id) != nil }
+  }
+
+  @Test("A search over the hourly limit gives the form with the link, blank fields, and the note")
+  func overTheHourlyLimit() async throws {
+    let page = try await StorePage(title: "Easel \(instance.builder.tag)", priceMinor: 5000)
+    let diagnostics = RecordingDiagnostics()
+    let (session, _) = try await signedIn(diagnostics: diagnostics)
+    var state = AddScreenState()
+    instance.conditioner.answer(Self.search, with: try .problem(429, code: "rate_limited"))
+
+    let draft = try #require(await search(page.url.absoluteString, in: session, state: &state))
+
+    #expect(draft.note == .overLimit)
+    #expect(draft.storeLink == SearchStoreLink(url: page.url.absoluteString, store: "127.0.0.1"))
+    #expect(draft.title.isEmpty)
+    #expect(draft.priceMinor == nil)
+    #expect(draft.images.isEmpty)
+    #expect(draft.options.isEmpty)
+    #expect(state.phase == .empty)
+    #expect(page.reads == 0)
+    // A refused search is not captured.
+    #expect(diagnostics.faults.isEmpty, "\(diagnostics.faults)")
+  }
+
+  @Test("A link that nothing can be read from gives the form with the link and the note that names the store")
+  func nothingFound() async throws {
+    let page = try await StorePage(title: "Nothing \(instance.builder.tag)", priceMinor: 100, isProduct: false)
+    let (session, _) = try await signedIn()
+    var state = AddScreenState()
+
+    let draft = try #require(await search(page.url.absoluteString, in: session, state: &state))
+
+    #expect(draft.note == .nothingFound(store: "127.0.0.1"))
+    let link = try #require(draft.storeLink)
+    #expect(link.store == "127.0.0.1")
+    #expect(link.url.contains(page.url.path()))
+    #expect(draft.title.isEmpty)
+    #expect(draft.images.isEmpty)
+    #expect(state.phase == .empty)
+    // The server read the page: it may try more than one way before it finds nothing.
+    #expect(page.reads >= 1)
+  }
+
+  @Test("An image that the server can't download is left out, the added item says so, and no fault is captured")
   func failedImageIsNoFault() async throws {
     let page = try await StorePage(title: "Drum \(instance.builder.tag)", priceMinor: 900, images: 1)
     let diagnostics = RecordingDiagnostics()
@@ -357,6 +444,7 @@ final class AddingTests {
     draft.images.insert(.init(url: missing, isTicked: true), at: 0)
 
     let item = try added(await session.add(&draft))
+    #expect(item.imageWasLeftOut)
 
     // The server refused the missing image with `image_fetch_failed`, and the item has the other one.
     let uploads = instance.conditioner.requests.filter { $0.isOn(Self.upload) }
