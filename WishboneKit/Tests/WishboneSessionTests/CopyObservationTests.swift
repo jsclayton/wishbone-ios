@@ -140,6 +140,39 @@ struct CopyObservationTests {
     #expect(last.unsentChangeCount == 0)
   }
 
+  @Test("A waiting move counts on the lists in step with the items, also after a pull takes the item away")
+  func moveInStep() async throws {
+    let robin = try await builder.person("Robin")
+    let list = try await builder.primaryList(of: robin)
+    let toys = try await builder.list("Toys", of: robin)
+    let kite = try await builder.item("Kite", on: list, as: robin)
+    _ = try await builder.item("Ball", on: list, as: robin)
+    let folder = try ScratchDirectory("copy")
+    let database = try LocalDatabase.open(at: folder.url.appending(path: "database.sqlite"))
+    let pull = Pull(client: try client(for: robin), database: database, userID: robin.id)
+    _ = try await pull.run()
+    let observed = Observed(database, ofUser: robin.id)
+
+    // The move waits. Meanwhile, the item is deleted elsewhere, and a pull takes it out of the copy: the lists count
+    // as the items show them, in each snapshot.
+    let move = ItemMove(itemID: kite.id, fromListID: list.id, toListID: toys.id, toListName: toys.name)
+    try await database.record(.moveItem(move), title: "Kite")
+    try await robin.signedIn().send("DELETE", "/items/\(kite.id)").expecting(204)
+    _ = try await pull.run()
+
+    let made = try await observed.end()
+    #expect(
+      made.contains { snapshot in
+        snapshot.items[toys.id]?.map(\.id) == [kite.id] && snapshot.lists.first { $0.id == toys.id }?.itemCount == 1
+          && snapshot.lists.first { $0.id == list.id }?.itemCount == 1
+      })
+    let last = try #require(made.last)
+    #expect(last.items[toys.id] == nil)
+    #expect(last.lists.first { $0.id == toys.id }?.itemCount == 0)
+    #expect(last.lists.first { $0.id == list.id }?.itemCount == 1)
+    #expect(last.unsentChangeCount == 1)
+  }
+
   /// The API client of the person's own session, straight to the server.
   private func client(for person: Fixture.Person) throws -> APIClient {
     let signedIn = try person.signedIn()

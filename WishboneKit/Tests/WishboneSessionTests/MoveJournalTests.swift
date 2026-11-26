@@ -25,6 +25,11 @@ struct MoveJournalTests {
       canClaim: false, canRefreshPrices: false, version: "\"1\"")
   }
 
+  /// The list of each item, by its ID, as the snapshot gives the lists' overlay.
+  private func places(_ items: [ItemRow]) -> [String: String] {
+    Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0.listID) })
+  }
+
   private func list(_ id: String, items: Int) -> ListRow {
     ListRow(
       id: id, name: "List \(id)", description: nil, isPrimary: false, recipientIDs: ["me"], itemCount: items,
@@ -47,7 +52,8 @@ struct MoveJournalTests {
     #expect(moved.title == "2" && moved.stillWanted == .shown(1) && moved.version == "\"1\"")
 
     let lists = LocalDatabase.applying(
-      [change(move("2", from: "a", to: "b"))], to: [list("a", items: 3), list("b", items: 1)])
+      [change(move("2", from: "a", to: "b"))], to: [list("a", items: 3), list("b", items: 1)],
+      itemLists: places(rows))
     #expect(lists.map(\.itemCount) == [2, 2])
   }
 
@@ -85,8 +91,36 @@ struct MoveJournalTests {
     #expect(deleted.map(\.id) == ["2"])
     let lists = LocalDatabase.applying(
       [change(move("1", from: "a", to: "b")), change(.deleteItem(itemID: "1", listID: "b"), id: 2)],
-      to: [list("a", items: 1), list("b", items: 1)])
+      to: [list("a", items: 1), list("b", items: 1)], itemLists: places(rows))
     #expect(lists.map(\.itemCount) == [0, 1])
+  }
+
+  @Test(
+    """
+    The lists count a waiting move or delete only where the items show it: never for an item that the copy doesn't \
+    hold, a move to the list that the item is on, or a second delete
+    """
+  )
+  func countsOnlyWhatShows() {
+    let rows = [item("1", on: "a", at: 0), item("2", on: "b", at: 0)]
+    // Each list counts more than the items here, as for a giver who doesn't see every item, so no count is near 0.
+    let lists = [list("a", items: 3), list("b", items: 3), list("c", items: 3)]
+    func counts(_ actions: [UnsentChange.Action]) -> [Int] {
+      let changes = actions.enumerated().map { change($1, id: Int64($0 + 1)) }
+      return LocalDatabase.applying(changes, to: lists, itemLists: places(rows)).map(\.itemCount)
+    }
+    // A pull removed item 9: neither its move nor its delete shows, so no count changes.
+    #expect(counts([move("9", from: "a", to: "b")]) == [3, 3, 3])
+    #expect(counts([.deleteItem(itemID: "9", listID: "a")]) == [3, 3, 3])
+    // Item 2 is on b already.
+    #expect(counts([move("2", from: "a", to: "b")]) == [3, 3, 3])
+    // Item 1 is deleted twice: it counts one fewer once.
+    #expect(counts([.deleteItem(itemID: "1", listID: "a"), .deleteItem(itemID: "1", listID: "a")]) == [2, 3, 3])
+    // A delete counts on the list the item is on now, after a move, whatever list the delete kept.
+    #expect(counts([move("1", from: "a", to: "c"), .deleteItem(itemID: "1", listID: "a")]) == [2, 3, 3])
+    // Item 1 goes to c, then back to a: each list counts it where it is.
+    #expect(counts([move("1", from: "a", to: "c")]) == [2, 3, 4])
+    #expect(counts([move("1", from: "a", to: "c"), move("1", from: "c", to: "a")]) == [3, 3, 3])
   }
 
   @Test("The journal reads a move back as it was saved, and it sends only list_id")

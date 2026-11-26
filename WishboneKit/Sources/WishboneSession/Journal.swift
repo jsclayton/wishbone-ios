@@ -760,9 +760,17 @@ extension LocalDatabase {
   ///
   /// An accepted invitation adds the invited user to the list's recipients. A list that the copy doesn't hold, which
   /// the invited user can't see yet, shows by its name, with no items, until the server's answer brings it. An item
-  /// that a create adds counts on its list, and one that a delete takes out counts no more.
-  static func applying(_ changes: [UnsentChange], to lists: [ListRow]) -> [ListRow] {
+  /// that a create adds counts on its list, one that a delete takes out counts no more, and one that a move takes to
+  /// another list counts there and no more on its old one.
+  ///
+  /// A delete and a move count only where the items' overlay applies them: `itemLists` is the list of each item of the
+  /// copy, by the item's ID, on the lists of the copy. So a change to an item that the copy doesn't hold, which a pull
+  /// removed, and a move of an item that is on that list already, change no count, as they change no item.
+  static func applying(_ changes: [UnsentChange], to lists: [ListRow], itemLists: [String: String] = [:])
+    -> [ListRow]
+  {
     var rows = lists
+    var places = itemLists
     var renamed = false
     for change in changes {
       switch change.action {
@@ -780,13 +788,18 @@ extension LocalDatabase {
           renamed = true
         }
       case .createItem(let item):
+        places[item.id] = item.listID
         guard let index = rows.firstIndex(where: { $0.id == item.listID }) else { continue }
         rows[index] = rows[index].with(itemCount: rows[index].itemCount + 1)
-      case .deleteItem(_, let listID):
-        guard let index = rows.firstIndex(where: { $0.id == listID }) else { continue }
+      case .deleteItem(let id, _):
+        guard let listID = places.removeValue(forKey: id),
+          let index = rows.firstIndex(where: { $0.id == listID })
+        else { continue }
         rows[index] = rows[index].with(itemCount: max(0, rows[index].itemCount - 1))
       case .moveItem(let move):
-        if let index = rows.firstIndex(where: { $0.id == move.fromListID }) {
+        guard let from = places[move.itemID], from != move.toListID else { continue }
+        places[move.itemID] = move.toListID
+        if let index = rows.firstIndex(where: { $0.id == from }) {
           rows[index] = rows[index].with(itemCount: max(0, rows[index].itemCount - 1))
         }
         if let index = rows.firstIndex(where: { $0.id == move.toListID }) {
@@ -918,6 +931,19 @@ extension LocalDatabase {
     // A pick moves the reveal, so the soonest reveal is first again, as the copy reads the rows.
     guard picked else { return rows }
     return rows.sorted { $0.revealAt != $1.revealAt ? $0.revealAt < $1.revealAt : $0.id < $1.id }
+  }
+
+  /// The list of each item of the copy, by the item's ID, on the lists of the copy: what the lists' counts need to
+  /// know whether the items' overlay applies a delete or a move.
+  static func itemLists(in database: Database) throws -> [String: String] {
+    let listIDs = ListRow.select(Column("id"))
+    var places: [String: String] = [:]
+    for row in try Row.fetchAll(
+      database, ItemRow.select(Column("id"), Column("listID")).filter(listIDs.contains(Column("listID"))))
+    {
+      places[row["id"]] = row["listID"]
+    }
+    return places
   }
 
   /// Every unsent change, in the journal's order.
