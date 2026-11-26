@@ -3,8 +3,9 @@ import WishboneSession
 
 /// Move to…: a picker of the other lists that the user can edit, in a sheet, each with its recipients' names when
 /// the user is not one, and a child's lists under the child's name. A tap moves the item to the end of that list, at
-/// once, in every window, and closes the sheet. Nothing asks first, and nothing here says a word about gifts. See
-/// "Every drag has a way without dragging" in `docs/spec.md`, and Move to… in `docs/screens/item.md`.
+/// once, in every window, and closes the sheet. Only the first tap moves it. Nothing asks first, and nothing here
+/// says a word about gifts. See "Every drag has a way without dragging" in `docs/spec.md`, and Move to… in
+/// `docs/screens/item.md`.
 ///
 /// **Provisional.** Plain default: a system list in a sheet, with Cancel in the toolbar.
 struct MoveToSheet: View {
@@ -13,6 +14,9 @@ struct MoveToSheet: View {
 
   @Environment(\.dismiss) private var dismiss
   @Environment(\.foregroundWindow) private var window
+
+  /// Whether a row was tapped: the sheet moves the item once. A second tap before the sheet closes does nothing.
+  @State private var hasPicked = false
 
   var body: some View {
     NavigationStack {
@@ -52,6 +56,8 @@ struct MoveToSheet: View {
 
   private func row(_ target: AddTo.Target) -> some View {
     Button {
+      guard !hasPicked else { return }
+      hasPicked = true
       Task {
         await session.moveItem(itemID, toList: target.id, from: window)
         dismiss()
