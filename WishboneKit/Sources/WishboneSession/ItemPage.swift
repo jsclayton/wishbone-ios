@@ -128,11 +128,17 @@ extension SessionModel {
 
   /// The item's page, from the copy. Nil when the page is the "not found" page: the item is not in the copy, which
   /// is the same for an item that was deleted and one that the session's user can no longer see.
+  ///
+  /// A recipient of the list gets no claim state, as on the list's page: no still wanted, no I'll get this, and no
+  /// claim lines. The server already hides them from a recipient. Until the next pull after an accept, though, the
+  /// copy's item rows are still the giver's rows, while the list (with the journal applied) has the user as a
+  /// recipient.
   public func itemPage(id: String) -> ItemPage? {
     guard let item = item(id: id), let list = list(id: item.listID) else { return nil }
+    let isRecipient = list.recipientIDs.contains(session.userID)
 
     let stillWanted: ItemPage.StillWanted? =
-      switch item.stillWanted {
+      switch isRecipient ? .hidden : item.stillWanted {
       case .hidden: nil
       case .shown(let count?): .count(count, of: item.quantity)
       case .shown(nil): .always
@@ -153,15 +159,22 @@ extension SessionModel {
       wanted: wanted,
       storeLinks: ItemPage.ordered(storeLinks(ofItem: id)),
       addedBy: addedBy,
-      offersClaim: ItemPage.offersClaim(item, openGifts: giving),
-      claims: giving.filter { $0.itemID == id }.map(ItemPage.ClaimLine.init)
+      offersClaim: offersClaim(onItem: id),
+      claims: isRecipient ? [] : giving.filter { $0.itemID == id }.map(ItemPage.ClaimLine.init)
     )
   }
 
   /// Whether I'll get this is offered for the item, on its page and in its row's context menu. False for an item
-  /// that is not in the copy. See `ItemPage.offersClaim(_:openGifts:)`.
+  /// that is not in the copy, and for a recipient of its list, as the copy shows the list. See
+  /// `ItemPage.offersClaim(_:openGifts:)`.
   public func offersClaim(onItem id: String) -> Bool {
-    guard let item = item(id: id) else { return false }
+    guard let item = item(id: id), !isRecipient(ofList: item.listID) else { return false }
     return ItemPage.offersClaim(item, openGifts: giving)
+  }
+
+  /// Whether the session's user is a recipient of the list, as the copy shows it, with the journal applied: an
+  /// accept that waits to be sent counts. False for a list that is not in the copy.
+  func isRecipient(ofList id: String) -> Bool {
+    list(id: id)?.recipientIDs.contains(session.userID) ?? false
   }
 }

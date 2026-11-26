@@ -375,6 +375,19 @@ public struct APIClient: Sendable {
     _ = try await load(.deleteList(id, key: key))
   }
 
+  /// `POST /invitations/{id}/accept`: the invited user, or their parent, accepts, with no body. `key` is the unsent
+  /// change's own `Idempotency-Key`. The user becomes a recipient, and the answer is the list, with the version that
+  /// it carried. While the invited user is deactivated, it is a 403 `user_deactivated`.
+  public func acceptInvitation(_ id: String, key: String) async throws(APIError) -> Versioned<ListResource> {
+    try await versioned(.acceptInvitation(id, key: key))
+  }
+
+  /// `DELETE /invitations/{id}`: the invited user, or their parent, declines, with no `If-Match`. `key` is the
+  /// unsent change's own `Idempotency-Key`.
+  public func declineInvitation(_ id: String, key: String) async throws(APIError) {
+    _ = try await load(.declineInvitation(id, key: key))
+  }
+
   /// `DELETE /lists/{id}/recipients/{user_id}`: the user leaves the list, or their parent makes them leave.
   public func leave(list listID: String, userID: String) async throws(APIError) {
     _ = try await load(.leaveList(listID, userID: userID))

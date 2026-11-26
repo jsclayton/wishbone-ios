@@ -72,6 +72,47 @@ public struct UnsentChange: Sendable, Equatable, Identifiable {
 
     /// Delete list: `DELETE /lists/{id}`. The list and its items leave the copy at once.
     case deleteList(listID: String)
+
+    /// Accept: the invited user, or their parent, accepts an invitation, `POST /invitations/{id}/accept`. The
+    /// invitation leaves the copy at once, and the list moves into the user's own lists, or into the child's part.
+    case acceptInvitation(AcceptedInvitation)
+
+    /// Decline: the invited user, or their parent, declines an invitation, `DELETE /invitations/{id}`. The
+    /// invitation leaves the copy at once.
+    case declineInvitation(invitationID: String)
+  }
+}
+
+/// An invitation that the user accepted, with what the copy shows until the server answers: the list, by its ID
+/// and name, and the user who becomes its recipient. The invited user may not see the list yet, so the copy can have
+/// no row for it: the list then shows by its name, with the inviter and the invited user as its recipients.
+public struct AcceptedInvitation: Sendable, Equatable {
+  public let invitationID: String
+  public let listID: String
+  public let listName: String
+
+  /// The invited user: the session's user, or one of their children.
+  public let userID: String
+
+  /// The recipient who invited them. Nil once that user is deleted.
+  public let invitedByID: String?
+
+  /// When the invitation was made: what the list shows as made, until the server answers.
+  public let createdAt: Date
+
+  public init(_ invitation: InvitationRow) {
+    self.init(
+      invitationID: invitation.id, listID: invitation.listID, listName: invitation.listName,
+      userID: invitation.userID, invitedByID: invitation.invitedByID, createdAt: invitation.createdAt)
+  }
+
+  init(invitationID: String, listID: String, listName: String, userID: String, invitedByID: String?, createdAt: Date) {
+    self.invitationID = invitationID
+    self.listID = listID
+    self.listName = listName
+    self.userID = userID
+    self.invitedByID = invitedByID
+    self.createdAt = createdAt
   }
 }
 
@@ -176,6 +217,8 @@ struct UnsentChangeRow: Codable, Sendable, FetchableRecord, MutablePersistableRe
     case setOccasion
     case editList
     case deleteList
+    case acceptInvitation
+    case declineInvitation
   }
 
   mutating func didInsert(_ inserted: InsertionSuccess) {
@@ -283,7 +326,8 @@ extension LocalDatabase {
   /// The answer is the thing as the server has it now, with the version that the answer carried. A gift that a
   /// change of occasion merged into another is the gift that stays, so the one with the change's ID leaves the copy.
   /// An unclaim has no answer: the gift leaves the copy with the change. A list's answer is the list, and a delete
-  /// has none: the list leaves the copy with its items and its recipient rows.
+  /// has none: the list leaves the copy with its items and its recipient rows. An accept's answer is the list too,
+  /// and a decline has none. Either way, the invitation leaves the copy.
   func accept(_ change: UnsentChange, answer: UnsentChange.Answer) async throws {
     let gift = answer.gift.map { GiftRow($0) }
     let list = answer.list.map { ListRow($0) }
@@ -292,6 +336,9 @@ extension LocalDatabase {
       switch change.action {
       case .unclaim(let id): _ = try GiftRow.deleteOne(database, key: id)
       case .deleteList(let id): try Self.removeLists([id], in: database)
+      case .acceptInvitation(let invitation):
+        _ = try InvitationRow.deleteOne(database, key: invitation.invitationID)
+      case .declineInvitation(let id): _ = try InvitationRow.deleteOne(database, key: id)
       default: break
       }
       try list?.save(database)
@@ -323,6 +370,9 @@ extension LocalDatabase {
 
   /// The lists, each with the unsent changes to it applied in order over its row, by name. A deleted list is left
   /// out, and so are its items and recipient rows, which the snapshot shows only for the lists that it has.
+  ///
+  /// An accepted invitation adds the invited user to the list's recipients. A list that the copy doesn't hold, which
+  /// the invited user can't see yet, shows by its name, with no items, until the server's answer brings it.
   static func applying(_ changes: [UnsentChange], to lists: [ListRow]) -> [ListRow] {
     var rows = lists
     var renamed = false
@@ -334,6 +384,13 @@ extension LocalDatabase {
         renamed = renamed || changes.name != nil
       case .deleteList(let id):
         rows.removeAll { $0.id == id }
+      case .acceptInvitation(let invitation):
+        if let index = rows.firstIndex(where: { $0.id == invitation.listID }) {
+          rows[index] = rows[index].with(recipient: invitation.userID)
+        } else {
+          rows.append(ListRow(standingInFor: invitation))
+          renamed = true
+        }
       default:
         continue
       }
@@ -344,6 +401,20 @@ extension LocalDatabase {
       guard first.name != second.name else { return first.id.utf8.lexicographicallyPrecedes(second.id.utf8) }
       return first.name.utf8.lexicographicallyPrecedes(second.name.utf8)
     }
+  }
+
+  /// The invitations, without the ones that an unsent change accepts or declines.
+  static func applying(_ changes: [UnsentChange], to invitations: [InvitationRow]) -> [InvitationRow] {
+    let answered = Set(
+      changes.compactMap { change -> String? in
+        switch change.action {
+        case .acceptInvitation(let invitation): invitation.invitationID
+        case .declineInvitation(let id): id
+        default: nil
+        }
+      })
+    guard !answered.isEmpty else { return invitations }
+    return invitations.filter { !answered.contains($0.id) }
   }
 
   /// The gifts, each with the unsent changes to it applied in order over its row. An unclaimed gift is left out.
@@ -367,7 +438,7 @@ extension LocalDatabase {
       case .lowerQuantity(_, let quantity): rows[index] = gift.with(quantity: quantity)
       case .unclaim: rows.remove(at: index)
       case .acknowledge(_, let flag): rows[index] = gift.answering(flag, now: now)
-      case .editList, .deleteList:
+      case .editList, .deleteList, .acceptInvitation, .declineInvitation:
         continue
       case .setOccasion(_, let occasion):
         picked = true
@@ -402,15 +473,18 @@ extension UnsentChange.Action {
   var targetID: String {
     switch self {
     case .markBought(let id, _), .setFromLabel(let id, _), .setNote(let id, _), .lowerQuantity(let id, _),
-      .unclaim(let id), .acknowledge(let id, _), .setOccasion(let id, _), .editList(let id, _), .deleteList(let id):
+      .unclaim(let id), .acknowledge(let id, _), .setOccasion(let id, _), .editList(let id, _), .deleteList(let id),
+      .declineInvitation(let id):
       id
+    case .acceptInvitation(let invitation):
+      invitation.invitationID
     }
   }
 
-  /// Whether the change is to a gift. Otherwise it is to a list.
+  /// Whether the change is to a gift. Otherwise it is to a list, or to an invitation.
   var isToAGift: Bool {
     switch self {
-    case .editList, .deleteList: false
+    case .editList, .deleteList, .acceptInvitation, .declineInvitation: false
     default: true
     }
   }
@@ -425,7 +499,7 @@ extension UnsentChange.Action {
     case .setNote(_, let note): GiftChanges(note: note ?? "")
     case .lowerQuantity(_, let quantity): GiftChanges(quantity: quantity)
     case .setOccasion(_, let occasion): GiftChanges(occasionID: occasion.id)
-    case .unclaim, .acknowledge, .editList, .deleteList: GiftChanges()
+    case .unclaim, .acknowledge, .editList, .deleteList, .acceptInvitation, .declineInvitation: GiftChanges()
     }
   }
 
@@ -440,17 +514,21 @@ extension UnsentChange.Action {
     case .setOccasion: .setOccasion
     case .editList: .editList
     case .deleteList: .deleteList
+    case .acceptInvitation: .acceptInvitation
+    case .declineInvitation: .declineInvitation
     }
   }
 
   /// The patch as the journal keeps it: the JSON that the change sends. An answer to a flag keeps its code, a pick
-  /// of the occasion keeps what it shows too, and an unclaim keeps an empty object.
+  /// of the occasion keeps what it shows too, and an unclaim keeps an empty object. An accept sends no body, and
+  /// keeps what the list shows until the server answers.
   fileprivate func patch() throws -> String {
     let data =
       switch self {
       case .acknowledge(_, let flag): try JSONEncoder().encode(FlagAnswer(codes: [flag]))
       case .setOccasion(_, let occasion): try JSONEncoder().encode(OccasionPick(occasion))
       case .editList(_, let changes): try JSONEncoder().encode(changes)
+      case .acceptInvitation(let invitation): try JSONEncoder().encode(AcceptancePatch(invitation))
       default: try JSONEncoder().encode(giftChanges)
       }
     return String(decoding: data, as: UTF8.self)
@@ -480,6 +558,13 @@ extension UnsentChange.Action {
     case .deleteList:
       self = .deleteList(listID: targetID)
       return
+    case .acceptInvitation:
+      guard let patch = try? JSONDecoder().decode(AcceptancePatch.self, from: Data(patch.utf8)) else { return nil }
+      self = .acceptInvitation(patch.invitation(targetID))
+      return
+    case .declineInvitation:
+      self = .declineInvitation(invitationID: targetID)
+      return
     case .markBought, .setFromLabel, .setNote, .lowerQuantity:
       break
     }
@@ -497,7 +582,7 @@ extension UnsentChange.Action {
     case .lowerQuantity:
       guard let quantity = changes.quantity else { return nil }
       self = .lowerQuantity(giftID: targetID, quantity: quantity)
-    case .unclaim, .acknowledge, .setOccasion, .editList, .deleteList:
+    case .unclaim, .acknowledge, .setOccasion, .editList, .deleteList, .acceptInvitation, .declineInvitation:
       return nil
     }
   }
@@ -532,6 +617,31 @@ private struct OccasionPick: Codable {
 
   var occasion: PickedOccasion {
     PickedOccasion(id: occasionID, kind: OccasionKind(rawValue: kind), name: name, date: date)
+  }
+}
+
+/// An accept, as the journal keeps it: what the list shows until the server answers. The accept sends none of it.
+private struct AcceptancePatch: Codable {
+  let listID: String
+  let listName: String
+  let userID: String
+  let invitedByID: String?
+  // JSONEncoder's default date form, seconds since 2001 as a number. Don't change it: a later version of the app must
+  // read the journal rows that this one wrote.
+  let createdAt: Date
+
+  init(_ invitation: AcceptedInvitation) {
+    listID = invitation.listID
+    listName = invitation.listName
+    userID = invitation.userID
+    invitedByID = invitation.invitedByID
+    createdAt = invitation.createdAt
+  }
+
+  func invitation(_ id: String) -> AcceptedInvitation {
+    AcceptedInvitation(
+      invitationID: id, listID: listID, listName: listName, userID: userID, invitedByID: invitedByID,
+      createdAt: createdAt)
   }
 }
 
@@ -585,6 +695,28 @@ extension ListRow {
       id: id, name: changes.name ?? name, description: description, isPrimary: isPrimary, recipientIDs: recipientIDs,
       itemCount: itemCount, createdAt: createdAt, canEdit: canEdit, canDelete: canDelete, canInvite: canInvite,
       canLeave: canLeave, version: version)
+  }
+}
+
+extension ListRow {
+  /// The list with the user as one more recipient, as an accept shows it over the row. Its `can_*` fields stay the
+  /// server's until the answer.
+  fileprivate func with(recipient userID: String) -> ListRow {
+    guard !recipientIDs.contains(userID) else { return self }
+    return ListRow(
+      id: id, name: name, description: description, isPrimary: isPrimary, recipientIDs: recipientIDs + [userID],
+      itemCount: itemCount, createdAt: createdAt, canEdit: canEdit, canDelete: canDelete, canInvite: canInvite,
+      canLeave: canLeave, version: version)
+  }
+
+  /// What an accept shows for a list that the copy doesn't hold: its name, and the inviter and the invited user as
+  /// its recipients. It has no items and no actions, and no version: it is never saved. The answer brings the list.
+  fileprivate init(standingInFor invitation: AcceptedInvitation) {
+    self.init(
+      id: invitation.listID, name: invitation.listName, description: nil, isPrimary: false,
+      recipientIDs: [invitation.invitedByID, invitation.userID].compactMap { $0 }, itemCount: 0,
+      createdAt: invitation.createdAt, canEdit: false, canDelete: false, canInvite: false, canLeave: false,
+      version: "")
   }
 }
 

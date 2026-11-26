@@ -6,7 +6,8 @@ import WishboneSession
 /// and the items in the order that Sort sets. See `docs/screens/list.md`.
 ///
 /// Claim state shows only as the server sends it, and the page never says who claimed. Leave, and Make {child}
-/// leave, wait for the server. Edit list and Delete list are unsent changes: each shows at once, in every window.
+/// leave, wait for the server. Edit list and Delete list are unsent changes: each shows at once, in every window. A
+/// pending invitation to the list, for the user or their child, is at the top, with Accept and Decline.
 /// Add item, from `can_edit`, opens the Add screen in a sheet, fixed to the list. The other actions that change the
 /// list or its items come later.
 ///
@@ -41,6 +42,14 @@ struct ListPageScreen: View {
 
   var body: some View {
     List {
+      let invitations = session.pendingInvitations(toList: page.list.id)
+      if !invitations.isEmpty {
+        Section {
+          ForEach(invitations) { invitation in
+            InvitationView(invitation: invitation, session: session, isOnListPage: true, open: nil)
+          }
+        }
+      }
       Section {
         ForLine(recipients: page.recipients) { pages.append(.user(id: $0)) }
         if let description = page.list.description, !description.allSatisfy(\.isWhitespace) {

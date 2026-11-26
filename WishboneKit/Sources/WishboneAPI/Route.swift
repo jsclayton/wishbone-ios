@@ -27,6 +27,8 @@ public enum Route: String, Sendable, CaseIterable {
   case item
   case invitations
   case invitation
+  case acceptInvitation
+  case declineInvitation
   case gifts
   case gift
   case updateGift
@@ -50,10 +52,10 @@ public enum Route: String, Sendable, CaseIterable {
       .gifts, .gift, .blockedStores:
       "GET"
     case .redeemLoginLink, .confirmProfile, .uploadImage, .blockStore, .claim, .search, .createItem, .acknowledgeGift,
-      .restoreGift:
+      .restoreGift, .acceptInvitation:
       "POST"
     case .updateMe, .updateGift, .updateList: "PATCH"
-    case .revokeCurrentSession, .unblockStore, .leaveList, .unclaimGift, .deleteList: "DELETE"
+    case .revokeCurrentSession, .unblockStore, .leaveList, .unclaimGift, .deleteList, .declineInvitation: "DELETE"
     }
   }
 
@@ -85,7 +87,8 @@ public enum Route: String, Sendable, CaseIterable {
     case .listItems, .createItem: "/lists/{id}/items"
     case .item: "/items/{id}"
     case .invitations: "/invitations"
-    case .invitation: "/invitations/{id}"
+    case .invitation, .declineInvitation: "/invitations/{id}"
+    case .acceptInvitation: "/invitations/{id}/accept"
     case .gifts: "/gifts"
     case .gift, .updateGift, .unclaimGift: "/gifts/{id}"
     case .acknowledgeGift: "/gifts/{id}/acknowledge"
@@ -109,7 +112,7 @@ public enum Route: String, Sendable, CaseIterable {
       .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation, .gifts, .gift,
       .updateGift, .unclaimGift, .acknowledgeGift, .restoreGift, .claim, .blockedStores, .blockStore, .unblockStore,
       .leaveList, .revokeCurrentSession, .confirmProfile,
-      .uploadImage, .me, .search, .createItem, .updateList, .deleteList:
+      .uploadImage, .me, .search, .createItem, .updateList, .deleteList, .acceptInvitation, .declineInvitation:
       false
     }
   }
@@ -131,7 +134,7 @@ public enum Route: String, Sendable, CaseIterable {
       .updateGift, .unclaimGift, .acknowledgeGift, .restoreGift, .claim, .blockStore, .unblockStore, .leaveList,
       .revokeCurrentSession,
       .confirmProfile, .uploadImage, .me,
-      .search, .createItem, .updateList, .deleteList:
+      .search, .createItem, .updateList, .deleteList, .acceptInvitation, .declineInvitation:
       []
     }
   }
@@ -159,7 +162,9 @@ public enum Route: String, Sendable, CaseIterable {
     // so a second Add after a lost answer adds the item once.
     case .search, .createItem: ["Idempotency-Key"]
     // An unsent change keeps its key, so a resend after a lost connection, or in a later sync, is the same write.
-    case .updateGift, .unclaimGift, .acknowledgeGift, .updateList, .deleteList: ["Idempotency-Key"]
+    case .updateGift, .unclaimGift, .acknowledgeGift, .updateList, .deleteList, .acceptInvitation,
+      .declineInvitation:
+      ["Idempotency-Key"]
     case .health, .redeemLoginLink, .users, .user, .groups, .group, .groupUsers, .groupGroups, .occasions, .occasion,
       .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation, .gifts, .gift,
       .blockedStores, .unblockStore, .leaveList, .revokeCurrentSession, .confirmProfile, .uploadImage, .me:
@@ -186,7 +191,7 @@ public enum Route: String, Sendable, CaseIterable {
     case .health, .versions, .users, .user, .groups, .group, .groupUsers, .groupGroups, .occasions, .occasion,
       .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation, .gifts, .gift,
       .blockedStores, .unblockStore, .leaveList, .revokeCurrentSession, .confirmProfile, .me, .unclaimGift,
-      .restoreGift, .deleteList:
+      .restoreGift, .deleteList, .acceptInvitation, .declineInvitation:
       []
     }
   }
@@ -208,7 +213,7 @@ public enum Route: String, Sendable, CaseIterable {
     // A membership is read for its IDs only.
     case .groupUsers, .groupGroups, .occasionGroups: Page<Member>.fields
     case .lists: Page<VersionedRow<ListResource>>.fields
-    case .list, .updateList: ListResource.fields
+    case .list, .updateList, .acceptInvitation: ListResource.fields
     case .listRecipients: Page<VersionedRow<Recipient>>.fields
     case .listItems: Page<VersionedRow<Item>>.fields
     case .item, .createItem: Item.fields
@@ -219,7 +224,9 @@ public enum Route: String, Sendable, CaseIterable {
     case .gift, .updateGift, .acknowledgeGift, .claim: Gift.fields
     case .blockedStores: Page<VersionedRow<BlockedStore>>.fields
     case .blockStore: BlockedStore.fields
-    case .revokeCurrentSession, .unblockStore, .leaveList, .unclaimGift, .restoreGift, .deleteList: NoContent.fields
+    case .revokeCurrentSession, .unblockStore, .leaveList, .unclaimGift, .restoreGift, .deleteList,
+      .declineInvitation:
+      NoContent.fields
     }
   }
 }
@@ -408,6 +415,11 @@ extension Endpoint where Response == ListResource {
   static func updateList(_ id: String, _ changes: ListChanges, key: String) -> Endpoint {
     Endpoint(route: .updateList, parameters: ["id": id], body: changes, idempotencyKey: key)
   }
+
+  /// Accepts the invitation, with the unsent change's own key. The answer is the list.
+  static func acceptInvitation(_ id: String, key: String) -> Endpoint {
+    Endpoint(route: .acceptInvitation, parameters: ["id": id], idempotencyKey: key)
+  }
 }
 
 /// A merge patch of a list: only the fields that change. See `PATCH /lists/{id}` in the server's route table.
@@ -593,6 +605,11 @@ extension Endpoint where Response == NoContent {
   /// Deletes the extra list and its items, with the unsent change's own key. It sends no `If-Match`.
   static func deleteList(_ id: String, key: String) -> Endpoint {
     Endpoint(route: .deleteList, parameters: ["id": id], idempotencyKey: key)
+  }
+
+  /// Declines the invitation, with the unsent change's own key. It sends no `If-Match`.
+  static func declineInvitation(_ id: String, key: String) -> Endpoint {
+    Endpoint(route: .declineInvitation, parameters: ["id": id], idempotencyKey: key)
   }
 }
 

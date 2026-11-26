@@ -112,6 +112,8 @@ Decided in the spec: "Move to…", "Reorder", "Add item", "Open in New Window".
 | Edit list, Cancel with typed changes | "Discard your changes?", with "Discard" and "Keep editing" |
 | A late refusal of Edit list | "Editing {list}: {reason}" |
 | A late refusal of Delete list | "Deleting {list}: {reason}" |
+| An invitation for a child, at the top | "Mom invited Emma to this list", as the server's spec has it |
+| An invitation whose inviter was deleted, at the top | "You're invited to this list", "Emma is invited to this list" |
 | Edit list, title | "Edit list" |
 | Invite, title | "Invite to {list}" |
 | Nobody to invite | "There's nobody else to invite. You can invite people you can see who aren't on this list." |

@@ -1,9 +1,11 @@
 import SwiftUI
 import WishboneSession
 
-/// The Lists tab: every list that the user can edit. "Your lists", the primary list first and then the extra lists
+/// The Lists tab: every list that the user can edit. "Invitations" first, only while one is pending for the user or
+/// their children, each with Accept and Decline. Then "Your lists", the primary list first and then the extra lists
 /// by name, then one part for each child, under the child's name, with "Deactivated" beside a deactivated child's
-/// name. A tap on a row pushes the list's page. Invitations and New list come later. See `docs/screens/lists.md`.
+/// name. A tap on a row pushes the list's page, and so does a tap on an invitation's line, when the user can see the
+/// list. New list comes later. See `docs/screens/lists.md`.
 ///
 /// Its states are the ones that every screen shares. Every user has a primary list, so the tab is never empty
 /// after the first sync.
@@ -14,9 +16,23 @@ import WishboneSession
 struct ListsScreen: View {
   let session: SessionModel
 
+  /// The pages pushed on Lists. A tap on an invitation's line pushes the list's page.
+  @Binding var pages: [Page]
+
   var body: some View {
     let tab = session.listsTab
     List {
+      if !tab.invitations.isEmpty {
+        Section {
+          ForEach(tab.invitations) { invitation in
+            InvitationView(
+              invitation: invitation, session: session, isOnListPage: false,
+              open: invitation.opensList ? { pages.append(.list(id: invitation.row.listID)) } : nil)
+          }
+        } header: {
+          InvitationsHeading()
+        }
+      }
       if !tab.yourLists.isEmpty {
         Section {
           rows(tab.yourLists)
@@ -57,6 +73,22 @@ private struct YourListsHeading: View {
   var body: some View {
     VStack(alignment: .leading) {
       Text("Your lists", bundle: #bundle)
+    }
+    .font(.headline)
+    .foregroundStyle(.primary)
+    .textCase(nil)
+    .fixedSize(horizontal: false, vertical: true)
+    .accessibilityElement(children: .combine)
+    .accessibilityAddTraits(.isHeader)
+  }
+}
+
+/// The heading of the invitations: "Invitations". It is plain text in the primary color, as "Your lists" is, and a
+/// heading for the VoiceOver rotor.
+private struct InvitationsHeading: View {
+  var body: some View {
+    VStack(alignment: .leading) {
+      Text("Invitations", bundle: #bundle)
     }
     .font(.headline)
     .foregroundStyle(.primary)

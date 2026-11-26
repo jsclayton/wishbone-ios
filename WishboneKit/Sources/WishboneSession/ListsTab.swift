@@ -1,7 +1,8 @@
 import Foundation
 import WishboneAPI
 
-// The Lists tab: every list that the session's user can edit. Their own lists, then a part for each child. See
+// The Lists tab: every list that the session's user can edit, and the invitations that wait. The invitations for the
+// user and their children first, then their own lists, then a part for each child. See
 // "Tabs that become a sidebar" and "A deactivated child" in `docs/spec.md`, and `docs/screens/lists.md`.
 //
 // **No claim state.** A row has the list's `item_count` as the server sends it. A giver's count on a child's list
@@ -10,6 +11,10 @@ import WishboneAPI
 
 /// What the Lists tab shows. The session model builds it from the copy: see `SessionModel.listsTab`.
 public struct ListsTab: Equatable, Sendable {
+  /// The pending invitations for the user and for their children, the oldest first. The part shows only while one
+  /// is pending.
+  public let invitations: [PendingInvitation]
+
   /// The lists that the session's user is a recipient of: the primary list first, then the extra lists, by name.
   public let yourLists: [ListRow]
 
@@ -51,6 +56,6 @@ extension SessionModel {
       return ListsTab.ChildPart(
         child: child, lists: theirs.filter(isPrimary) + theirs.filter { !isPrimary($0) })
     }
-    return ListsTab(yourLists: yourLists, children: children)
+    return ListsTab(invitations: pendingInvitations, yourLists: yourLists, children: children)
   }
 }

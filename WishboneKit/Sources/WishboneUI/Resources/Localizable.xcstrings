@@ -37,6 +37,42 @@
     "%@ hasn't added anything yet." : {
 
     },
+    "%@ invited %@ to %@" : {
+      "comment" : "An invitation for the user's child on the Lists tab: who invited them, the child, then the list",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ invited %2$@ to %3$@"
+          }
+        }
+      }
+    },
+    "%@ invited %@ to this list" : {
+      "comment" : "An invitation for the user's child on the list's page: who invited them, then the child",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ invited %2$@ to this list"
+          }
+        }
+      }
+    },
+    "%@ invited you to %@" : {
+      "comment" : "An invitation on the Lists tab: who invited the user, then the list's name",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ invited you to %2$@"
+          }
+        }
+      }
+    },
+    "%@ invited you to this list" : {
+      "comment" : "An invitation on the list's page: who invited the user"
+    },
     "%@ is in 1 week" : {
 
     },
@@ -45,6 +81,20 @@
     },
     "%@ is in 4 weeks" : {
 
+    },
+    "%@ is invited to %@" : {
+      "comment" : "An invitation for the user's child on the Lists tab whose inviter was deleted: the child, the list",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ is invited to %2$@"
+          }
+        }
+      }
+    },
+    "%@ is invited to this list" : {
+      "comment" : "An invitation for the user's child on the list's page whose inviter was deleted: the child"
     },
     "%@ runs Wishbone %@. The app needs %@ or later. Ask whoever runs it to update." : {
       "localizations" : {
@@ -298,6 +348,20 @@
     "About" : {
 
     },
+    "Accept" : {
+
+    },
+    "Accepting the invitation to %@: %@" : {
+      "comment" : "A late refusal of Accept: the list's name, then why the change wasn't saved",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Accepting the invitation to %1$@: %2$@"
+          }
+        }
+      }
+    },
     "Acknowledgements" : {
 
     },
@@ -424,6 +488,20 @@
     },
     "Deactivated" : {
 
+    },
+    "Decline" : {
+
+    },
+    "Declining the invitation to %@: %@" : {
+      "comment" : "A late refusal of Decline: the list's name, then why the change wasn't saved",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Declining the invitation to %1$@: %2$@"
+          }
+        }
+      }
     },
     "Delete %@ and its items" : {
 
@@ -623,6 +701,9 @@
 
     },
     "If Wishbone crashes, it sends a report to its developer, never anything from your family's lists." : {
+
+    },
+    "Invitations" : {
 
     },
     "It leaves your Received. If the giver still uses Wishbone, they see that, and can give it again." : {
@@ -1376,6 +1457,12 @@
     },
     "You won't get %@?" : {
       "comment" : "The confirmation of I won't get this: the item's title"
+    },
+    "You're invited to %@" : {
+      "comment" : "An invitation on the Lists tab whose inviter was deleted: the list's name"
+    },
+    "You're invited to this list" : {
+      "comment" : "An invitation on the list's page whose inviter was deleted"
     },
     "You're signed in to the app on another device. Open Wishbone there, and use Sign in on another device." : {
 

@@ -23,7 +23,7 @@ From top to bottom:
 
 Each list's row shows its name, its recipients' avatars, and how many items it has.
 
-**Provisional.** Plain default: a system list with a section for each part. New list is a toolbar button with a plus.
+**Provisional.** Plain default: a system list with a section for each part. New list is a toolbar button with a plus. An invitation is a row with its line, and Accept and Decline as buttons under it, Accept the prominent one.
 
 ### The New list form
 
@@ -71,6 +71,8 @@ Decided: "New list", "Accept", "Decline", "Deactivated", and the invitation line
 | Section headings | "Invitations", "Your lists", and the child's name |
 | A row's count | "{n} items", "No items yet" |
 | An invitation whose inviter was deleted | "You're invited to {list}", "Emma is invited to {list}" |
+| A late refusal of Accept | "Accepting the invitation to {list}: {reason}" |
+| A late refusal of Decline | "Declining the invitation to {list}: {reason}" |
 | Form title | "New list" |
 | Form, For | "For", with "You" and each child's name |
 | Form, for a child | "Emma's list. You can edit it, but it isn't yours." |
