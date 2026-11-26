@@ -27,7 +27,7 @@ From top to bottom:
 7. "Added by {name}". It does not show when that user is the list's only recipient, or was deleted.
 8. **For a user who can edit:** how many are wanted, or unlimited, then the edit controls.
 
-**Provisional.** Plain default: a system list. The images are a row that pages sideways, the title is large text under it, and each part is a section. An item with no image has a tile in its recipient's person color. Edit is a toolbar button, and Move to…, Copy link, and Delete are in the toolbar's menu.
+**Provisional.** Plain default: a system list. The images are a row that pages sideways, the title is large text under it, and each part is a section. An item with no image has a tile in its recipient's person color. Edit is a toolbar button, and Move to…, Copy link, Refresh prices, and Delete are in the toolbar's menu. While Refresh prices waits, the store links' section shows progress, and then what it said, under the links.
 
 ### Edit item
 
@@ -39,7 +39,7 @@ A sheet with the fields that the add form has, and the ones it leaves out:
 4. **Notes**.
 5. **Store links**: each with its price to edit and Remove, and **Add link**, which takes a pasted web address and reads it.
 
-**Provisional.** Plain default: a system form in a sheet, in the order above, with Cancel and Save in the toolbar. Each photo is a row with its picture, "Primary photo" or Make primary, and Remove, in the order they were added. A photo whose upload waits is a row too, with its picture from the device. Take a photo and Choose a photo are rows under them, and at 5 photos they can't be used, and the section says why. How many is a stepper under the Always wanted switch, which hides it.
+**Provisional.** Plain default: a system form in a sheet, in the order above, with Cancel and Save in the toolbar. Each photo is a row with its picture, "Primary photo" or Make primary, and Remove, in the order they were added. A photo whose upload waits is a row too, with its picture from the device. Take a photo and Choose a photo are rows under them, and at 5 photos they can't be used, and the section says why. How many is a stepper under the Always wanted switch, which hides it. Each store link is a row with its store, its price in a field, and Remove, in the order added. Under them, a field takes the pasted address, with Add link beside it, which shows progress while the server reads the page. What Add link said shows under the section. At 10 links, Add link can't be used, and the section says why. A store link of an item that waits to be created shows its price, with no field and no Remove, until the server has the item.
 
 ## States
 
@@ -100,6 +100,8 @@ Decided, as the web app has them: "I'll get this", "{n} of {m} still wanted", "A
 | Edit item, the sheet | "Photos", "Title", "Price", "Up to", "Notes", "Cancel", "Save" |
 | Edit item, a photo | "Photo {n}", "Primary photo", "Make primary", "Remove", "Take a photo", "Choose a photo" |
 | Edit item, at 5 photos | The words for `too_many_images` |
+| Edit item, store links | "Store links", "Add link", "Remove", "no price" |
+| Edit item, at 10 store links | The words for `too_many_store_links` |
 | Edit item, no title | "Give the item a title." |
 | Edit item, Cancel with typed changes | "Discard your changes?", with "Discard" and "Keep editing" |
 | A late refusal of Edit | "Editing {title}: {reason}" |

@@ -23,7 +23,23 @@ struct PriceFields: View {
   }
 
   private func field(_ minor: Binding<Int?>, label: Text) -> some View {
-    TextField(value: price(minor), format: .currency(code: currency)) {
+    PriceField(priceMinor: minor, currency: currency, label: label)
+  }
+}
+
+/// One price, in the currency's main unit. A field that is emptied clears the price. The Edit item sheet has one for
+/// each store link.
+struct PriceField: View {
+  @Binding var priceMinor: Int?
+
+  /// The price's ISO 4217 code.
+  let currency: String
+
+  /// What the field is for, which VoiceOver reads.
+  let label: Text
+
+  var body: some View {
+    TextField(value: price, format: .currency(code: currency)) {
       label
     }
     #if os(iOS)
@@ -31,13 +47,13 @@ struct PriceFields: View {
     #endif
   }
 
-  /// A price in the currency's main unit, for a field: "24.99" for 2499 cents.
-  private func price(_ minor: Binding<Int?>) -> Binding<Decimal?> {
+  /// The price in the currency's main unit, for the field: "24.99" for 2499 cents.
+  private var price: Binding<Decimal?> {
     let unit = Decimal(minorUnit)
     return Binding {
-      minor.wrappedValue.map { Decimal($0) / unit }
+      priceMinor.map { Decimal($0) / unit }
     } set: { value in
-      minor.wrappedValue = value.map { value in
+      priceMinor = value.map { value in
         var minor = value * unit
         var rounded = Decimal()
         NSDecimalRound(&rounded, &minor, 0, .plain)

@@ -70,9 +70,51 @@ public struct ItemEditDraft: Sendable, Equatable {
   public var isUnlimited: Bool
   public var notes: String
 
+  /// The most store links that an item can have, as the server takes them.
+  public static let storeLinkLimit = 10
+
+  /// A store link of the item, as the sheet shows it: its store, and its price to edit. Save sends a price that the
+  /// user changed, and a Remove, as unsent changes. Add link waits for the server, and isn't part of Save.
+  public struct StoreLinkEntry: Sendable, Equatable, Identifiable {
+    public let id: String
+    public let url: String
+    public let store: String
+
+    /// The price, in the currency's minor unit. Nil for no price.
+    public var priceMinor: Int?
+
+    /// The price's ISO 4217 code: the link's, else the item's, else USD, as the server takes a price with none.
+    public let currency: String
+
+    /// When the price was read. Nil when it has none.
+    public let capturedAt: Date?
+
+    /// Whether the price can be edited, and the link removed: the server's `can_edit` and `can_delete`. A link of an
+    /// item that waits to be created has neither until the server has the item: the server's ID of the link is not
+    /// known until then.
+    public let canEdit: Bool
+    public let canDelete: Bool
+
+    init(_ link: StoreLinkRow, itemCurrency: String?) {
+      id = link.id
+      url = link.url
+      store = link.store
+      priceMinor = link.priceMinor
+      currency = link.currency ?? itemCurrency ?? "USD"
+      capturedAt = link.capturedAt
+      canEdit = link.canEdit && !StandIn.isStandIn(link.id)
+      canDelete = link.canDelete && !StandIn.isStandIn(link.id)
+    }
+  }
+
+  /// The store links, in the order that the server gives a user who can edit: the order added. A link that Add link
+  /// added while the sheet is open goes at the end.
+  public var storeLinks: [StoreLinkEntry]
+
   /// The draft of the item, as the copy shows it, with the photos that the journal gives it: each by its ID, in
-  /// order, the primary one by its ID. A photo that the row holds is saved, and any other waits.
-  init(_ item: ItemRow, imageIDs: [String], primaryImageID: String?) {
+  /// order, the primary one by its ID. A photo that the row holds is saved, and any other waits. The store links are
+  /// as the copy shows them, with the journal applied.
+  init(_ item: ItemRow, imageIDs: [String], primaryImageID: String?, storeLinks: [StoreLinkRow]) {
     photos = imageIDs.map { id in item.images.first { $0.id == id }.map(PhotoEntry.saved) ?? .waiting(id) }
     primaryID = primaryImageID.flatMap { id in imageIDs.contains(id) ? id : nil } ?? imageIDs.first
     title = item.title
@@ -82,6 +124,24 @@ public struct ItemEditDraft: Sendable, Equatable {
     quantity = item.quantity
     isUnlimited = item.isUnlimited
     notes = item.notes ?? ""
+    self.storeLinks = storeLinks.map { StoreLinkEntry($0, itemCurrency: item.currency) }
+  }
+
+  /// Whether Add link can be used: the item has fewer than 10 store links.
+  public var canAddStoreLink: Bool {
+    storeLinks.count < Self.storeLinkLimit
+  }
+
+  /// Remove: takes the store link out of the draft. Save sends it.
+  public mutating func removeStoreLink(_ id: String) {
+    storeLinks.removeAll { $0.id == id }
+  }
+
+  /// Puts a store link that Add link added at the end. The server has it already, so the sheet puts it in the draft
+  /// that it opened with too: it is no change for Save to send. A link that the draft has already stays as it is.
+  public mutating func added(_ link: StoreLinkRow) {
+    guard !storeLinks.contains(where: { $0.id == link.id }) else { return }
+    storeLinks.append(StoreLinkEntry(link, itemCurrency: currency))
   }
 
   /// The primary photo. Nil when there is no photo.
@@ -179,7 +239,7 @@ extension SessionModel {
     let kept = imageIDs.filter { id in
       item.images.contains { $0.id == id } || uploads.contains(id) || replaced.contains(id)
     }
-    return ItemEditDraft(item, imageIDs: kept, primaryImageID: primaryImageID)
+    return ItemEditDraft(item, imageIDs: kept, primaryImageID: primaryImageID, storeLinks: storeLinks(ofItem: item.id))
   }
 
   /// The bytes of a photo whose upload waits in the journal, by the image's stand-in ID, for the Edit item sheet to
@@ -194,6 +254,12 @@ extension SessionModel {
   /// elsewhere while the sheet was open, which a sync brought, is never sent back. A title is trimmed, and a blank
   /// one can't be saved. Blank notes clear them. A cleared price clears the top price with it. A new photo is
   /// uploaded first, as an unsent change of its own. A photo whose upload waits keeps its ID.
+  ///
+  /// After the item's edit, each store link whose price the user changed is an unsent change of its own, and so is
+  /// each link that the user removed, in the order of the links. Only a link that the sheet opened with, that the
+  /// server lets the user edit or delete, can change: a link of an item that waits to be created can't. A price is
+  /// compared with the one the sheet opened with, too, so a price that a refresh or another device brought while
+  /// the sheet was open is never sent back.
   ///
   /// It does nothing for an item that the copy doesn't hold, that the user can't edit, or that the user didn't
   /// change, and for a draft with no title or more than 5 photos. It returns when the change is in the journal and
@@ -236,8 +302,33 @@ extension SessionModel {
       changes.primaryImageID = primary
     }
 
-    guard !changes.isEmpty else { return }
-    await record(uploads + [.init(.editItem(itemID: item.id, changes: changes), title: item.title)])
+    let present = Set(storeLinks(ofItem: item.id).map(\.id))
+    let storeLinkChanges = Self.storeLinkChanges(of: item, from: opened, to: draft, present: present)
+    guard !changes.isEmpty || !storeLinkChanges.isEmpty else { return }
+    let edit: [LocalDatabase.NewChange] =
+      changes.isEmpty ? [] : uploads + [.init(.editItem(itemID: item.id, changes: changes), title: item.title)]
+    await record(edit + storeLinkChanges)
+  }
+
+  /// The unsent changes of the store links: a price edit of each link whose price differs from the one the sheet
+  /// opened with, and a Remove of each link that the sheet opened with and the draft has no more. A link that left
+  /// the copy while the sheet was open, which was removed elsewhere, or by an earlier change, is not `present`: it
+  /// gets no change.
+  private static func storeLinkChanges(
+    of item: ItemRow, from opened: ItemEditDraft, to draft: ItemEditDraft, present: Set<String>
+  ) -> [LocalDatabase.NewChange] {
+    let editedAt = Date.now
+    return opened.storeLinks.compactMap { link -> LocalDatabase.NewChange? in
+      guard present.contains(link.id) else { return nil }
+      guard let kept = draft.storeLinks.first(where: { $0.id == link.id }) else {
+        guard link.canDelete else { return nil }
+        return .init(.deleteStoreLink(itemID: item.id, storeLinkID: link.id), title: item.title)
+      }
+      let priceMinor = kept.priceMinor.map { max(0, $0) }
+      guard link.canEdit, priceMinor != link.priceMinor else { return nil }
+      let edit = StoreLinkEdit(itemID: item.id, storeLinkID: link.id, priceMinor: priceMinor, editedAt: editedAt)
+      return .init(.editStoreLink(edit), title: item.title)
+    }
   }
 
   /// Delete: deletes the item, as an unsent change. It leaves the copy at once, in every window, and a window that

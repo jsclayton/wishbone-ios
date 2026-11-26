@@ -116,6 +116,21 @@ struct UnsentChangeWordsTests {
     #expect(LateRefusalWords.line(delete) == "Deleting Kite: You can't do this any more.")
   }
 
+  @Test("A late refusal of a store link's price edit or its Remove names the item's edit")
+  func lateRefusalsOfStoreLinks() {
+    let forbidden = APIError.Refusal(
+      route: .updateStoreLink, status: 403, code: .forbidden, detail: "The server's words")
+    let gone = APIError.Refusal(route: .deleteStoreLink, status: 404, code: .notFound, detail: "The server's words")
+    let edit = LateRefusal(
+      id: 1,
+      action: .editStoreLink(StoreLinkEdit(itemID: "4", storeLinkID: "8", priceMinor: 1999, editedAt: .now)),
+      title: "Kite", refusal: forbidden)
+    let remove = LateRefusal(
+      id: 2, action: .deleteStoreLink(itemID: "4", storeLinkID: "8"), title: "Kite", refusal: gone)
+    #expect(LateRefusalWords.line(edit) == "Editing Kite: You can't do this any more.")
+    #expect(LateRefusalWords.line(remove) == "Editing Kite: This is gone, or it isn't shared with you.")
+  }
+
   @Test("A late refusal of Decline names the list")
   func lateRefusalOfDecline() {
     let forbidden = APIError.Refusal(

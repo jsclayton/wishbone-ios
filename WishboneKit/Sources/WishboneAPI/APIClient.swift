@@ -389,6 +389,36 @@ public struct APIClient: Sendable {
     _ = try await load(.deleteItem(id, key: key))
   }
 
+  /// `POST /items/{id}/store-links`: adds a store link to the item. The server reads the page for its price and the
+  /// store's picture, during the request. Gives back the store link, with the version that the answer carried. A
+  /// link from a blocked store is a 422 `store_blocked`, an item with 10 links a 422 `too_many_store_links`, and a
+  /// read over the hourly limit a 429 `rate_limited`. An item with no price that never had one takes the link's.
+  public func addStoreLink(_ url: String, toItem itemID: String) async throws(APIError) -> Versioned<StoreLink> {
+    try await versioned(.addStoreLink(url, toItem: itemID))
+  }
+
+  /// `PATCH /items/{id}/store-links/{store_link_id}`: sets or clears the store link's price by hand, with no
+  /// `If-Match`. `key` is the unsent change's own `Idempotency-Key`. Gives back the store link, with the version that
+  /// the answer carried.
+  public func updateStoreLink(_ id: String, ofItem itemID: String, _ changes: StoreLinkChanges, key: String)
+    async throws(APIError) -> Versioned<StoreLink>
+  {
+    try await versioned(.updateStoreLink(id, ofItem: itemID, changes, key: key))
+  }
+
+  /// `DELETE /items/{id}/store-links/{store_link_id}`: deletes the store link, with no `If-Match`. `key` is the
+  /// unsent change's own `Idempotency-Key`. The item keeps its price.
+  public func deleteStoreLink(_ id: String, ofItem itemID: String, key: String) async throws(APIError) {
+    _ = try await load(.deleteStoreLink(id, ofItem: itemID, key: key))
+  }
+
+  /// `POST /items/{id}/refresh-prices`: the server reads each store link's page again, and saves each new price with
+  /// when it was read. Gives back the item, with the version that the answer carried. A refresh that the hourly
+  /// limit stops before the first read is a 429 `rate_limited`.
+  public func refreshPrices(ofItem id: String) async throws(APIError) -> Versioned<Item> {
+    try await versioned(.refreshPrices(id))
+  }
+
   /// `POST /invitations/{id}/accept`: the invited user, or their parent, accepts, with no body. `key` is the unsent
   /// change's own `Idempotency-Key`. The user becomes a recipient, and the answer is the list, with the version that
   /// it carried. While the invited user is deactivated, it is a 403 `user_deactivated`.

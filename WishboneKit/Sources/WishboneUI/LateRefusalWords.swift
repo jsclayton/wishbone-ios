@@ -34,7 +34,8 @@ public enum LateRefusalWords {
       return String(
         localized: "Your photo for \(refusal.title): \(reason)", bundle: #bundle,
         comment: "A late refusal of the photo of an item added by hand: the item's title, then why it wasn't saved")
-    case .editList, .editItem:
+    // A store link's price edit and its Remove are saved with Edit item, so a refusal names the item's edit.
+    case .editList, .editItem, .editStoreLink, .deleteStoreLink:
       return String(
         localized: "Editing \(refusal.title): \(reason)", bundle: #bundle,
         comment:

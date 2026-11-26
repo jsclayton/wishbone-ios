@@ -73,6 +73,20 @@ struct ErrorWordsTests {
     }
   }
 
+  @Test("rate_limited from a search, Add link, or Refresh prices is the hourly limit, and from anything else a minute")
+  func hourlyLimit() {
+    let hourly = "You've read 30 links and photos in the last hour. Try again later."
+    for route in [Route.search, .addStoreLink, .refreshPrices] {
+      let refusal = APIError.Refusal(route: route, status: 429, code: .rateLimited, detail: "The server's words")
+      #expect(ErrorWords.words(for: refusal) == hourly, "\(route)")
+    }
+    let other = APIError.Refusal(route: .updateStoreLink, status: 429, code: .rateLimited, detail: "The server's words")
+    #expect(ErrorWords.words(for: other) == "Too many tries. Wait a minute, then try again.")
+    let tooMany = APIError.Refusal(
+      route: .addStoreLink, status: 422, code: .tooManyStoreLinks, detail: "The server's words")
+    #expect(ErrorWords.words(for: tooMany) == "An item can have 10 store links.")
+  }
+
   @Test("A claim's line names the occasion, or the reveal date, and a claim that made no gift says why, never who")
   func claimWords() throws {
     let christmas = ItemPage.ClaimLine(id: "1", quantity: 1, occasion: .named("Christmas"))

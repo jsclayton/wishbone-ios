@@ -115,3 +115,26 @@ public struct ItemChanges: Codable, Sendable, Equatable {
     }
   }
 }
+
+/// The body of `PATCH /items/{id}/store-links/{store_link_id}`: a merge patch of the store link's price. A price with
+/// no currency keeps the link's currency, or is in USD, so the app sends only the price. `null` clears the price and
+/// its currency. The server sets when the price was read to now, when it sets a price or clears one. A price edit in the
+/// Edit item sheet sends it, as an unsent change, with no `If-Match`. See `PATCH /items/{id}/store-links/{id}` in the
+/// server's route table.
+public struct StoreLinkChanges: Encodable, Sendable, Equatable {
+  /// The store's price, in the currency's minor unit, at least 0. Nil clears it.
+  public var priceMinor: Int?
+
+  public init(priceMinor: Int?) {
+    self.priceMinor = priceMinor
+  }
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case priceMinor = "price_minor"
+  }
+
+  public func encode(to encoder: any Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(priceMinor, forKey: .priceMinor)
+  }
+}

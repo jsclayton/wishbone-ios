@@ -242,7 +242,8 @@ public enum Breadcrumb: Sendable, Equatable {
     "/gifts", "/gifts/{id}", "/gifts/{id}/acknowledge", "/gifts/{id}/restore", "/blocked-stores",
     "/blocked-stores/{id}",
     "/users/me/sessions/current",
-    "/users/me/confirm-profile", "/images", "/search",
+    "/users/me/confirm-profile", "/images", "/search", "/items/{id}/store-links",
+    "/items/{id}/store-links/{store_link_id}", "/items/{id}/refresh-prices",
   ]
 }
 
