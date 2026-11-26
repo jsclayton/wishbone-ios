@@ -159,7 +159,7 @@ extension SessionModel {
       wanted: wanted,
       storeLinks: ItemPage.ordered(storeLinks(ofItem: id)),
       addedBy: addedBy,
-      offersClaim: !isRecipient && ItemPage.offersClaim(item, openGifts: giving),
+      offersClaim: offersClaim(onItem: id),
       claims: isRecipient ? [] : giving.filter { $0.itemID == id }.map(ItemPage.ClaimLine.init)
     )
   }

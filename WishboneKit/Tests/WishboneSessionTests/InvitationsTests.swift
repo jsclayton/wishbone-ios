@@ -116,6 +116,7 @@ final class InvitationsTests {
     #expect(!session.listsTab.yourLists.map(\.id).contains(family.ourHouse.id))
     #expect(session.listPage(id: family.ourHouse.id)?.isRecipient == false)
     #expect(session.itemPage(id: lamp.id)?.stillWanted != nil)
+    #expect(session.itemPage(id: lamp.id)?.offersClaim == true)
     #expect(session.offersClaim(onItem: lamp.id))
 
     await session.acceptInvitation(invitation.id)
@@ -129,6 +130,7 @@ final class InvitationsTests {
     #expect(page.items.allSatisfy { $0.claim == nil })
     // The Lamp's row is still the giver's row until the next pull, but its page and its row offer no claim state.
     #expect(session.itemPage(id: lamp.id)?.stillWanted == nil)
+    #expect(session.itemPage(id: lamp.id)?.offersClaim == false)
     #expect(session.offersClaim(onItem: lamp.id) == false)
 
     await until { session.unsentChangeCount == 0 }
