@@ -117,7 +117,7 @@ Decided in the spec: "Move to…", "Reorder", "Add item", "Open in New Window".
 | Edit list, title | "Edit list" |
 | Invite, title | "Invite to {list}" |
 | Nobody to invite | "There's nobody else to invite. You can invite people you can see who aren't on this list." |
-| A refused move | "{title} couldn't be moved.", then the words for the code |
+| A refused move or reorder | "{title} couldn't be moved.", then the words for the code |
 
 ## Accessibility
 

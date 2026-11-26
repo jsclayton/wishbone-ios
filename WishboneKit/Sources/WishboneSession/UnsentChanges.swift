@@ -137,8 +137,8 @@ extension SessionModel {
   }
 
   /// Sends one unsent change, and gives the server's answer. An unclaim, a delete and a decline have none. An
-  /// upload's answer is the image, and a create's is the item, each by the server's ID. An item's edit and a move have
-  /// the item as their answer, and a store link's price edit the link.
+  /// upload's answer is the image, and a create's is the item, each by the server's ID. An item's edit, a move and a
+  /// reorder have the item as their answer, and a store link's price edit the link.
   ///
   /// An unclaim of a gift that is gone (a 404) is done: it was unclaimed, merged, or restored from elsewhere, and the
   /// giver no longer has it, which is what they asked for. So the gift leaves the copy, and nothing is said.
@@ -190,6 +190,9 @@ extension SessionModel {
     case .moveItem(let move):
       // Only `list_id`: never a field that the user didn't change.
       return .item(try await client.updateItem(move.itemID, ItemChanges(listID: move.toListID), key: change.key))
+    case .reorderItem(let id, let position):
+      // Only `position`, as for a move: never a field that the user didn't change.
+      return .item(try await client.updateItem(id, ItemChanges(position: position), key: change.key))
     }
   }
 

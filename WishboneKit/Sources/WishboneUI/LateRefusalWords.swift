@@ -27,8 +27,8 @@ public enum LateRefusalWords {
       default: ErrorWords.words(for: refusal.refusal) ?? ErrorWords.fault
       }
     switch refusal.action {
-    // A refused move: "{title} couldn't be moved.", then the words for the code. No word about gifts.
-    case .moveItem:
+    // A refused move or reorder: "{title} couldn't be moved.", then the words for the code. No word about gifts.
+    case .moveItem, .reorderItem:
       return String(
         localized: "\(refusal.title) couldn't be moved. \(reason)", bundle: #bundle,
         comment: "A late refusal of Move to…: the item's title, then why the item wasn't moved")
