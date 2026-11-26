@@ -4,10 +4,11 @@
 #
 #   scripts/xcode-cloud-build.sh [options] "What to Test"
 #
-# First it finds the commit at the head of the branch on GitHub, and checks it with the Gate job of the CI workflow
-# (the full `just gate` on a hosted runner). An App Store build waits for a green Gate run on that exact commit. It
-# starts no build when the Gate fails, or when the branch moved while the Gate ran, and it stops before the notes and
-# the group when Xcode Cloud built another commit. A Tester build starts a Gate run and doesn't wait for it.
+# First it finds the commit at the head of the branch on GitHub, and checks it with the Gate jobs of the CI workflow
+# (the full gate, in parts side by side, on hosted runners). An App Store build waits for a Gate run on that exact
+# commit in which every part is green. It starts no build when the Gate fails, or when the branch moved while the
+# Gate ran, and it stops before the notes and the group when Xcode Cloud built another commit. A Tester build starts
+# a Gate run and doesn't wait for it.
 #
 # Then it starts the workflow on the branch, waits for the build run and for App Store Connect to process the build,
 # sets the build's What to Test notes, and then adds the build to the TestFlight group, which tells the testers.
@@ -29,7 +30,7 @@ Usage: scripts/xcode-cloud-build.sh [options] "What to Test"
 Start the Tester workflow in Xcode Cloud, wait for the build, set its What to Test notes, and add it to the
 TestFlight group.
 
-Before the build, it starts the CI workflow's Gate job on the commit at the head of the branch. A Tester build
+Before the build, it starts the CI workflow's Gate on the commit at the head of the branch. A Tester build
 doesn't wait for it. An App Store build waits for a green Gate run on that commit (or uses one that passed
 before). It starts no build if the Gate fails or the branch moved while the Gate ran, and it stops before the
 notes and the group if Xcode Cloud built another commit.
@@ -116,7 +117,7 @@ asc_literal() {
   esac
 }
 
-# The Gate job of the CI workflow (.github/workflows/ci.yml) runs only when it is started by hand
+# The Gate jobs of the CI workflow (.github/workflows/ci.yml) run only when it is started by hand
 # (workflow_dispatch). A run's name is "Gate on <sha>", so a run is matched to its commit by its name.
 
 # The full SHA of the commit at the head of a branch or tag on GitHub.
@@ -124,19 +125,33 @@ resolve_commit() {
   gh api "repos/$repo/commits/$1" --jq .sha
 }
 
-# The Gate run for a commit that counts: the newest one that passed, or else the oldest one that hasn't ended, which
-# ends first. It prints "<run ID> <status> <URL>", or nothing when there is neither. A run that failed doesn't count.
-# A run counts only when it ran from the same commit that it checked (its head is the SHA in its name), so the
-# workflow's Gate job and the checked code are one commit. The list is newest first.
+# Whether a Gate run that ended passed, from what `gh run view --json conclusion,jobs` prints. The CI workflow runs
+# the gate in parts, side by side, in jobs of their own, and its Gate result job adds them up: it fails when a part
+# failed or has no result. So a run passed only when GitHub says it passed and its Gate result job passed. A skipped
+# job counts as passed for the run's conclusion, so the conclusion alone isn't enough.
+gate_passed='.conclusion == "success" and any(.jobs[]?; .name == "Gate result" and .conclusion == "success")'
+
+# Whether the Gate run with this ID passed in every part.
+run_passed() {
+  gh run view "$1" --repo "$repo" --json conclusion,jobs | jq -e "$gate_passed" >/dev/null
+}
+
+# The Gate run for a commit that counts: the newest one that passed in every part, or else the oldest one that hasn't
+# ended, which ends first. It prints "<run ID> <status> <URL>", or nothing when there is neither. A run that failed
+# doesn't count. A run counts only when it ran from the same commit that it checked (its head is the SHA in its
+# name), so the workflow's Gate jobs and the checked code are one commit. The list is newest first.
 find_gate_run() {
-  gh run list --repo "$repo" --workflow ci.yml --event workflow_dispatch --limit 100 \
+  local runs="" id=""
+  runs="$(gh run list --repo "$repo" --workflow ci.yml --event workflow_dispatch --limit 100 \
     --json databaseId,displayTitle,headSha,status,conclusion,url |
-    jq -r --arg sha "$1" '
-      [.[] | select(.displayTitle == "Gate on \($sha)" and .headSha == $sha)] as $runs
-      | ([$runs[] | select(.status == "completed" and .conclusion == "success")][0]
-        // [$runs[] | select(.status != "completed")][-1])
-      | select(. != null)
-      | "\(.databaseId) \(.status) \(.url)"'
+    jq -c --arg sha "$1" '[.[] | select(.displayTitle == "Gate on \($sha)" and .headSha == $sha)]')"
+  for id in $(jq -r '.[] | select(.status == "completed" and .conclusion == "success") | .databaseId' <<<"$runs"); do
+    if run_passed "$id"; then
+      jq -r --argjson id "$id" '.[] | select(.databaseId == $id) | "\(.databaseId) \(.status) \(.url)"' <<<"$runs"
+      return
+    fi
+  done
+  jq -r '[.[] | select(.status != "completed")][-1] | select(. != null) | "\(.databaseId) \(.status) \(.url)"' <<<"$runs"
 }
 
 # Start a Gate run for a commit, from the workflow on the branch. It prints "<run ID> <URL>".
@@ -156,15 +171,14 @@ dispatch_gate() {
   printf '%s %s\n' "${url##*/}" "$url"
 }
 
-# Wait for a Gate run to end, for at most three hours. It succeeds only when the run passed.
+# Wait for a Gate run to end, for at most three hours. It succeeds only when the run passed in every part.
 wait_gate() {
-  local id="$1" view="" status="" conclusion=""
+  local id="$1" view="" status=""
   for _ in $(seq 1 180); do
-    view="$(gh run view "$id" --repo "$repo" --json status,conclusion)" || view=""
+    view="$(gh run view "$id" --repo "$repo" --json status,conclusion,jobs)" || view=""
     status="$(jq -r '.status // empty' <<<"$view" 2>/dev/null || true)"
     if [ "$status" = "completed" ]; then
-      conclusion="$(jq -r '.conclusion // empty' <<<"$view")"
-      [ "$conclusion" = "success" ]
+      jq -e "$gate_passed" <<<"$view" >/dev/null
       return
     fi
     sleep 60
@@ -191,7 +205,7 @@ if [ "$workflow" = "App Store" ]; then
       gate_url="${gate_run##* }"
       say "Started the Gate on $sha: $gate_url"
     fi
-    say "Waiting for the Gate to pass before the App Store build (this takes up to an hour)."
+    say "Waiting for the Gate to pass before the App Store build (this takes about 25 minutes)."
     if ! wait_gate "$gate_id"; then
       echo "The Gate didn't pass on $sha, so no App Store build was started. See: $gate_url" >&2
       exit 1
@@ -199,7 +213,7 @@ if [ "$workflow" = "App Store" ]; then
     say "The Gate passed on $sha."
   fi
   # Xcode Cloud builds the head of the branch when the build starts. So check that the head is still the commit that
-  # the Gate checked: the wait above can take an hour, and a merge in that time moves the branch.
+  # the Gate checked: the wait above takes about 25 minutes, and a merge in that time moves the branch.
   head_now="$(resolve_commit "$branch")" || { echo "Can't find '$branch' on GitHub ($repo) again." >&2; exit 1; }
   if [ "$head_now" != "$sha" ]; then
     echo "'$branch' moved from $sha to $head_now while the Gate ran; no App Store build was started. Run the command again." >&2

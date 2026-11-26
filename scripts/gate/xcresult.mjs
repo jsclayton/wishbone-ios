@@ -9,14 +9,15 @@ import { existsSync } from 'node:fs';
 import { judge } from './reading.mjs';
 
 /** A reading of a bundle that can't be read: the run has no summary. */
-const unreadable = { tests: null, runFailed: null, failed: [], known: [], skipped: [], strayIssues: 0, summary: null, names: [], testsMs: null, messages: {} };
+const unreadable = { tests: null, runFailed: null, failed: [], known: [], skipped: [], strayIssues: 0, summary: null, names: [], testsMs: null, times: {}, messages: {} };
 
 /**
  * Reads the tree that `xcresulttool get test-results tests` prints, as an object.
  *
  * Returns a reading in the shape that `judge` takes: `{ tests, runFailed, failed, known, skipped, strayIssues,
  * summary }`, with `names`, the name of every test, `testsMs`, the time that the tests took, without what
- * Xcode does around them, such as installing and launching the test runner, and `messages`, which maps each failed
+ * Xcode does around them, such as installing and launching the test runner, `times`, which maps each test's name to
+ * its own time in milliseconds, and `messages`, which maps each failed
  * test's name to its failure messages, in order. A test's name is `Bundle.Suite/function()`. A test with
  * arguments is one test. A test that passes with an expected failure (`XCTExpectFailure`, `withKnownIssue`) is
  * `known`. `tests` is null when the tree is not one of a test run.
@@ -29,6 +30,7 @@ export function readTestResults(results) {
   const known = [];
   const skipped = [];
   const messages = {};
+  const times = {};
   let testsMs = 0;
   /** The failure messages in a node and its children, such as the cases of a test with arguments. */
   const failureMessages = (node) => [
@@ -40,7 +42,8 @@ export function readTestResults(results) {
     if (node.nodeType === 'Test Case') {
       const name = `${bundle}.${node.nodeIdentifier ?? node.name}`;
       names.push(name);
-      testsMs += Math.round((node.durationInSeconds ?? 0) * 1000);
+      times[name] = Math.round((node.durationInSeconds ?? 0) * 1000);
+      testsMs += times[name];
       if (node.result === 'Expected Failure') known.push(name);
       else if (node.result === 'Skipped') skipped.push(name);
       // Any other result that is not a pass is a failure, so a result that Xcode adds later can't pass by default.
@@ -65,6 +68,7 @@ export function readTestResults(results) {
     summary: runFailed ? 'Xcode says that the run failed' : 'Xcode says that the run passed',
     names: names.sort(),
     testsMs,
+    times,
     messages,
   };
 }
@@ -91,10 +95,12 @@ export function readResultBundle(bundle) {
  * The bundles of one tier hold the same tests, each run in another setting. So the tier's count is the count of
  * one bundle, and every bundle must hold the same tests.
  *
- * Returns the reason why the step fails, if it does, and the counts.
+ * Returns `{ fail, counts, names }`: the reason why the step fails, if it does, the counts, and the names of each
+ * tier's tests.
  */
 export function checkResultBundles(tiers, { exit, allowedSkips = [], read = readResultBundle }) {
   const counts = {};
+  const names = {};
   for (const [countName, bundles] of Object.entries(tiers)) {
     let first = null;
     for (const bundle of bundles) {
@@ -109,9 +115,10 @@ export function checkResultBundles(tiers, { exit, allowedSkips = [], read = read
         return { fail: `${bundle.label}: it ran other tests than ${bundles[0].label}`, counts };
       }
       counts[countName] = reading.tests;
+      names[countName] = reading.names;
     }
   }
-  return { counts };
+  return { counts, names };
 }
 
 /** The name of every attachment in what `xcresulttool get test-results activities` prints for one test, in order. */

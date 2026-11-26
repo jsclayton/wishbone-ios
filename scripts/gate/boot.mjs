@@ -1,0 +1,15 @@
+// Starts the boot of the gate's own simulator, and returns before the boot ends. CI's journeys jobs run it as their
+// first step, so that the simulator's first boot on a new runner (on 2026-11-26, 1m16s, and then 2m45s before its
+// status bar took a change, and 2m02s before its settings did) goes on while the job installs its tools and gets
+// the build. The simulator step then finds it booted, or booting, and waits for it as it always does.
+//
+// It makes the simulator when the runner has none, as the simulator step does, so the step uses this one.
+
+import { spawn } from 'node:child_process';
+
+import { findOrMakeSimulator } from './simulator.mjs';
+
+const simulator = findOrMakeSimulator();
+// `simctl boot` ends when the simulator has started to boot. Detached, it goes on after this script ends.
+spawn('xcrun', ['simctl', 'boot', simulator], { detached: true, stdio: 'ignore' }).unref();
+console.log(`✓ Started the boot of the gate's simulator (${simulator})`);

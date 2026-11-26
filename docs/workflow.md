@@ -123,7 +123,7 @@ The workflows:
   - **Changes** finds what changed. It also fails when a private file is tracked: `.agent/`, `.claude/`, `.beads/`, or `*.local.md`. It runs the docs check (`node scripts/check-docs.mjs`, which is `just lint-docs` on a Mac) on every change, so a change to docs only can't merge a broken link.
   - **Lint** runs `just lint` on a macOS runner, with the pinned Xcode: `swift-format lint --strict`, actionlint, shellcheck, the docs check, and the tests of the gate's scripts. It takes about a minute.
   - **CI OK** is the required check. It fails if a job that it needs failed or was cancelled. A skipped job counts as passed.
-- **CI**, run by hand (`workflow_dispatch`), runs only the **Gate** job: the full `just gate`, on a macOS runner, unsigned, with no secrets. It is the check before each release. Its input `sha` names the commit to check, and the run's name is `Gate on <sha>`. Then **CI OK** is the Gate's result. It runs:
+- **CI**, run by hand (`workflow_dispatch`), runs only the **Gate** jobs: the full gate, in parts side by side on macOS runners, unsigned, with no secrets (see [CI](development.md#ci)). It is the check before each release. Its input `sha` names the commit to check, and the run's name is `Gate on <sha>`. Then **CI OK** is the Gate's result: it needs the **Gate result** job, which adds the parts up, to pass. It runs:
   - from `just cloud-build`, on the commit that the build builds (see [Releases](development.md#releases));
   - by hand, from the Actions tab (**CI**, then **Run workflow**), on any branch or commit, or with `gh workflow run ci.yml --ref <branch> -f sha=<full SHA>`.
 - **PR Title** checks that the pull request's title is a Conventional Commit of at most 92 characters.
