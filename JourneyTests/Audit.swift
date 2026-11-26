@@ -469,12 +469,13 @@ enum Audit {
       // Done in a sheet's bar (Settings, Share diagnostics) is the system's own bar button, on the system's glass.
       // The audit reports its text as low contrast, where its screenshot shows black on glass of about
       // (240, 240, 245), near 18:1. It reports that the text doesn't grow, where iOS shows a bar button in the large
-      // content viewer instead. A label with a text style of its own changes neither. The exception is for Done in
-      // a navigation bar only: the element must be the bar's Done itself, not another Done on the screen.
-      if [.contrast, .dynamicType].contains(issue.auditType), let done = element, done.elementType == .button,
-        done.label == words("Done"),
-        case let barDone = app.navigationBars.buttons[words("Done")].firstMatch, barDone.exists,
-        barDone.frame == done.frame
+      // content viewer instead. A label with a text style of its own changes neither. Cancel in a sheet's bar (Move
+      // to…) is the same. The exception is for Done and Cancel in a navigation bar only: the element must be the
+      // bar's button itself, not another with the same words on the screen.
+      if [.contrast, .dynamicType].contains(issue.auditType), let button = element, button.elementType == .button,
+        let barWords = ["Done", "Cancel"].map(words).first(where: { $0 == button.label }),
+        case let barButton = app.navigationBars.buttons[barWords].firstMatch, barButton.exists,
+        barButton.frame == button.frame
       {
         return true
       }

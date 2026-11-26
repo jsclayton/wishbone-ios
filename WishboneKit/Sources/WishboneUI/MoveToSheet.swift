@@ -29,7 +29,7 @@ struct MoveToSheet: View {
                 row(target)
               }
             } header: {
-              Text(part.child.name)
+              MoveToChildHeading(name: part.child.name)
             }
           }
         }
@@ -57,8 +57,29 @@ struct MoveToSheet: View {
         dismiss()
       }
     } label: {
+      // In the primary color, as a system picker's rows are: each is a choice, not a link.
       AddTargetName(target: target)
+        .foregroundStyle(.primary)
     }
+  }
+}
+
+/// A child's part of the picker: the child's name, as the Lists tab heads it. A bare `Text` as a section's header
+/// takes the system's grey, below 4.5:1, so the heading is plain text in the primary color, and a heading for the
+/// VoiceOver rotor.
+private struct MoveToChildHeading: View {
+  let name: String
+
+  var body: some View {
+    VStack(alignment: .leading) {
+      Text(name)
+    }
+    .font(.headline)
+    .foregroundStyle(.primary)
+    .textCase(nil)
+    .fixedSize(horizontal: false, vertical: true)
+    .accessibilityElement(children: .combine)
+    .accessibilityAddTraits(.isHeader)
   }
 }
 
