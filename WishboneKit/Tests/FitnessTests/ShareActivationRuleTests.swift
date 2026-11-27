@@ -39,6 +39,7 @@ struct ShareActivationRuleTests {
   func notOffered() throws {
     let rule = try Self.rule()
     #expect(!rule.evaluate(with: Self.shared([[["public.url"], ["public.plain-text"]]])))
+    #expect(!rule.evaluate(with: Self.shared([[["public.url"], ["public.jpeg"]]])))
     #expect(!rule.evaluate(with: Self.shared([[["public.url"]], [["public.plain-text"]]])))
     #expect(!rule.evaluate(with: Self.shared([[["public.file-url", "public.plain-text"]]])))
     #expect(!rule.evaluate(with: Self.shared([[["public.jpeg"]]])))
