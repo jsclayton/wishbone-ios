@@ -1,9 +1,10 @@
 import CoreFoundation
 import Foundation
 import Observation
+import UniformTypeIdentifiers
 import WishboneAPI
 
-// The share extension: one link or one text from another app, the add form, and Add. See "The share extension" in
+// The share extension: one link, one text or one image from another app, the add form, and Add. See "The share extension" in
 // `docs/spec.md`, and `docs/screens/share-extension.md`.
 //
 // The extension builds its own session model, with a database in memory, fed from the API: `GET /users/me`, the
@@ -14,18 +15,62 @@ import WishboneAPI
 // **Secrecy.** It shows the user's own add form and the lists that they can edit: no claim state, and nothing about a
 // gift. Its copy holds no gift, because it never asks for one. It sends no diagnostics: an extension gives `.none`.
 
-/// The one thing that another app shared: a link, or a text. Wishbone is not offered when several things are shared.
+/// The one thing that another app shared: a link, a text, or an image. Wishbone is not offered when several things
+/// are shared.
 public enum SharedThing: Sendable, Equatable {
   /// A web address, from Safari or any app.
   case link(URL)
 
   /// A text, such as "Check out this toy! https://…".
   case text(String)
+
+  /// A photo or a screenshot, made smaller as the extension sends it.
+  case photo(Photo)
+
+  /// Reads the one thing that the attachments of a share hold: a web link, a text, or an image. Several things, or
+  /// a thing of another kind, give nil: Wishbone can't use them. The activation rule keeps Wishbone out of a share
+  /// sheet for most of them already.
+  ///
+  /// An image is read from the file that the provider gives, and made smaller there (`Photo(fileAt:)`), so the
+  /// extension never holds the image at its full size. An image that comes with a web link is not one thing, and
+  /// gives nil, as the activation rule has it.
+  ///
+  /// - Parameter untitled: The title of a photo when no guess comes back, "Photo from {date}".
+  public static func read(
+    _ providers: [NSItemProvider], untitled: @escaping @Sendable (Date) -> String
+  ) async -> SharedThing? {
+    guard providers.count == 1, let provider = providers.first else { return nil }
+    let isFile = provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
+    let isWebLink = !isFile && provider.hasItemConformingToTypeIdentifier(UTType.url.identifier)
+    if let image = provider.registeredTypeIdentifiers.first(where: { UTType($0)?.conforms(to: .image) == true }) {
+      guard !isWebLink else { return nil }
+      return await withCheckedContinuation { continuation in
+        // The file is there only until the handler returns, so the photo is made in it.
+        _ = provider.loadFileRepresentation(forTypeIdentifier: image) { url, _ in
+          let photo = url.flatMap { Photo(fileAt: $0, longestSide: Photo.sharedLongestSide, untitled: untitled) }
+          continuation.resume(returning: photo.map(SharedThing.photo))
+        }
+      }
+    }
+    if isWebLink {
+      let url: URL? = await withCheckedContinuation { continuation in
+        _ = provider.loadObject(ofClass: URL.self) { url, _ in continuation.resume(returning: url) }
+      }
+      return url.map(SharedThing.link)
+    }
+    if provider.hasItemConformingToTypeIdentifier(UTType.plainText.identifier) {
+      let text: String? = await withCheckedContinuation { continuation in
+        _ = provider.loadObject(ofClass: String.self) { text, _ in continuation.resume(returning: text) }
+      }
+      return text.map(SharedThing.text)
+    }
+    return nil
+  }
 }
 
 extension SearchInput {
   /// What the search reads from the shared thing: a web link as a link, a text's first web link with the rest of the
-  /// text ignored, and any other text as typed words. Nil for a thing that Wishbone can't use: a link that is not a
+  /// text ignored, any other text as typed words, and an image as a photo. Nil for a thing that Wishbone can't use: a link that is not a
   /// web address, or a text with nothing in it.
   public init?(shared thing: SharedThing) {
     switch thing {
@@ -40,6 +85,8 @@ extension SearchInput {
       } else {
         return nil
       }
+    case .photo(let photo):
+      self = .photo(photo)
     }
   }
 

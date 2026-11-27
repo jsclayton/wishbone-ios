@@ -41,8 +41,8 @@ It takes one link, one text, or one image for each share. Wishbone is not offere
 - **The app is too old** (410 `api_version_removed`): "Open Wishbone".
 - **The API's own 401:** the extension deletes the Keychain item, and shows the signed-out state. The app clears the rest when it next runs.
 - **A fresh install, before the app was opened:** the signed-out state.
-- **A shared thing that Wishbone can't use:** a message, with Cancel.
+- **A shared thing that Wishbone can't use:** a message, with Cancel. An image that the device can't read is one.
 
-**Provisional.** These words are drafts: "Reading {store}…", "Wishbone can't add this. Share a link or some text.", and the label "Copy the link". The line names one photo too once the extension takes one. "Sign in to Wishbone first." and "Open Wishbone" are decided in the spec.
+**Provisional.** These words are drafts: "Reading {store}…", "Looking at your photo…", "Wishbone can't add this. Share a link, some text, or a photo.", and the label "Copy the link". "Sign in to Wishbone first." and "Open Wishbone" are decided in the spec.
 
 The extension is held to the same accessibility rules as the app: every control has a label, the text scales, and nothing is only a gesture.

@@ -1,8 +1,8 @@
 import Foundation
 import Testing
 
-/// The share extension's activation rule: Wishbone is offered for one web link or one text, and never for several
-/// things, a file, or an image. App Review refuses a rule of `TRUEPREDICATE`, and App Store Connect refuses
+/// The share extension's activation rule: Wishbone is offered for one web link, one text or one image, and never for
+/// several things, a file that is not an image, or an image with a link. App Review refuses a rule of `TRUEPREDICATE`, and App Store Connect refuses
 /// `FALSEPREDICATE`. See "The share extension" in `docs/spec.md`.
 @Suite("The share extension's activation rule")
 struct ShareActivationRuleTests {
@@ -35,15 +35,34 @@ struct ShareActivationRuleTests {
     #expect(rule.evaluate(with: Self.shared([[["public.utf8-plain-text"]]])))
   }
 
-  @Test("Not offered for several things, a file, an image, or nothing")
+  @Test("Offered for one image: a photo, as Photos shares it, a screenshot, and an image file")
+  func offeredForOneImage() throws {
+    let rule = try Self.rule()
+    #expect(rule.evaluate(with: Self.shared([[["public.heic"]]])))
+    #expect(rule.evaluate(with: Self.shared([[["public.jpeg"]]])))
+    #expect(rule.evaluate(with: Self.shared([[["public.png"]]])))
+    #expect(rule.evaluate(with: Self.shared([[["public.heic", "public.jpeg"]]])))
+    #expect(rule.evaluate(with: Self.shared([[["public.png", "public.file-url"]]])))
+    // An image with a caption is still one image.
+    #expect(rule.evaluate(with: Self.shared([[["public.jpeg", "public.plain-text"]]])))
+  }
+
+  @Test("Not offered for several things, a file, two images, an image with a link, or nothing")
   func notOffered() throws {
     let rule = try Self.rule()
     #expect(!rule.evaluate(with: Self.shared([[["public.url"], ["public.plain-text"]]])))
-    #expect(!rule.evaluate(with: Self.shared([[["public.url"], ["public.jpeg"]]])))
     #expect(!rule.evaluate(with: Self.shared([[["public.url"]], [["public.plain-text"]]])))
+    // A file that is not an image.
     #expect(!rule.evaluate(with: Self.shared([[["public.file-url", "public.plain-text"]]])))
-    #expect(!rule.evaluate(with: Self.shared([[["public.jpeg"]]])))
-    #expect(!rule.evaluate(with: Self.shared([[["public.png", "public.file-url"]]])))
+    #expect(!rule.evaluate(with: Self.shared([[["public.file-url", "com.adobe.pdf"]]])))
+    #expect(!rule.evaluate(with: Self.shared([[["com.adobe.pdf"]]])))
+    #expect(!rule.evaluate(with: Self.shared([[["public.movie"]]])))
+    // Two images, as one item or as two.
+    #expect(!rule.evaluate(with: Self.shared([[["public.heic"], ["public.heic"]]])))
+    #expect(!rule.evaluate(with: Self.shared([[["public.jpeg"]], [["public.png"]]])))
+    // An image with a link, as two attachments or in one.
+    #expect(!rule.evaluate(with: Self.shared([[["public.url"], ["public.jpeg"]]])))
+    #expect(!rule.evaluate(with: Self.shared([[["public.jpeg", "public.url"]]])))
     #expect(!rule.evaluate(with: Self.shared([[]])))
     #expect(!rule.evaluate(with: Self.shared([])))
   }
