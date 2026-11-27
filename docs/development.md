@@ -389,6 +389,18 @@ So neither a sync during the drag, a late write, nor the drag's hold or speed gi
 - What shows: after each run of the journeys, a line names this flake and how many drags were made again, then a line for each with the journey, its try and the server's order. In the run in the four settings, the journey tells the settings helper. The double-length run has no helper, so the gate reads the journey's line from that run's log, which CI uploads only when the part fails. The journey's log, in every run, has the line `The dragged item isn't first on the page: the page snapped back, and the server has the old order, so the drop never reached the app. The server's order: <titles>. The journey drags again (1 of 1).` Each retry is a sighting: name its run, its attempt and its line in the hand-off, so the count shows whether the retry hides something frequent.
 - What stays red: a second drag that snaps back too, which fails with those words and `It happened 2 times in a row.` A page that doesn't show the item first while the server has any other order fails at once, with `the page and the copy disagree` and the server's order: the app took a drop, and a retry would hide that.
 
+### Seen on CI, not retried
+
+These failures came on CI, and the gate doesn't retry them. Each one stays red. Each sighting is counted, so that a retry can be named when the evidence holds.
+
+**XCTest's UI query times out while the runner stalls.** Signature: a journey fails with `Failed to get matching snapshot: Timed out while evaluating UI query.` (or `snapshots`), after XCTest asked for the app's accessibility snapshot three times, about 30 seconds each. Waits for the app to go idle before it can take 60 seconds each, with `App animations complete notification not received, will attempt to continue.` Seen on 2026-11-26 on CI in run 45907072555 attempt 1, in `PeopleJourney/testPeople()`, on a list's page at the largest text size, in the query for a row after a scroll. Seen on 2026-11-27 in run 45986369104 attempt 1, in `MoveJourney/testMove()`, after the taps on More and on Move to…. Attempt 2 of that run passed.
+
+What was measured: XCTest takes a spindump of the runner at the time-out, and the result bundle has it. In both spindumps, the app does no work. In the first, the app's main thread waits in its run loop with less than 1 ms of CPU, and no process has a sample for 2,171 ms of the 5-second sample. So the whole runner, a VM with 3 CPUs and 7 GB, got no CPU for that time. In the second, only 2.72 seconds of the 5 seconds have samples, and the app's main thread is in XCTest's own query, blocked in the kernel on a log write. So the runner's VM stalled, and the app didn't.
+
+What wasn't measured: a spindump covers only 5 seconds of a wait of about 2 minutes. So it doesn't show that the VM stalled for the whole wait, or why the VM stalled.
+
+To read the next sighting, open the spindump in the failed test's attachments and look for `gap with no samples`, or for `Duration Sampled` shorter than `Duration`.
+
 ### CI
 
 - On each pull request and each push to `main`, GitHub Actions runs only the fast checks: the docs check, and `just lint` (`swift-format`, actionlint, shellcheck, and the gate's own tests). The list of jobs is in [`workflow.md`](workflow.md#ci).

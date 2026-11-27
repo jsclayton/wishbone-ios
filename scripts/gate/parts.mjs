@@ -46,6 +46,12 @@ export const shards = [
   {
     // Home, a person's page and Giving: ClaimJourney audits them first, before DropGiftJourney, PeopleJourney and
     // SignInJourney/testSignIn reach them.
+    //
+    // PeopleJourney stays with ClaimJourney. Without it, in a shard with AddItemJourney (runs 45898045293,
+    // 45901661533 and 45907072555), PeopleJourney audited a person's page itself, with four scrolls at the largest
+    // text size, and took 6m05s to 8m58s. That long journey met two `simctl ui` hangs and a UI query time-out
+    // (docs/development.md, "Seen on CI, not retried"). Here, it audits only the People page and a list's page, and
+    // it passed in each of the 9 Gate runs after this cut, in 4m52s to 5m41s.
     name: 'journeys-1',
     tests: ['ClaimJourney/testClaim', 'DropGiftJourney/testDropGift', 'PeopleJourney/testPeople', 'SignInJourney/testSignIn'],
   },
