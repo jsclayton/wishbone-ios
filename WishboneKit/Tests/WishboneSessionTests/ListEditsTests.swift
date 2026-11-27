@@ -11,6 +11,10 @@ import WishboneSession
 @Suite("Editing and deleting a list", .timeLimit(.minutes(2)))
 @MainActor
 final class ListEditsTests {
+  typealias Route = NetworkConditioner.Route
+
+  static let update = Route("PATCH", "/lists/{id}")
+
   let instance: Instance
 
   /// The instances of the devices that the test signed in, kept for the whole test: each one's conditioner is the
@@ -36,6 +40,12 @@ final class ListEditsTests {
     return session
   }
 
+  /// Opens the Edit list sheet on the list as the copy shows it, types the name and the description, and saves.
+  private func edit(_ id: String, in session: SessionModel, name: String, description: String) async throws {
+    let opened = ListEditDraft(try #require(session.list(id: id)))
+    await session.editList(id, from: opened, to: ListEditDraft(name: name, description: description))
+  }
+
   /// The list as the person reads it from the server.
   private func onServer(_ list: Fixture.List, as person: Fixture.Person) async throws -> JSON {
     try await person.signedIn().get("/lists/\(list.id)")
@@ -49,7 +59,7 @@ final class ListEditsTests {
     let session = try await signedIn(as: owner)
     #expect(session.list(id: list.id)?.canEdit == true)
 
-    await session.editList(list.id, name: "  Road trip  ", description: "Things for the **car**.")
+    try await edit(list.id, in: session, name: "  Road trip  ", description: "Things for the **car**.")
 
     // At once, before the server has it: the page, and the user's lists, show the new name.
     let page = try #require(session.listPage(id: list.id))
@@ -64,14 +74,14 @@ final class ListEditsTests {
     await until { session.list(id: list.id)?.name == "Road trip" }
 
     // A blank description clears it, and only the description is sent.
-    await session.editList(list.id, name: "Road trip", description: "  ")
+    try await edit(list.id, in: session, name: "Road trip", description: "  ")
     #expect(session.list(id: list.id)?.description == nil)
     await until { session.unsentChangeCount == 0 }
     #expect(try await onServer(list, as: owner)["description"].isNull)
     #expect(try await onServer(list, as: owner)["name"].string == "Road trip")
 
     // An edit that changes nothing, or a blank name, saves nothing.
-    await session.editList(list.id, name: "  ", description: "")
+    try await edit(list.id, in: session, name: "  ", description: "")
     #expect(session.unsentChangeCount == 0)
     #expect(session.list(id: list.id)?.name == "Road trip")
   }
@@ -84,7 +94,7 @@ final class ListEditsTests {
     let session = try await signedIn(as: owner, on: instance)
 
     instance.conditioner.dropEverything()
-    await session.editList(list.id, name: "Road trip", description: "")
+    try await edit(list.id, in: session, name: "Road trip", description: "")
     await until { session.isInstanceUnreachable }
     #expect(session.unsentChangeCount == 1)
     #expect(session.listPage(id: list.id)?.list.name == "Road trip")
@@ -94,6 +104,57 @@ final class ListEditsTests {
     await until { session.unsentChangeCount == 0 }
     #expect(try await onServer(list, as: owner)["name"].string == "Road trip")
     #expect(session.list(id: list.id)?.name == "Road trip")
+  }
+
+  @Test("A description changed on the web while the sheet is open is not undone by a Save of the name")
+  func staleDraft() async throws {
+    let builder = instance.builder
+    let owner = try await builder.person("Avery")
+    let list = try await builder.list("Trip", of: owner)
+    let session = try await signedIn(as: owner, on: instance)
+    let opened = ListEditDraft(try #require(session.list(id: list.id)))
+    var draft = opened
+
+    // Meanwhile, in a browser, and a sync brings it while the sheet is open.
+    try await owner.signedIn().send("PATCH", "/lists/\(list.id)", json: ["description": .string("From the web")])
+      .expecting(200)
+    await session.syncNow()
+    await until { session.list(id: list.id)?.description == "From the web" }
+
+    let sent = instance.conditioner.requests.count
+    draft.name = "Road trip"
+    await session.editList(list.id, from: opened, to: draft)
+    await until { session.unsentChangeCount == 0 }
+    let requests = instance.conditioner.requests
+    let patch = try #require(requests[sent...].first { $0.isOn(Self.update) })
+    guard case .object(let fields) = try JSON(parsing: patch.body) else {
+      Issue.record("The patch has no JSON object.")
+      return
+    }
+    #expect(Set(fields.keys) == ["name"])
+    let saved = try await onServer(list, as: owner)
+    #expect(saved["name"].string == "Road trip")
+    #expect(saved["description"].string == "From the web")
+    await until { session.list(id: list.id)?.description == "From the web" }
+  }
+
+  @Test("Edit list saves nothing for a list that the user can't edit, or that the copy doesn't hold")
+  func editGuards() async throws {
+    let builder = instance.builder
+    let owner = try await builder.person("Avery")
+    let guest = try await builder.person("Blake")
+    _ = try await builder.group("Pair", users: [owner, guest])
+    let list = try await builder.list("Trip", of: owner)
+    let giver = try await signedIn(as: guest)
+    let row = try #require(giver.list(id: list.id))
+    #expect(!row.canEdit)
+
+    let opened = ListEditDraft(row)
+    await giver.editList(list.id, from: opened, to: ListEditDraft(name: "Mine", description: "Taken"))
+    await giver.editList("missing", from: opened, to: ListEditDraft(name: "Mine", description: ""))
+    #expect(giver.unsentChangeCount == 0)
+    #expect(giver.list(id: list.id)?.name == row.name)
+    #expect(try await onServer(list, as: owner)["name"].string == row.name)
   }
 
   @Test("Delete takes the list out of Lists at once, and a window that shows its page shows not found")
@@ -214,7 +275,7 @@ final class ListEditsTests {
     #expect(page.list.canEdit)
     #expect(page.canDelete)
 
-    await parent.editList(list.id, name: "Robin's toys", description: "")
+    try await edit(list.id, in: parent, name: "Robin's toys", description: "")
     #expect(parent.list(id: list.id)?.name == "Robin's toys")
     await until { parent.unsentChangeCount == 0 }
     #expect(try await onServer(list, as: family.child)["name"].string == "Robin's toys")

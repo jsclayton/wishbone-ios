@@ -11,8 +11,10 @@ struct EditListSheet: View {
   let list: ListRow
   let session: SessionModel
 
-  @State private var name: String
-  @State private var description: String
+  /// The draft that the sheet opened with. A sync while the sheet is open changes `list`, not this, so Save sends
+  /// only what the user changed.
+  @State private var opened: ListEditDraft
+  @State private var draft: ListEditDraft
   @State private var isConfirmingDiscard = false
 
   @Environment(\.dismiss) private var dismiss
@@ -20,15 +22,16 @@ struct EditListSheet: View {
   init(list: ListRow, session: SessionModel) {
     self.list = list
     self.session = session
-    _name = State(initialValue: list.name)
-    _description = State(initialValue: list.description ?? "")
+    let opened = ListEditDraft(list)
+    _opened = State(initialValue: opened)
+    _draft = State(initialValue: opened)
   }
 
   var body: some View {
     NavigationStack {
       Form {
         Section {
-          TextField(text: limited($name, to: SessionModel.listNameLimit), prompt: Text("Name", bundle: #bundle)) {
+          TextField(text: limited($draft.name, to: SessionModel.listNameLimit), prompt: Text("Name", bundle: #bundle)) {
             Text("Name", bundle: #bundle)
           }
         } header: {
@@ -36,7 +39,7 @@ struct EditListSheet: View {
         }
         Section {
           TextField(
-            text: limited($description, to: SessionModel.listDescriptionLimit),
+            text: limited($draft.description, to: SessionModel.listDescriptionLimit),
             prompt: Text("Description", bundle: #bundle), axis: .vertical
           ) {
             Text("Description", bundle: #bundle)
@@ -76,7 +79,7 @@ struct EditListSheet: View {
         ToolbarItem(placement: .confirmationAction) {
           Button {
             Task {
-              await session.editList(list.id, name: name, description: description)
+              await session.editList(list.id, from: opened, to: draft)
               dismiss()
             }
           } label: {
@@ -93,12 +96,12 @@ struct EditListSheet: View {
 
   /// Whether the name has a character that isn't a space. A list can't be without one.
   private var hasName: Bool {
-    !name.allSatisfy(\.isWhitespace)
+    !draft.name.allSatisfy(\.isWhitespace)
   }
 
   /// Whether the user typed something that isn't saved.
   private var hasChanges: Bool {
-    name != list.name || description != (list.description ?? "")
+    draft != opened
   }
 
   /// The text, cut to the server's limit as it is typed.

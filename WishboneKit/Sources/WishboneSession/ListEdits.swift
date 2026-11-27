@@ -16,26 +16,53 @@ extension ListPage {
   public var canDelete: Bool { list.canDelete && !list.isPrimary }
 }
 
+/// What the Edit list sheet holds: the name and the description, as the user types them. The sheet keeps the draft
+/// it opened with, so that Save sends only what the user changed (`SessionModel.editList(_:from:to:)`).
+public struct ListEditDraft: Sendable, Equatable {
+  public var name: String
+  public var description: String
+
+  public init(name: String, description: String) {
+    self.name = name
+    self.description = description
+  }
+
+  /// The list as the copy shows it.
+  public init(_ list: ListRow) {
+    self.init(name: list.name, description: list.description ?? "")
+  }
+
+  /// The name as it is saved: trimmed, and cut to the server's limit. Empty for a blank name, which can't be saved.
+  var savedName: String {
+    String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(SessionModel.listNameLimit))
+  }
+
+  /// The description as it is saved: none for a blank one, and cut to the server's limit.
+  var savedDescription: String? {
+    description.allSatisfy(\.isWhitespace) ? nil : String(description.prefix(SessionModel.listDescriptionLimit))
+  }
+}
+
 extension SessionModel {
   /// The longest name of a list, in characters, as the server takes it.
-  public static let listNameLimit = 100
+  nonisolated public static let listNameLimit = 100
 
   /// The longest description of a list, in characters, as the server takes it.
-  public static let listDescriptionLimit = 2000
+  nonisolated public static let listDescriptionLimit = 2000
 
-  /// Edit list: saves a new name and description, as an unsent change. Only the fields that change are sent. A
-  /// name is trimmed, and a blank one changes nothing. A blank description clears it.
+  /// Edit list: saves what the user changed in the sheet, as an unsent change. Only the fields where `draft`
+  /// differs from `opened`, the draft that the sheet opened with, are sent. So a field that changed elsewhere while
+  /// the sheet was open, which a sync brought, is never sent back. A name is trimmed, and a blank one changes
+  /// nothing. A blank description clears it.
   ///
-  /// It does nothing for a list that the copy doesn't hold, that the user can't edit, or that the edit doesn't
+  /// It does nothing for a list that the copy doesn't hold, that the user can't edit, or that the user didn't
   /// change. It returns when the change is in the journal and published, and doesn't wait for the sync.
-  public func editList(_ id: String, name: String, description: String) async {
+  public func editList(_ id: String, from opened: ListEditDraft, to draft: ListEditDraft) async {
     guard !hasEnded, let list = list(id: id), list.canEdit else { return }
-    let name = String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.listNameLimit))
-    let trimmed = description.trimmingCharacters(in: .whitespacesAndNewlines)
-    let description = trimmed.isEmpty ? nil : String(description.prefix(Self.listDescriptionLimit))
     var changes = ListChanges()
-    if !name.isEmpty, name != list.name { changes.name = name }
-    if description != list.description { changes.description = description ?? "" }
+    let name = draft.savedName
+    if !name.isEmpty, name != opened.savedName { changes.name = name }
+    if draft.savedDescription != opened.savedDescription { changes.description = draft.savedDescription ?? "" }
     guard !changes.isEmpty else { return }
     await record(.editList(listID: list.id, changes: changes), title: list.name)
   }
