@@ -126,15 +126,75 @@ nonisolated final class ReorderJourney: JourneyTestCase {
     // Sorted by price, the list takes no reorder: Edit is gone.
     let more = bar.buttons[Audit.words("More")].firstMatch
     XCTAssertTrue(more.waitForExistence(timeout: 10), "The list's page has no menu.")
-    more.tap()
-    let sort = app.buttons[Audit.words("Sort")].firstMatch
-    XCTAssertTrue(sort.waitForExistence(timeout: 10), "The menu has no Sort.")
-    sort.tap()
-    let price = app.buttons[Audit.words("Price")].firstMatch
-    XCTAssertTrue(price.waitForExistence(timeout: 10), "Sort has no Price.")
-    price.tap()
-    XCTAssertTrue(edit.waitForNonExistence(timeout: 10), "Edit shows on a list sorted by price.")
+    try await sortByPrice(in: app, more: more, edit: edit)
     app.terminate()
+  }
+
+  /// How many times the journey opens Sort in the menu to choose Price: once, and again at most twice. See the named
+  /// flake "the Sort menu closes before the journey taps Price on a CI runner" in `docs/development.md`.
+  static let sortTries = 3
+
+  /// Chooses Price in the menu's Sort, and waits until Edit is gone.
+  ///
+  /// On 2026-11-27, in CI run 46046440049 attempt 1 (journeys-3), the runner was slow: the check that Price existed
+  /// took 6 seconds, and the query of Price before the tap 12 seconds. The screen recording shows Sort open and still,
+  /// with Price in it, for about 20 seconds. Then Sort closed, and the menu showed Edit list and Sort again. XCTest's
+  /// tap had found Price as it went, and failed with `Activation point invalid`, then found no Price at all. Likely a
+  /// sync rebuilt the page and its menu: the app syncs every 60 seconds while it is in the foreground, and the first
+  /// timer sync started about when the journey tapped More. That is inferred, not proven.
+  ///
+  /// So the journey taps Price only once Price can be tapped, at the point where it was. When the menu closed Sort, or
+  /// closed, it opens them again, at most `sortTries` times in all, and tells the settings helper of each: the named
+  /// flake "the Sort menu closes before the journey taps Price on a CI runner" in `docs/development.md`. A Price that
+  /// doesn't sort by price stays red: Edit then shows after each try.
+  @MainActor
+  private func sortByPrice(in app: XCUIApplication, more: XCUIElement, edit: XCUIElement) async throws {
+    let sort = app.buttons[Audit.words("Sort")].firstMatch
+    let price = app.buttons[Audit.words("Price")].firstMatch
+    let origin = app.coordinate(withNormalizedOffset: .zero)
+    var wasTapped = false
+    var shown = ""
+    for tries in 1...Self.sortTries {
+      // Sort's own button shows while Sort is open too, and a tap on it closes Sort. So the journey taps it only when
+      // no Price shows.
+      if !price.exists {
+        if !sort.exists {
+          more.tap()
+          XCTAssertTrue(sort.waitForExistence(timeout: 10), "The menu has no Sort.")
+        }
+        sort.tap()
+      }
+      if !Self.waitUntilHittable(price, timeout: 30) {
+        shown = "Sort showed no Price that could be tapped"
+      } else if let frame = try? price.snapshot().frame {
+        // A tap at the point where Price was, read just now. XCTest's own tap queries Price again, and on a slow runner
+        // that query can outlast Sort: then the tap fails. A tap at a point always lands, and Edit tells what it did.
+        // The read is a snapshot, which throws when Price went, where `frame` would record a failure.
+        origin.withOffset(CGVector(dx: frame.midX, dy: frame.midY)).tap()
+        wasTapped = true
+        if edit.waitForNonExistence(timeout: 10) { return }
+        shown = "Price was tapped, and Edit still showed"
+      } else {
+        shown = "Price went before the journey read where it was"
+      }
+      guard tries < Self.sortTries else { break }
+      print("Price wasn't chosen in Sort: \(shown). The journey opens Sort again (\(tries) of \(Self.sortTries - 1)).")
+      await Audit.reportRetry("ReorderJourney, try \(tries): \(shown).", at: "sort-retries")
+    }
+    if wasTapped {
+      throw AuditError(
+        "The journey tapped Price in Sort, and Edit still shows: the list isn't sorted by price. On the last of "
+          + "\(Self.sortTries) tries, \(shown).")
+    }
+    throw AuditError("The journey couldn't tap Price in Sort \(Self.sortTries) times in a row. On the last, \(shown).")
+  }
+
+  /// Whether the element exists and can be tapped within the time.
+  @MainActor
+  private static func waitUntilHittable(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
+    let hittable = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "exists == true AND hittable == true"), object: element)
+    return XCTWaiter.wait(for: [hittable], timeout: timeout) == .completed
   }
 
   /// How many times the journey drags again when the page snapped back and the server has the old order: the named
