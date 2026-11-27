@@ -444,6 +444,24 @@ public struct APIClient: Sendable {
     _ = try await load(.declineInvitation(id, key: key))
   }
 
+  /// `POST /lists/{id}/invitations`: a recipient of the extra list invites a user they can see, with the admin's
+  /// access not counted. `key` is the unsent change's own `Idempotency-Key`. Gives back the invitation, by the
+  /// server's ID, with the version that the answer carried. A user who has an invitation already is a 409
+  /// `already_invited`, and one who is a recipient a 409 `already_recipient`. A deactivated user is a 403
+  /// `user_deactivated`, a user the caller can't see a 422 `reference_not_found`, and one they see only as the admin a
+  /// 403 `reference_not_allowed`.
+  public func createInvitation(toList listID: String, userID: String, key: String) async throws(APIError)
+    -> Versioned<Invitation>
+  {
+    try await versioned(.createInvitation(toList: listID, userID: userID, key: key))
+  }
+
+  /// `DELETE /invitations/{id}`, as a recipient of the list: withdraws the invitation, with no `If-Match`. It is the
+  /// route of a decline. `key` is the unsent change's own `Idempotency-Key`.
+  public func withdrawInvitation(_ id: String, key: String) async throws(APIError) {
+    _ = try await load(.declineInvitation(id, key: key))
+  }
+
   /// `DELETE /lists/{id}/recipients/{user_id}`: the user leaves the list, or their parent makes them leave.
   public func leave(list listID: String, userID: String) async throws(APIError) {
     _ = try await load(.leaveList(listID, userID: userID))

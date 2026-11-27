@@ -98,6 +98,15 @@ private struct OpenAction: ViewModifier {
 
 /// The words of an invitation's line. See Words in `docs/screens/lists.md` and `docs/screens/list.md`.
 public enum InvitationWords {
+  /// The line of one of a list's other invitations, on its page: the invited user's name, then who invited them,
+  /// "Grandpa · invited by Mom". With no inviter, who was deleted since, only the name.
+  public static func other(invited: String, inviter: String?) -> String {
+    guard let inviter else { return invited }
+    return String(
+      localized: "\(invited) · invited by \(inviter)", bundle: #bundle,
+      comment: "One of a list's pending invitations: the invited user's name, then the name of who invited them")
+  }
+
   /// The line: who invited whom, to which list. On the list's page, the list is "this list". With no inviter, who
   /// was deleted since, the line says only who is invited.
   public static func line(

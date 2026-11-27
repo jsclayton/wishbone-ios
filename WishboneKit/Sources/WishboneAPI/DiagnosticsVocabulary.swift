@@ -237,7 +237,8 @@ public enum Breadcrumb: Sendable, Equatable {
   public static let pathTemplates: Set<String> = [
     "/health", "/login-links/redeem", "/versions", "/users/me", "/users", "/users/{id}", "/groups", "/groups/{id}",
     "/groups/{id}/users", "/groups/{id}/groups", "/occasions", "/occasions/{id}", "/occasions/{id}/groups", "/lists",
-    "/lists/{id}", "/lists/{id}/recipients", "/lists/{id}/recipients/{user_id}", "/lists/{id}/items", "/items/{id}",
+    "/lists/{id}", "/lists/{id}/recipients", "/lists/{id}/recipients/{user_id}", "/lists/{id}/items",
+    "/lists/{id}/invitations", "/items/{id}",
     "/items/{id}/gifts", "/invitations", "/invitations/{id}", "/invitations/{id}/accept",
     "/gifts", "/gifts/{id}", "/gifts/{id}/acknowledge", "/gifts/{id}/restore", "/blocked-stores",
     "/blocked-stores/{id}",

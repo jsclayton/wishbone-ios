@@ -23,6 +23,8 @@ public enum LateRefusalWords {
       case (.cannotEditTargetList, .moveItem(let move)): ErrorWords.cannotAddTo(move.toListName)
       // A list for a child whom the admin deactivated meanwhile names the child.
       case (.userDeactivated, .createList(let list)): ErrorWords.deactivated(list.recipientName)
+      // An invite of a user whom the admin deactivated meanwhile names the user.
+      case (.userDeactivated, .createInvitation(let invitation)): ErrorWords.deactivated(invitation.userName)
       // An item filled in by hand keeps the link that the user gave as its store link.
       case (.storeBlocked, .createItem(let item)) where !item.storeLinks.isEmpty:
         ErrorWords.blocked(item.storeLinks[0].store)
@@ -67,6 +69,17 @@ public enum LateRefusalWords {
       return String(
         localized: "Declining the invitation to \(refusal.title): \(reason)", bundle: #bundle,
         comment: "A late refusal of Decline: the list's name, then why the change wasn't saved")
+    case .createInvitation(let invitation):
+      return String(
+        localized: "Inviting \(invitation.userName) to \(refusal.title): \(reason)", bundle: #bundle,
+        comment: "A late refusal of Invite: the invited user's name, the list's name, then why nobody was invited")
+    case .withdrawInvitation(let withdrawn):
+      return String(
+        localized: "Withdrawing the invitation of \(withdrawn.userName) to \(refusal.title): \(reason)",
+        bundle: #bundle,
+        comment:
+          "A late refusal of Withdraw: the invited user's name, the list's name, then why the invitation wasn't withdrawn"
+      )
     case .markBought(_, true):
       return String(
         localized: "Marking \(refusal.title) bought: \(reason)", bundle: #bundle,

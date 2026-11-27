@@ -7,7 +7,9 @@ import WishboneSession
 ///
 /// Claim state shows only as the server sends it, and the page never says who claimed. Leave, and Make {child}
 /// leave, wait for the server. Edit list and Delete list are unsent changes: each shows at once, in every window. A
-/// pending invitation to the list, for the user or their child, is at the top, with Accept and Decline.
+/// pending invitation to the list, for the user or their child, is at the top, with Accept and Decline. For a
+/// recipient, the list's other pending invitations come after the items, each with Withdraw, and Invite, from
+/// `can_invite`, opens the Invite sheet. Invite and Withdraw are unsent changes.
 /// Add item, from `can_edit`, opens the Add screen in a sheet, fixed to the list. Reorder, from `can_edit` and in
 /// List order only, is the toolbar's Edit button: the system's edit mode, with handles. Each move is an unsent change.
 /// The other actions that change the list or its items come later.
@@ -49,6 +51,9 @@ struct ListPageScreen: View {
   /// Whether the confirmation of Delete list shows.
   @State private var isConfirmingDelete = false
 
+  /// Whether the Invite sheet shows.
+  @State private var isInviting = false
+
   var body: some View {
     List {
       let invitations = session.pendingInvitations(toList: page.list.id)
@@ -83,6 +88,24 @@ struct ListPageScreen: View {
           AddItemRow(session: session, listID: page.list.id)
         }
       }
+      if !page.otherInvitations.isEmpty || page.offersInvite {
+        Section {
+          ForEach(page.otherInvitations) { invitation in
+            OtherInvitationRow(invitation: invitation, session: session)
+          }
+          if page.offersInvite {
+            Button {
+              isInviting = true
+            } label: {
+              Label {
+                Text("Invite", bundle: #bundle)
+              } icon: {
+                Image(systemName: "person.badge.plus")
+              }
+            }
+          }
+        }
+      }
       if page.leave != nil || !page.makeLeave.isEmpty || page.canDelete {
         Section {
           if let leave = page.leave {
@@ -103,6 +126,9 @@ struct ListPageScreen: View {
     .cantReachLine(of: session)
     .sheet(isPresented: $isEditing) {
       EditListSheet(list: page.list, session: session)
+    }
+    .sheet(isPresented: $isInviting) {
+      InviteSheet(listID: page.list.id, session: session)
     }
     .alert(
       DeleteListWords.title(list: page.list.name), isPresented: $isConfirmingDelete

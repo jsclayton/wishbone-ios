@@ -218,6 +218,45 @@ struct UnsentChangeWordsTests {
     #expect(LateRefusalWords.line(forbidden) == "Making Cousins: You can't do this any more.")
   }
 
+  @Test(
+    """
+    A late refusal of Invite names the user and the list, and of Withdraw the invitation, with the words for \
+    reference_not_found and not_found
+    """
+  )
+  func lateRefusalsOfInvitations() {
+    let invited = CreatedInvitation(
+      id: "stand-in-1", listID: "7", listName: "Our house", userID: "9", userName: "Grandpa", invitedByID: "3",
+      createdAt: Date(timeIntervalSince1970: 0))
+    let invite = LateRefusal(
+      id: 1, action: .createInvitation(invited), title: "Our house",
+      refusal: .init(
+        route: .createInvitation, status: 422, code: .referenceNotFound, detail: "The server's words"))
+    let deactivated = LateRefusal(
+      id: 2, action: .createInvitation(invited), title: "Our house",
+      refusal: .init(route: .createInvitation, status: 403, code: .userDeactivated, detail: "The server's words"))
+    let withdraw = LateRefusal(
+      id: 3, action: .withdrawInvitation(WithdrawnInvitation(invitationID: "12", userName: "Grandpa")),
+      title: "Our house",
+      refusal: .init(route: .declineInvitation, status: 404, code: .notFound, detail: "The server's words"))
+    #expect(
+      LateRefusalWords.line(invite) == "Inviting Grandpa to Our house: This is gone, or it isn't shared with you.")
+    #expect(
+      LateRefusalWords.line(deactivated)
+        == "Inviting Grandpa to Our house: Only the admin can reactivate Grandpa. Until then, you can't change anything for Grandpa."
+    )
+    #expect(
+      LateRefusalWords.line(withdraw)
+        == "Withdrawing the invitation of Grandpa to Our house: This is gone, or it isn't shared with you.")
+  }
+
+  @Test(
+    "One of a list's other invitations says who is invited and who invited them, and only who once the inviter is gone")
+  func otherInvitationLines() {
+    #expect(InvitationWords.other(invited: "Grandpa", inviter: "Mom") == "Grandpa · invited by Mom")
+    #expect(InvitationWords.other(invited: "Grandpa", inviter: nil) == "Grandpa")
+  }
+
   @Test("An invitation's line says who invited whom, to which list, and only who is invited once the inviter is gone")
   func invitationLines() {
     let line = { (invited: PendingInvitation.Invited, inviter: String?, onListPage: Bool) in

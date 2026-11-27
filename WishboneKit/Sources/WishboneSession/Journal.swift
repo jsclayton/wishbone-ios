@@ -125,6 +125,65 @@ public struct UnsentChange: Sendable, Equatable, Identifiable {
     /// stand-in meanwhile: an item added to it, an item moved to it, and an edit or a delete of it. See "A new list
     /// for a child" in `docs/spec.md`.
     case createList(CreatedList)
+
+    /// Invite: a recipient of an extra list invites a user, `POST /lists/{id}/invitations` with only `user_id`. The
+    /// invitation shows on the list's page at once, by its stand-in ID, and the server's ID takes its place when the
+    /// answer comes. A list that New list makes is named by its stand-in ID until its create's answer. The server's
+    /// `already_invited` and `already_recipient` are a success: the user is invited, or on the list, either way.
+    case createInvitation(CreatedInvitation)
+
+    /// Withdraw: a recipient of the list withdraws a pending invitation, `DELETE /invitations/{id}`, the route of a
+    /// decline. The invitation leaves the copy at once. One that an invite in the journal makes is named by its
+    /// stand-in ID, until the invite's answer gives the server's.
+    case withdrawInvitation(WithdrawnInvitation)
+  }
+}
+
+/// An invitation that a recipient of an extra list made with Invite, as an unsent change, with what its row shows
+/// until the server answers. See Invite in `docs/screens/list.md`.
+public struct CreatedInvitation: Sendable, Equatable {
+  /// The invitation's stand-in ID. See `StandIn`.
+  public let id: String
+
+  /// The list, by the server's ID, or by its stand-in ID while its create waits: the path that the invite sends.
+  public let listID: String
+  public let listName: String
+
+  /// The invited user: the `user_id` that the invite sends.
+  public let userID: String
+
+  /// The invited user's name when the user invited them: what a late refusal names.
+  public let userName: String
+
+  /// The recipient who invites them: the session's user.
+  public let invitedByID: String
+  public let createdAt: Date
+
+  public init(
+    id: String, listID: String, listName: String, userID: String, userName: String, invitedByID: String,
+    createdAt: Date
+  ) {
+    self.id = id
+    self.listID = listID
+    self.listName = listName
+    self.userID = userID
+    self.userName = userName
+    self.invitedByID = invitedByID
+    self.createdAt = createdAt
+  }
+}
+
+/// An invitation that a recipient of the list withdrew, as an unsent change. See Withdraw in `docs/screens/list.md`.
+public struct WithdrawnInvitation: Sendable, Equatable {
+  /// The invitation, by the server's ID, or by its stand-in ID while the invite that makes it waits.
+  public let invitationID: String
+
+  /// The invited user's name when the user withdrew the invitation: what a late refusal names.
+  public let userName: String
+
+  public init(invitationID: String, userName: String) {
+    self.invitationID = invitationID
+    self.userName = userName
   }
 }
 
@@ -424,6 +483,9 @@ extension UnsentChange {
     /// The answer of a create of a list: the list, by the server's ID.
     case createdList(Versioned<ListResource>)
 
+    /// The answer of an invite: the invitation, by the server's ID.
+    case invitation(Versioned<Invitation>)
+
     /// No answer to keep: an unclaim, a delete, or an answer that the app couldn't read. The next pull brings the
     /// row.
     case none
@@ -445,6 +507,7 @@ extension UnsentChange {
       case .image(let image): image.id
       case .item(let item): item.resource.id
       case .createdList(let list): list.resource.id
+      case .invitation(let invitation): invitation.resource.id
       case .gift, .list, .storeLink, .none: nil
       }
     }
@@ -543,6 +606,8 @@ struct UnsentChangeRow: Codable, Sendable, FetchableRecord, MutablePersistableRe
     case moveItem
     case reorderItem
     case createList
+    case createInvitation
+    case withdrawInvitation
   }
 
   mutating func didInsert(_ inserted: InsertionSuccess) {
@@ -782,6 +847,17 @@ extension LocalDatabase {
       case .deleteItem(let id, _): try Self.removeDeleted(id, in: database)
       case .editStoreLink: try storeLink.map { try Self.saveAnswered($0, in: database) }
       case .deleteStoreLink(_, let id): _ = try StoreLinkRow.deleteOne(database, key: id)
+      case .createInvitation(let invitation):
+        if case .invitation(let made) = answer {
+          try InvitationRow(made).save(database)
+        } else {
+          // `already_invited` or `already_recipient`, or an answer that the app couldn't read: there is no
+          // invitation of this invite's to withdraw, so a Withdraw that names its stand-in goes too. The next pull
+          // brings the invitation that the server has, if any.
+          try Self.removeChanges(toStandIn: invitation.id, in: database)
+        }
+      case .withdrawInvitation(let withdrawn):
+        _ = try InvitationRow.deleteOne(database, key: withdrawn.invitationID)
       default: break
       }
       if let serverID = answer.createdID {
@@ -811,6 +887,9 @@ extension LocalDatabase {
       if case .uploadImage(let id) = change.action { _ = try UnsentFileRow.deleteOne(database, key: id) }
       if case .createItem(let item) = change.action { try Self.removeChanges(toStandIn: item.id, in: database) }
       if case .createList(let list) = change.action { try Self.removeChanges(toList: list.id, in: database) }
+      if case .createInvitation(let invitation) = change.action {
+        try Self.removeChanges(toStandIn: invitation.id, in: database)
+      }
       var row = row
       try row.insert(database)
     }
@@ -840,8 +919,10 @@ extension LocalDatabase {
   /// - A move of an item to the list. The item stays where it was, so a reorder of it on the list goes too, until a
   ///   later move takes it to another list. That move stays, and so does a delete of the item, or an edit: each
   ///   is sent as it would be without the list.
+  /// - An invitation to the list, with a Withdraw of it.
   private static func removeChanges(toList listID: String, in database: Database) throws {
     var items = Set<String>()
+    var invitations = Set<String>()
     var movedIn = Set<String>()
     var removed: [Int64] = []
     var uploads: [String] = []
@@ -874,6 +955,11 @@ extension LocalDatabase {
         }
       case .reorderItem(let reorder):
         needsTheList = items.contains(reorder.itemID) || movedIn.contains(reorder.itemID)
+      case .createInvitation(let invitation):
+        needsTheList = invitation.listID == listID
+        if needsTheList { invitations.insert(invitation.id) }
+      case .withdrawInvitation(let withdrawn):
+        needsTheList = invitations.contains(withdrawn.invitationID)
       default:
         needsTheList = false
       }
@@ -1059,18 +1145,25 @@ extension LocalDatabase {
     }
   }
 
-  /// The invitations, without the ones that an unsent change accepts or declines.
+  /// The invitations, with the unsent changes to them applied in the journal's order: an invite adds its invitation
+  /// at the end, by its stand-in ID, and an accept, a decline or a withdraw takes one out.
   static func applying(_ changes: [UnsentChange], to invitations: [InvitationRow]) -> [InvitationRow] {
-    let answered = Set(
-      changes.compactMap { change -> String? in
-        switch change.action {
-        case .acceptInvitation(let invitation): invitation.invitationID
-        case .declineInvitation(let id): id
-        default: nil
-        }
-      })
-    guard !answered.isEmpty else { return invitations }
-    return invitations.filter { !answered.contains($0.id) }
+    var rows = invitations
+    for change in changes {
+      switch change.action {
+      case .createInvitation(let invitation):
+        rows.append(InvitationRow(standingInFor: invitation))
+      case .acceptInvitation(let invitation):
+        rows.removeAll { $0.id == invitation.invitationID }
+      case .declineInvitation(let id):
+        rows.removeAll { $0.id == id }
+      case .withdrawInvitation(let withdrawn):
+        rows.removeAll { $0.id == withdrawn.invitationID }
+      default:
+        continue
+      }
+    }
+    return rows
   }
 
   /// The items, with the unsent changes to them applied in the journal's order, and the server's shift rule with each
@@ -1199,7 +1292,8 @@ extension LocalDatabase {
       case .unclaim: rows.remove(at: index)
       case .acknowledge(_, let flag): rows[index] = gift.answering(flag, now: now)
       case .editList, .deleteList, .acceptInvitation, .declineInvitation, .uploadImage, .createItem, .editItem,
-        .deleteItem, .editStoreLink, .deleteStoreLink, .moveItem, .reorderItem, .createList:
+        .deleteItem, .editStoreLink, .deleteStoreLink, .moveItem, .reorderItem, .createList, .createInvitation,
+        .withdrawInvitation:
         continue
       case .setOccasion(_, let occasion):
         picked = true
@@ -1268,6 +1362,10 @@ extension UnsentChange.Action {
       reorder.itemID
     case .createList(let list):
       list.id
+    case .createInvitation(let invitation):
+      invitation.id
+    case .withdrawInvitation(let withdrawn):
+      withdrawn.invitationID
     }
   }
 
@@ -1276,7 +1374,8 @@ extension UnsentChange.Action {
   var isToAGift: Bool {
     switch self {
     case .editList, .deleteList, .acceptInvitation, .declineInvitation, .uploadImage, .createItem, .editItem,
-      .deleteItem, .editStoreLink, .deleteStoreLink, .moveItem, .reorderItem, .createList:
+      .deleteItem, .editStoreLink, .deleteStoreLink, .moveItem, .reorderItem, .createList, .createInvitation,
+      .withdrawInvitation:
       false
     default: true
     }
@@ -1301,7 +1400,8 @@ extension UnsentChange.Action {
     case .lowerQuantity(_, let quantity): GiftChanges(quantity: quantity)
     case .setOccasion(_, let occasion): GiftChanges(occasionID: occasion.id)
     case .unclaim, .acknowledge, .editList, .deleteList, .acceptInvitation, .declineInvitation, .uploadImage,
-      .createItem, .editItem, .deleteItem, .editStoreLink, .deleteStoreLink, .moveItem, .reorderItem, .createList:
+      .createItem, .editItem, .deleteItem, .editStoreLink, .deleteStoreLink, .moveItem, .reorderItem, .createList,
+      .createInvitation, .withdrawInvitation:
       GiftChanges()
     }
   }
@@ -1328,6 +1428,8 @@ extension UnsentChange.Action {
     case .moveItem: .moveItem
     case .reorderItem: .reorderItem
     case .createList: .createList
+    case .createInvitation: .createInvitation
+    case .withdrawInvitation: .withdrawInvitation
     }
   }
 
@@ -1339,7 +1441,8 @@ extension UnsentChange.Action {
   /// price, and when it was made, and a Remove keeps its item: the request's path names both. A move keeps the list
   /// that it sends, with that list's name and the list that the item left, which the lists show until the server
   /// answers. A reorder keeps the place that it sends, and nothing else. A create of a list keeps its body and what
-  /// its row shows.
+  /// its row shows. An invite keeps its list, the user that it sends, and what its row shows, and a withdraw keeps
+  /// the invited user's name, for a refusal.
   fileprivate func patch() throws -> String {
     let data =
       switch self {
@@ -1355,6 +1458,8 @@ extension UnsentChange.Action {
       case .moveItem(let move): try JSONEncoder().encode(MovePatch(move))
       case .reorderItem(let reorder): try JSONEncoder().encode(ReorderPatch(reorder))
       case .createList(let list): try JSONEncoder().encode(ListCreationPatch(list))
+      case .createInvitation(let invitation): try JSONEncoder().encode(InvitationCreationPatch(invitation))
+      case .withdrawInvitation(let withdrawn): try JSONEncoder().encode(WithdrawalPatch(withdrawn))
       default: try JSONEncoder().encode(giftChanges)
       }
     return String(decoding: data, as: UTF8.self)
@@ -1429,6 +1534,16 @@ extension UnsentChange.Action {
       guard let patch = try? JSONDecoder().decode(ListCreationPatch.self, from: Data(patch.utf8)) else { return nil }
       self = .createList(patch.list(targetID))
       return
+    case .createInvitation:
+      guard let patch = try? JSONDecoder().decode(InvitationCreationPatch.self, from: Data(patch.utf8)) else {
+        return nil
+      }
+      self = .createInvitation(patch.invitation(targetID))
+      return
+    case .withdrawInvitation:
+      guard let patch = try? JSONDecoder().decode(WithdrawalPatch.self, from: Data(patch.utf8)) else { return nil }
+      self = .withdrawInvitation(WithdrawnInvitation(invitationID: targetID, userName: patch.userName))
+      return
     case .markBought, .setFromLabel, .setNote, .lowerQuantity:
       break
     }
@@ -1448,7 +1563,7 @@ extension UnsentChange.Action {
       self = .lowerQuantity(giftID: targetID, quantity: quantity)
     case .unclaim, .acknowledge, .setOccasion, .editList, .deleteList, .acceptInvitation, .declineInvitation,
       .uploadImage, .createItem, .editItem, .deleteItem, .editStoreLink, .deleteStoreLink, .moveItem, .reorderItem,
-      .createList:
+      .createList, .createInvitation, .withdrawInvitation:
       return nil
     }
   }
@@ -1630,6 +1745,44 @@ private struct ListCreationPatch: Codable {
   }
 }
 
+/// An invite, as the journal keeps it: the list that its path names, the `user_id` that it sends, and what its row
+/// shows until the server answers. A list's stand-in ID in it takes the server's ID when the list's create is
+/// answered.
+private struct InvitationCreationPatch: Codable {
+  let listID: String
+  let listName: String
+  let userID: String
+  let userName: String
+  let invitedByID: String
+  // JSONEncoder's default date form, seconds since 2001 as a number. Don't change it: a later version of the app must
+  // read the journal rows that this one wrote.
+  let createdAt: Date
+
+  init(_ invitation: CreatedInvitation) {
+    listID = invitation.listID
+    listName = invitation.listName
+    userID = invitation.userID
+    userName = invitation.userName
+    invitedByID = invitation.invitedByID
+    createdAt = invitation.createdAt
+  }
+
+  func invitation(_ id: String) -> CreatedInvitation {
+    CreatedInvitation(
+      id: id, listID: listID, listName: listName, userID: userID, userName: userName, invitedByID: invitedByID,
+      createdAt: createdAt)
+  }
+}
+
+/// A withdraw, as the journal keeps it: the invited user's name, which a refusal names. It sends no body.
+private struct WithdrawalPatch: Codable {
+  let userName: String
+
+  init(_ withdrawn: WithdrawnInvitation) {
+    userName = withdrawn.userName
+  }
+}
+
 /// A create of an item, as the journal keeps it: the body that it sends, and what its row shows until the server
 /// answers.
 private struct CreationPatch: Codable {
@@ -1772,11 +1925,25 @@ extension ListRow {
 extension ListRow {
   /// What New list shows for its list until the server answers: its name and description, by its stand-in ID, with
   /// its one recipient and no items. It has no version: it is never saved. The user can edit it and delete it, as the
-  /// server lets the maker of an extra list. They can't leave it or invite to it until the server has it.
+  /// server lets the maker of an extra list. The user can invite to their own list, as its recipient, and the
+  /// invitations wait behind the create. A parent who makes a list for a child is not its recipient, so they can't.
+  /// Nobody can leave it until the server has it.
   fileprivate init(standingInFor list: CreatedList) {
     self.init(
       id: list.id, name: list.name, description: list.description, isPrimary: false, recipientIDs: [list.recipientID],
-      itemCount: 0, createdAt: list.createdAt, canEdit: true, canDelete: true, canInvite: false, canLeave: false,
+      itemCount: 0, createdAt: list.createdAt, canEdit: true, canDelete: true, canInvite: !list.isForAChild,
+      canLeave: false, version: "")
+  }
+}
+
+extension InvitationRow {
+  /// What Invite shows for its invitation until the server answers: the invited user and the list, by the
+  /// invitation's stand-in ID, invited by the session's user. The user can withdraw it, as a recipient of the list.
+  /// It has no version: it is never saved.
+  fileprivate init(standingInFor invitation: CreatedInvitation) {
+    self.init(
+      id: invitation.id, listID: invitation.listID, listName: invitation.listName, userID: invitation.userID,
+      invitedByID: invitation.invitedByID, createdAt: invitation.createdAt, canAccept: false, canDelete: true,
       version: "")
   }
 }
