@@ -13,6 +13,9 @@ import {
   dragFlake,
   dragRetryLines,
   loggedDragRetries,
+  loggedSortRetries,
+  sortFlake,
+  sortRetryLines,
   lostElementFlake,
   lostElementRetryLines,
   partlyScalingFlake,
@@ -1051,6 +1054,67 @@ test('the Reorder journey drags again at most once, and only when the server has
   assert.match(journey, /guard serverOrder == before else \{\n\s*throw AuditError\(/);
   assert.match(journey, /guard tries <= Self\.dragRetryLimit else \{\n\s*throw AuditError\(/);
   assert.match(journey, /Audit\.reportRetry\("ReorderJourney, try \\\(tries\): \\\(evidence\)", at: "drag-retries"\)/);
+});
+
+test('the settings helper remembers each time a journey opened Sort again, apart from the drags', async (t) => {
+  const { applier, ran } = fakeSimulator();
+  const helper = await startSettingsHelper((setting, options) => applier.apply(setting, options));
+  t.after(() => helper.close());
+  const post = (body, method = 'POST') => fetch(`${helper.address}/sort-retries`, { method, body });
+  assert.deepEqual(helper.sortRetries(), []);
+  const sighting = 'ReorderJourney, try 1: Sort showed no Price that could be tapped.';
+  assert.equal((await post(sighting)).status, 204);
+  assert.deepEqual(helper.sortRetries(), [sighting]);
+  // A retry with no words, or a request that isn't a POST, is not a retry.
+  const empty = await post('');
+  assert.equal(empty.status, 400);
+  assert.equal(await empty.text(), 'the journey, its try and what showed, as the body');
+  assert.equal((await post(undefined, 'GET')).status, 404);
+  assert.equal(helper.sortRetries().length, 1);
+  // It is not a drag's retry, changes no setting, and is not a screen.
+  assert.deepEqual(helper.dragRetries(), []);
+  assert.deepEqual(helper.auditRetries(), []);
+  assert.deepEqual(ran, []);
+  assert.deepEqual(helper.screens(), []);
+});
+
+test('the line after the journeys names each time Sort was opened again, with what showed, and the flake', () => {
+  assert.deepEqual(sortRetryLines([]), []);
+  assert.deepEqual(sortRetryLines(['ReorderJourney, try 1: Price was tapped, and Edit still showed.']), [
+    `  The journeys opened Sort again once, because Price wasn't chosen (the named flake "${sortFlake}"):`,
+    '    ReorderJourney, try 1: Price was tapped, and Edit still showed.',
+  ]);
+  assert.match(sortRetryLines(['a', 'b'])[0], /opened Sort again 2 times/);
+});
+
+test("a run with no helper names each time Sort was opened again from its log, as the helper's line does", () => {
+  const journey = readFileSync(new URL('../../JourneyTests/ReorderJourney.swift', import.meta.url), 'utf8');
+  // The journey's own words, as its log has them.
+  assert.match(journey, /print\("Price wasn't chosen in Sort: \\\(shown\)\. The journey opens Sort again \(\\\(tries\) of \\\(Self\.sortTries - 1\)\)\."\)/);
+  const log = [
+    '    t =    80.00s Synthesize event',
+    "Price wasn't chosen in Sort: Price went before the journey read where it was. The journey opens Sort again (1 of 2).",
+    "Price wasn't chosen in Sort: Price was tapped, and Edit still showed. The journey opens Sort again (2 of 2).",
+  ].join('\n');
+  assert.deepEqual(loggedSortRetries(log), [
+    'ReorderJourney, try 1: Price went before the journey read where it was.',
+    'ReorderJourney, try 2: Price was tapped, and Edit still showed.',
+  ]);
+  assert.deepEqual(loggedSortRetries(''), []);
+});
+
+test('the Reorder journey opens Sort at most 3 times, tells the helper of each time again, and a Price that never sorts stays red', () => {
+  const journey = readFileSync(new URL('../../JourneyTests/ReorderJourney.swift', import.meta.url), 'utf8');
+  assert.match(journey, /static let sortTries = 3\n/);
+  assert.match(journey, /for tries in 1\.\.\.Self\.sortTries \{/);
+  // The last try reports nothing and opens nothing: it fails.
+  assert.match(journey, /guard tries < Self\.sortTries else \{ break \}/);
+  assert.match(journey, /Audit\.reportRetry\("ReorderJourney, try \\\(tries\): \\\(shown\)\.", at: "sort-retries"\)/);
+  // Sort is tapped only when no Price shows: a tap on Sort's own button in the open Sort closes it.
+  assert.match(journey, /if !price\.exists \{\n\s*if !sort\.exists \{/);
+  // Only Edit's absence ends the loop well, and the error says whether Price was ever tapped.
+  assert.match(journey, /if edit\.waitForNonExistence\(timeout: 10\) \{ return \}/);
+  assert.match(journey, /if wasTapped \{\n\s*throw AuditError\(/);
 });
 
 test('a journey runs an audit again for text called partially unsupported a bounded number of times, on a still screen', () => {

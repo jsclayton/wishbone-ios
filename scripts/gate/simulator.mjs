@@ -566,16 +566,19 @@ export function settingsApplier(
  * Type check calls text that scales partially unsupported". `POST /drag-retries`, with the journey, its try and the
  * server's order as the body, records a drag that a journey made again because the page put the row back and the
  * server had the order from before the drag: the named flake "a drag to reorder doesn't reach the app on a CI
- * runner".
+ * runner". `POST /sort-retries`, with the journey, its try and what showed as the body, records each time a journey
+ * opened Sort again because Price wasn't chosen: the named flake "the Sort menu closes before the journey taps Price
+ * on a CI runner".
  *
  * Resolves with `{ address, close, screens, resends, auditRetries, screenshotRetries, lostElementRetries,
- * partlyScalingRetries, dragRetries }`, where `screens()` gives the names, in the
+ * partlyScalingRetries, dragRetries, sortRetries }`, where `screens()` gives the names, in the
  * order they came, `resends()` gives each change that a journey sent again: `{ setting, after, read }`, with the
  * settings' labels and what `readSettings` read before the change was sent again, and `auditRetries()` gives each
  * audit that ran again, by its screen and setting, in the order they came. `screenshotRetries()` gives each
  * screenshot that was asked for again, the same way, `lostElementRetries()` each audit that ran again for an
  * issue with no element, `partlyScalingRetries()` each audit that ran again for text called partially
- * unsupported, and `dragRetries()` each drag that a journey made again.
+ * unsupported, `dragRetries()` each drag that a journey made again, and `sortRetries()` each time a journey opened
+ * Sort again.
  */
 export function startSettingsHelper(applySetting, { readSettings = async () => 'not read' } = {}) {
   const resends = [];
@@ -584,12 +587,14 @@ export function startSettingsHelper(applySetting, { readSettings = async () => '
   const lostElementRetries = [];
   const partlyScalingRetries = [];
   const dragRetries = [];
+  const sortRetries = [];
   const retries = {
     '/audit-retries': [auditRetries, "the audit's screen and setting"],
     '/screenshot-retries': [screenshotRetries, "the screenshot's screen and setting"],
     '/lost-element-retries': [lostElementRetries, "the audit's screen and setting"],
     '/partly-scaling-retries': [partlyScalingRetries, "the audit's screen and setting"],
     '/drag-retries': [dragRetries, "the journey, its try and the server's order"],
+    '/sort-retries': [sortRetries, 'the journey, its try and what showed'],
   };
   const screens = new Set();
   const server = createServer((request, response) => {
@@ -669,6 +674,7 @@ export function startSettingsHelper(applySetting, { readSettings = async () => '
         lostElementRetries: () => [...lostElementRetries],
         partlyScalingRetries: () => [...partlyScalingRetries],
         dragRetries: () => [...dragRetries],
+        sortRetries: () => [...sortRetries],
       });
     });
   });
@@ -737,6 +743,32 @@ export function dragRetryLines(retries) {
 export function loggedDragRetries(log) {
   return [...log.matchAll(/^The dragged item isn't first on the page: the page snapped back, .* (The server's order: .*\.) The journey drags again \((\d+) of \d+\)\.$/gm)].map(
     (match) => `ReorderJourney, try ${match[2]}: ${match[1]}`,
+  );
+}
+
+/** The name of the flake that a journey meets by opening Sort again. See `startSettingsHelper`. */
+export const sortFlake = 'the Sort menu closes before the journey taps Price on a CI runner';
+
+/**
+ * The lines after a run of the journeys, one for each time a journey opened Sort again because Price wasn't chosen
+ * (`sortRetries()` of `startSettingsHelper`). Each is a sighting of the flake. None when Sort wasn't opened again.
+ */
+export function sortRetryLines(retries) {
+  if (retries.length === 0) return [];
+  const times = retries.length === 1 ? 'once' : `${retries.length} times`;
+  return [
+    `  The journeys opened Sort again ${times}, because Price wasn't chosen (the named flake "${sortFlake}"):`,
+    ...retries.map((retry) => `    ${retry}`),
+  ];
+}
+
+/**
+ * Each time a journey opened Sort again, from the log of a run with no settings helper: the line that the journey
+ * logs, with what showed. See `sortRetryLines`.
+ */
+export function loggedSortRetries(log) {
+  return [...log.matchAll(/^Price wasn't chosen in Sort: (.*)\. The journey opens Sort again \((\d+) of \d+\)\.$/gm)].map(
+    (match) => `ReorderJourney, try ${match[2]}: ${match[1]}.`,
   );
 }
 
@@ -1101,11 +1133,13 @@ export async function runSimulatorTier({ root, directory, build = true, shard, s
           for (const line of lostElementRetryLines(helper.lostElementRetries())) say(line);
           for (const line of partlyScalingRetryLines(helper.partlyScalingRetries())) say(line);
           for (const line of dragRetryLines(helper.dragRetries())) say(line);
+          for (const line of sortRetryLines(helper.sortRetries())) say(line);
         } else {
-          // A run with no helper has the drag's retry only in its log, which CI uploads only when the part fails.
-          // So the line names each one here too: each is a sighting.
+          // A run with no helper has the drag's and Sort's retries only in its log, which CI uploads only when the
+          // part fails. So the lines name each one here too: each is a sighting.
           const logged = existsSync(path.join(directory, log)) ? readFileSync(path.join(directory, log), 'utf8') : '';
           for (const line of dragRetryLines(loggedDragRetries(logged))) say(line);
+          for (const line of sortRetryLines(loggedSortRetries(logged))) say(line);
         }
         return { passed, reading };
       };
