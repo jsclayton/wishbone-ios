@@ -86,7 +86,7 @@ enum Audit {
   /// size. There, after the audit of the screen as it opens, the journey scrolls each row on the screen in turn, in
   /// the order given, and audits the screen again with the row on it. A row that is on the screen already was in
   /// the audit before. So the Dynamic Type check measures, at the largest size, each row that a larger text pushes
-  /// off. A run with no helper doesn't scroll.
+  /// off. See `auditScrolled`. A run with no helper doesn't scroll.
   static func run(
     on app: XCUIApplication, showing screen: String, in test: XCTestCase, rowsThatLeaveTheScreen: [String] = [],
     rowsToScrollTo: [String] = []
@@ -118,17 +118,15 @@ enum Audit {
       if setting.name == largestText.name {
         // The largest text size gets no rows, so it checks Dynamic Type on every row that shows. See above.
         shown = try await auditAtLargestText(app, screen, shown: shown, test: test)
+        var scrolledToARow = false
         for row in rowsToScrollTo {
           guard let top = try await scroll(app, to: row, in: screen) else { continue }
-          let scrolled = try await settledScreen(of: app, screen, in: setting, where: { _ in true })
-          // The words after the setting keep the screenshot out of the gate's count of the screen's four settings.
-          // The audit is of Dynamic Type and clipped text only. The screen as it opens had the other checks, and a
-          // scrolled screen has rows under the top bar, which the system fades: the contrast check reads those.
-          try await audit(
-            app, screen, in: "\(setting.label), scrolled to \(row)", screenshot: scrolled.screenshot, rows: [],
-            types: [.dynamicType, .textClipped], underTheBar: top, test: test)
-          shown = scrolled
+          try await auditScrolled(app, screen, to: row, underTheBar: top, test: test)
+          scrolledToARow = true
         }
+        // A scrolled audit can leave the list past its end (see `auditScrolled`), so the change back to the default
+        // compares with the screen as it is after the last audit, not with the screen that the audit read.
+        if scrolledToARow { shown = try await settledScreen(of: app, screen, in: setting, where: { _ in true }) }
       } else {
         try await audit(
           app, screen, in: setting.label, screenshot: shown.screenshot, rows: rowsThatLeaveTheScreen, test: test)
@@ -180,6 +178,39 @@ enum Audit {
       app, screen, in: largestText.label, screenshot: settled.screenshot, rows: [], types: .textClipped, test: test,
       attachedAs: "\(screen), in \(largestText.label), the clipped text check")
     return try await stillScreen(of: app, screen, in: largestText.label)
+  }
+
+  /// Audits a screen that the journey scrolled to the row, at the largest text size, for Dynamic Type and clipped
+  /// text only: the screen as it opens had the other checks, and a scrolled screen has rows under the top bar, which
+  /// the system fades, and which the contrast check reads. `contentTop` is the top of the content, which `scroll`
+  /// gives.
+  ///
+  /// The two checks run apart, each with the row on the screen. Each of them can move the list far, each time that
+  /// it runs: in a local gate run on 2026-11-27, the Dynamic Type check on its own, and the clipped text check on its
+  /// own, each left the list past its end on 8 of the 14 scrolled screens, with the row gone from the screen and
+  /// from the tree, and nothing under the top bar. Those were the screens scrolled far down: the gift's page, the
+  /// help sheet's last two rows, and Settings' last five rows. On the other six, neither check moved
+  /// the list. So, with the two checks in one audit, the second could read a screen with no row on it, and an issue
+  /// of the first could have no element. After the Dynamic Type check, the journey scrolls the row on the screen
+  /// again, and waits for a still screen, before the clipped text check.
+  ///
+  /// The screenshot of each audit has the row's words after the setting, so it is not one of the screen's four in
+  /// the gate's count. The clipped text check's has `, the clipped text check` after them.
+  private static func auditScrolled(
+    _ app: XCUIApplication, _ screen: String, to row: String, underTheBar contentTop: CGFloat, test: XCTestCase
+  ) async throws {
+    let setting = "\(largestText.label), scrolled to \(row)"
+    let scrolled = try await settledScreen(of: app, screen, in: largestText, where: { _ in true })
+    try await audit(
+      app, screen, in: setting, screenshot: scrolled.screenshot, rows: [], types: .dynamicType,
+      underTheBar: contentTop, test: test)
+    // The row's place is read again: the check can have moved it. `scroll` returns nil when the row is still on the
+    // screen whole, and the top of the content doesn't change.
+    _ = try await scroll(app, to: row, in: screen)
+    let again = try await settledScreen(of: app, screen, in: largestText, where: { _ in true })
+    try await audit(
+      app, screen, in: setting, screenshot: again.screenshot, rows: [], types: .textClipped,
+      underTheBar: contentTop, test: test, attachedAs: "\(screen), in \(setting), the clipped text check")
   }
 
   /// The checks that move a list at the largest text size, each time that they run. See `auditAtLargestText`.
