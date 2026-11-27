@@ -187,8 +187,6 @@ public struct NewItem: Encodable, Sendable, Equatable {
 
       /// The gift's image, as a new image.
       public static let image = Copies(rawValue: 1 << 2)
-
-      public static let all: Copies = [.title, .price, .image]
     }
   }
 
@@ -220,30 +218,27 @@ public struct NewItem: Encodable, Sendable, Equatable {
 
   public func encode(to encoder: any Encoder) throws {
     var container = encoder.container(keyedBy: CodingKeys.self)
+    // Add again leaves out what the server copies from the gift. Any other add copies nothing.
     let copies = fromGift?.copies ?? []
     if let fromGift { try container.encode(fromGift.giftID, forKey: .fromGiftID) }
     if !copies.contains(.title) { try container.encode(title, forKey: .title) }
     try container.encodeIfPresent(notes, forKey: .notes)
-    if fromGift != nil, !copies.contains(.price) {
-      // The price fields go as a group, so the server takes none of them from the gift. A cleared price is a null.
-      try container.encode(priceMinor, forKey: .priceMinor)
-      if priceMinor != nil {
-        try container.encodeIfPresent(topPriceMinor, forKey: .topPriceMinor)
-        try container.encodeIfPresent(currency, forKey: .currency)
+    if !copies.contains(.price) {
+      // Beside a gift, the price fields go as a group, and a cleared price is a null, so the server copies none of
+      // them.
+      if fromGift != nil {
+        try container.encode(priceMinor, forKey: .priceMinor)
+      } else {
+        try container.encodeIfPresent(priceMinor, forKey: .priceMinor)
       }
-    } else if fromGift == nil {
-      try container.encodeIfPresent(priceMinor, forKey: .priceMinor)
       try container.encodeIfPresent(topPriceMinor, forKey: .topPriceMinor)
       if priceMinor != nil { try container.encodeIfPresent(currency, forKey: .currency) }
     }
     if !storeLinks.isEmpty { try container.encode(storeLinks, forKey: .storeLinks) }
-    if fromGift != nil, !copies.contains(.image) {
-      // The images go even when there are none: an empty array means that the item has no image.
+    // Beside a gift, the images go even when there are none: an empty array means that the item has no image.
+    if !copies.contains(.image), fromGift != nil || !imageIDs.isEmpty {
       try container.encode(imageIDs, forKey: .imageIDs)
       if let primary = imageIDs.first { try container.encode(primary, forKey: .primaryImageID) }
-    } else if fromGift == nil, let primary = imageIDs.first {
-      try container.encode(imageIDs, forKey: .imageIDs)
-      try container.encode(primary, forKey: .primaryImageID)
     }
   }
 }

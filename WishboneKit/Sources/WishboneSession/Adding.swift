@@ -188,8 +188,8 @@ public struct ItemDraft: Sendable, Equatable {
     }
   }
 
-  /// The form that Add again opens, filled from the given gift, on the list that Add to starts on. Nil for the
-  /// list is the user's primary list. Its Add is an unsent change when the instance can't be reached, as an add
+  /// The form that Add again opens, filled from the given gift, on the list that Add to starts on. A nil list is the
+  /// user's primary list. Its Add is an unsent change when the instance can't be reached, as an add
   /// filled in by hand is: the server needs nothing from a store for it.
   public init(addingAgain gift: AddAgain, toList listID: String?) {
     self.gift = gift
