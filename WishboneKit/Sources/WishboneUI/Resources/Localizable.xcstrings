@@ -160,7 +160,7 @@
       "localizations" : {
         "en" : {
           "stringUnit" : {
-            "state" : "new",
+            "state" : "translated",
             "value" : "%1$@ · invited by %2$@"
           }
         }
@@ -774,7 +774,7 @@
       "localizations" : {
         "en" : {
           "stringUnit" : {
-            "state" : "new",
+            "state" : "translated",
             "value" : "Inviting %1$@ to %2$@: %3$@"
           }
         }
@@ -1499,7 +1499,7 @@
       "localizations" : {
         "en" : {
           "stringUnit" : {
-            "state" : "new",
+            "state" : "translated",
             "value" : "Withdrawing the invitation of %1$@ to %2$@: %3$@"
           }
         }
