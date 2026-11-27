@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 import Testing
 
 @testable import WishboneAPI
@@ -156,6 +157,71 @@ struct CreatedItemTests {
     }
     #expect(sent.imageIDs == [image])
     #expect(sent.newItem.imageIDs.isEmpty)
+  }
+
+  /// The body that a create sends, as JSON to compare.
+  private func body(of created: CreatedItem) throws -> NSDictionary {
+    try #require(try JSONSerialization.jsonObject(with: try JSONEncoder().encode(created.newItem)) as? NSDictionary)
+  }
+
+  private func json(_ text: String) throws -> NSDictionary {
+    try #require(try JSONSerialization.jsonObject(with: Data(text.utf8)) as? NSDictionary)
+  }
+
+  /// The patch of the journal's one row.
+  private func patch(in database: LocalDatabase) async throws -> String? {
+    try await database.change { database in try String.fetchOne(database, sql: "SELECT patch FROM unsentChange") }
+  }
+
+  @Test("A create row that an earlier version of the app wrote, with no gift, reads and sends as it did")
+  func earlierRow() async throws {
+    let database = try LocalDatabase.inMemory()
+    let created = created(StandIn.make(), on: "a", imageIDs: ["31"])
+    try await database.record(.createItem(created), title: "Kettle")
+    // A create filled in by hand writes none of Add again's keys, so its row is the one an earlier version wrote.
+    let written = try #require(try await patch(in: database))
+    #expect(!written.contains("fromGiftID"))
+    #expect(!written.contains("copies"))
+    #expect(!written.contains("giftImage"))
+
+    // The patch as an earlier version wrote it, before Add again.
+    let earlier = #"""
+      {"listID":"a","title":"Kettle","notes":"Blue","priceMinor":2500,"currency":"USD",
+      "storeLinks":[{"url":"https://example.com/kettle","store":"example.com"}],"imageIDs":["31"],
+      "addedByID":"me","hidesClaimState":true,"createdAt":-978307200}
+      """#
+    try await database.change { database in
+      try database.execute(sql: "UPDATE unsentChange SET patch = ?", arguments: [earlier])
+    }
+    let change = try #require(try await database.firstUnsentChange())
+    #expect(change.action == .createItem(created))
+    guard case .createItem(let read) = change.action else { return }
+    #expect(read.fromGift == nil)
+    #expect(read.giftImage == nil)
+    #expect(
+      try body(of: read)
+        == json(
+          #"""
+          {"title":"Kettle","notes":"Blue","price_minor":2500,"currency":"USD",
+          "store_links":[{"url":"https://example.com/kettle"}],"image_ids":["31"],"primary_image_id":"31"}
+          """#))
+  }
+
+  @Test("An Add again row keeps the gift, what it copies, and the gift's image, and sends only what changed")
+  func addAgainRow() async throws {
+    let database = try LocalDatabase.inMemory()
+    let image = try JSONDecoder().decode(
+      ImageSummary.self, from: Data(#"{"id":"31","url":"/api/v2/images/31","width":4,"height":3}"#.utf8))
+    let created = CreatedItem(
+      id: StandIn.make(), listID: "a", title: "Kettle", notes: nil, priceMinor: nil, topPriceMinor: nil,
+      currency: nil, storeLinks: [], imageIDs: [], addedByID: "me", hidesClaimState: true,
+      createdAt: Date(timeIntervalSince1970: 0), fromGift: NewItem.FromGift(giftID: "15", copies: [.title, .image]),
+      giftImage: image)
+    try await database.record(.createItem(created), title: "Kettle")
+    let change = try #require(try await database.firstUnsentChange())
+    #expect(change.action == .createItem(created))
+    guard case .createItem(let read) = change.action else { return }
+    #expect(try body(of: read) == json(#"{"from_gift_id":"15","price_minor":null}"#))
   }
 
   @Test("A create that can't be read stays in the journal, unsent, and shows nothing")

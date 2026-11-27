@@ -29,6 +29,9 @@ struct GiftsScreen: View {
   /// The words of the last I didn't get this that didn't happen, in an alert.
   @State private var restoreSaid: String?
 
+  /// The add form that Add again opened, in its sheet.
+  @State private var addingAgain: AddAgainForm?
+
   /// The width of the window, for the list's column of readable width.
   @State private var width: CGFloat = 0
   @ScaledMetric(relativeTo: .body) private var readableWidth: CGFloat = 640
@@ -108,9 +111,10 @@ struct GiftsScreen: View {
       ForEach(groups) { group in
         Section {
           ForEach(group.gifts) { row in
-            ReceivedRow(row: row, tileUserID: session.session.userID) {
-              confirmingRestore = RestoreAsk(gift: row.gift, restorer: .sessionUser)
-            }
+            ReceivedRow(
+              row: row, tileUserID: session.session.userID,
+              didntGetThis: { confirmingRestore = RestoreAsk(gift: row.gift, restorer: .sessionUser) },
+              addAgain: { addingAgain = session.addAgainForm(gift: row.id).map { AddAgainForm(draft: $0) } })
           }
         } header: {
           GiftsHeading(words: GiftWords.heading(group))
@@ -120,6 +124,7 @@ struct GiftsScreen: View {
     .didntGetThisConfirmation(of: $confirmingRestore) { ask in
       Task { await restore(ask) }
     }
+    .addAgainSheet($addingAgain, session: session)
     .alert(
       restoreSaid ?? "",
       isPresented: Binding {
@@ -400,7 +405,8 @@ private struct GivenLabel: View {
 }
 
 /// A Received row: the gift, which opens the gift's page. From `can_restore`, I didn't get this is in its context
-/// menu and its accessibility actions, after a confirmation. Its actions are Open and I didn't get this.
+/// menu and its accessibility actions, after a confirmation. From `can_add_again`, so is Add again, which opens the
+/// add form in a sheet, filled from the gift. Its actions are Open, I didn't get this, and Add again.
 private struct ReceivedRow: View {
   let row: GiftHistoryRow
 
@@ -410,9 +416,14 @@ private struct ReceivedRow: View {
   /// Asks to confirm I didn't get this.
   let didntGetThis: () -> Void
 
+  /// Opens the add form, filled from the gift.
+  let addAgain: () -> Void
+
   var body: some View {
     let canRestore = row.gift.canRestore
+    let canAddAgain = row.gift.canAddAgain
     let words = RestoreWords.action(of: .sessionUser)
+    let addAgainWords = String(localized: "Add again", bundle: #bundle)
     NavigationLink(value: Page.gift(id: row.id)) {
       ReceivedLabel(row: row, tileUserID: tileUserID)
     }
@@ -420,11 +431,19 @@ private struct ReceivedRow: View {
       if canRestore {
         Button(words, action: didntGetThis)
       }
+      if canAddAgain {
+        Button(addAgainWords, action: addAgain)
+      }
     }
     .contextMenu {
       if canRestore {
         Button(role: .destructive, action: didntGetThis) {
           Label(words, systemImage: "arrow.uturn.backward")
+        }
+      }
+      if canAddAgain {
+        Button(action: addAgain) {
+          Label(addAgainWords, systemImage: "plus")
         }
       }
     }

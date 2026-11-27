@@ -65,6 +65,9 @@ public struct GivenGiftPage: Equatable, Sendable {
   /// Whom I didn't get this speaks for, from the gift's `can_restore`. Nil when the page doesn't offer it, as for
   /// the gift's giver.
   public let restorer: Restorer?
+
+  /// Whether the page offers Add again, from the gift's `can_add_again`.
+  public let offersAddAgain: Bool
 }
 
 extension SessionModel {
@@ -120,7 +123,8 @@ extension SessionModel {
       isGiver: isGiver,
       linksItem: itemPage(id: gift.itemID) != nil,
       linksList: recipients != nil && listPage(id: gift.listID) != nil,
-      restorer: restorer(of: gift))
+      restorer: restorer(of: gift),
+      offersAddAgain: gift.canAddAgain)
   }
 
   private func recipients(of gift: GiftRow) -> [UserRow]? {

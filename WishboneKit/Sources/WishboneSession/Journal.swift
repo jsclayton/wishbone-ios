@@ -369,20 +369,28 @@ public struct CreatedItem: Sendable, Equatable {
   public let hidesClaimState: Bool
   public let createdAt: Date
 
+  /// Add again: the given gift that the item copies, and what it copies. Nil for an item filled in by hand.
+  public let fromGift: NewItem.FromGift?
+
+  /// Add again: the gift's image, which the item's row shows until the server answers with the item's own copy of
+  /// it. Nil when the item doesn't copy it.
+  public let giftImage: ImageSummary?
+
   init(
     id: String, listID: String, item: NewItem, storeLinks: [SearchStoreLink], addedByID: String,
-    hidesClaimState: Bool, createdAt: Date
+    hidesClaimState: Bool, createdAt: Date, giftImage: ImageSummary? = nil
   ) {
     self.init(
       id: id, listID: listID, title: item.title, notes: item.notes, priceMinor: item.priceMinor,
       topPriceMinor: item.topPriceMinor, currency: item.currency, storeLinks: storeLinks, imageIDs: item.imageIDs,
-      addedByID: addedByID, hidesClaimState: hidesClaimState, createdAt: createdAt)
+      addedByID: addedByID, hidesClaimState: hidesClaimState, createdAt: createdAt, fromGift: item.fromGift,
+      giftImage: item.fromGift?.copies.contains(.image) == true ? giftImage : nil)
   }
 
   public init(
     id: String, listID: String, title: String, notes: String?, priceMinor: Int?, topPriceMinor: Int?,
     currency: String?, storeLinks: [SearchStoreLink], imageIDs: [String], addedByID: String,
-    hidesClaimState: Bool, createdAt: Date
+    hidesClaimState: Bool, createdAt: Date, fromGift: NewItem.FromGift? = nil, giftImage: ImageSummary? = nil
   ) {
     self.id = id
     self.listID = listID
@@ -396,17 +404,20 @@ public struct CreatedItem: Sendable, Equatable {
     self.addedByID = addedByID
     self.hidesClaimState = hidesClaimState
     self.createdAt = createdAt
+    self.fromGift = fromGift
+    self.giftImage = giftImage
   }
 
   /// The body that the create sends, as the add form makes it. An image that is still a stand-in was never
-  /// uploaded, because the server refused its upload: the item goes without it.
+  /// uploaded, because the server refused its upload: the item goes without it. Add again sends the gift, and only
+  /// the fields that the user changed beside it.
   var newItem: NewItem {
     NewItem(
       title: title, notes: notes, priceMinor: priceMinor, topPriceMinor: topPriceMinor, currency: currency,
       storeLinks: storeLinks.map { link in
         NewStoreLink(url: link.url, priceMinor: link.priceMinor, currency: link.currency, imageURL: link.imageURL)
       },
-      imageIDs: imageIDs.filter { !StandIn.isStandIn($0) })
+      imageIDs: imageIDs.filter { !StandIn.isStandIn($0) }, fromGift: fromGift)
   }
 }
 
@@ -1808,6 +1819,15 @@ private struct CreationPatch: Codable {
   // read the journal rows that this one wrote.
   let createdAt: Date
 
+  /// Add again: the gift's ID, and what the server copies from it, as `NewItem.FromGift.Copies`' raw value. Absent
+  /// for an item filled in by hand, and in the rows that an earlier version wrote. Don't renumber the copies: a later
+  /// version of the app must read the journal rows that this one wrote.
+  let fromGiftID: String?
+  let copies: Int?
+
+  /// Add again: the gift's image, which the row shows until the server answers.
+  let giftImage: ImageSummary?
+
   init(_ item: CreatedItem) {
     listID = item.listID
     title = item.title
@@ -1824,6 +1844,9 @@ private struct CreationPatch: Codable {
     addedByID = item.addedByID
     hidesClaimState = item.hidesClaimState
     createdAt = item.createdAt
+    fromGiftID = item.fromGift?.giftID
+    copies = item.fromGift?.copies.rawValue
+    giftImage = item.giftImage
   }
 
   func item(_ id: String) -> CreatedItem {
@@ -1835,7 +1858,11 @@ private struct CreationPatch: Codable {
           url: link.url, store: link.store, priceMinor: link.priceMinor, currency: link.currency,
           imageURL: link.imageURL)
       },
-      imageIDs: imageIDs, addedByID: addedByID, hidesClaimState: hidesClaimState, createdAt: createdAt)
+      imageIDs: imageIDs, addedByID: addedByID, hidesClaimState: hidesClaimState, createdAt: createdAt,
+      fromGift: fromGiftID.map { id in
+        NewItem.FromGift(giftID: id, copies: NewItem.FromGift.Copies(rawValue: copies ?? 0))
+      },
+      giftImage: giftImage)
   }
 }
 
@@ -1950,7 +1977,8 @@ extension InvitationRow {
 
 extension ItemRow {
   /// What a create shows for its item until the server answers: what the user filled in, at the end of its list,
-  /// by its stand-in ID. One is wanted. It has no image yet, and no version: it is never saved.
+  /// by its stand-in ID. One is wanted. It has no image yet, apart from the gift's image that Add again copies, and
+  /// no version: it is never saved.
   ///
   /// A recipient gets no claim state, as the server hides it. Anyone else, such as a parent on a child's list, sees
   /// that nobody has claimed it. The user can edit it, as they could add it. Nothing can claim it or refresh its
@@ -1959,7 +1987,8 @@ extension ItemRow {
     self.init(
       id: item.id, listID: item.listID, title: item.title, notes: item.notes, priceMinor: item.priceMinor,
       topPriceMinor: item.topPriceMinor, currency: item.currency, quantity: 1, isUnlimited: false,
-      position: position, addedByID: item.addedByID, createdAt: item.createdAt, images: [], primaryImage: nil,
+      position: position, addedByID: item.addedByID, createdAt: item.createdAt,
+      images: item.giftImage.map { [$0] } ?? [], primaryImage: item.giftImage,
       stillWanted: item.hidesClaimState ? .hidden : .shown(1),
       myClaimedQuantity: item.hidesClaimState ? .hidden : .shown(0), canEdit: true, canDelete: true,
       canClaim: false, canRefreshPrices: false, version: "")

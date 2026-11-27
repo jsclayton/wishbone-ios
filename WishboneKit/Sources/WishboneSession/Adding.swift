@@ -158,10 +158,67 @@ public struct ItemDraft: Sendable, Equatable {
   /// after an Add that couldn't reach the instance, uploads the photo once.
   private var photoKey: String?
 
+  /// Add again: the given gift that the form is filled from. Nil for any other form.
+  public let gift: AddAgain?
+
+  /// Add again: whether the item gets a copy of the gift's image. The form starts with it, when the gift has one,
+  /// and the user can clear it.
+  public var keepsGiftImage: Bool
+
+  /// The given gift that an Add again form is filled from: its title, its image and its price, as they were at
+  /// reveal. The form sends only what the user changed of them, and the server copies the rest. See "Add again" in
+  /// the server's spec.
+  public struct AddAgain: Sendable, Equatable {
+    public let giftID: String
+    public let title: String
+    public let image: ImageSummary?
+    public let priceMinor: Int?
+    public let topPriceMinor: Int?
+    public let currency: String?
+
+    public init(
+      giftID: String, title: String, image: ImageSummary?, priceMinor: Int?, topPriceMinor: Int?, currency: String?
+    ) {
+      self.giftID = giftID
+      self.title = title
+      self.image = image
+      self.priceMinor = priceMinor
+      self.topPriceMinor = topPriceMinor
+      self.currency = currency
+    }
+  }
+
+  /// The form that Add again opens, filled from the given gift, on the list that Add to starts on. A nil list is the
+  /// user's primary list. Its Add is an unsent change when the instance can't be reached, as an add
+  /// filled in by hand is: the server needs nothing from a store for it.
+  public init(addingAgain gift: AddAgain, toList listID: String?) {
+    self.gift = gift
+    keepsGiftImage = gift.image != nil
+    images = []
+    title = String(gift.title.prefix(Self.titleLimit))
+    priceMinor = gift.priceMinor
+    topPriceMinor = gift.priceMinor == nil ? nil : gift.topPriceMinor
+    currency = gift.currency ?? "USD"
+    storeLink = nil
+    options = []
+    notes = ""
+    notesWereCut = false
+    self.listID = listID
+  }
+
+  /// Whether the form is Add again's.
+  public var isAddAgain: Bool { gift != nil }
+
+  /// Whether the form's Add is an unsent change when the instance can't be reached: it is filled in by hand, or it
+  /// adds a gift again.
+  var canWait: Bool { isFilledInByHand || isAddAgain }
+
   /// The form that a search of the input filled in. A link that nothing could be read from gets the note that
   /// names its store. Typed words are never read, so they get no note. A photo is the item's image, and with no
   /// guess its title is "Photo from {date}", with the note that asks for a title.
   public init(result: SearchResult, of input: SearchInput) {
+    gift = nil
+    keepsGiftImage = false
     let link = result.storeLinks.first
     images = result.imageURLs.enumerated().map { index, url in Image(url: url, isTicked: index == 0) }
     title = String((result.title ?? "").prefix(Self.titleLimit))
@@ -195,6 +252,8 @@ public struct ItemDraft: Sendable, Equatable {
   /// title, or a photo as the image, with no title. A search over the hourly limit gives it too, with its note: a
   /// photo then has the title "Photo from {date}".
   public init(given input: SearchInput, note: Note? = nil) {
+    gift = nil
+    keepsGiftImage = false
     self.note = note
     isFilledInByHand = true
     images = []
@@ -238,13 +297,25 @@ public struct ItemDraft: Sendable, Equatable {
     return String(whole.prefix(Self.notesLimit))
   }
 
-  /// The body of the add, with the uploaded images.
+  /// The body of the add, with the uploaded images. Add again names the gift, and the fields that the user didn't
+  /// change are the server's copy.
   func newItem(imageIDs: [String]) -> NewItem {
-    NewItem(
-      title: title.trimmingCharacters(in: .whitespacesAndNewlines),
+    let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+    let topPriceMinor = priceMinor == nil ? nil : topPriceMinor
+    let fromGift = gift.map { gift in
+      var copies: NewItem.FromGift.Copies = []
+      if title == gift.title { copies.insert(.title) }
+      if priceMinor == gift.priceMinor, topPriceMinor == (gift.priceMinor == nil ? nil : gift.topPriceMinor) {
+        copies.insert(.price)
+      }
+      if keepsGiftImage || gift.image == nil { copies.insert(.image) }
+      return NewItem.FromGift(giftID: gift.giftID, copies: copies)
+    }
+    return NewItem(
+      title: title,
       notes: savedNotes,
       priceMinor: priceMinor,
-      topPriceMinor: priceMinor == nil ? nil : topPriceMinor,
+      topPriceMinor: topPriceMinor,
       currency: priceMinor == nil ? nil : currency,
       storeLinks: storeLink.map { link in
         [
@@ -253,7 +324,7 @@ public struct ItemDraft: Sendable, Equatable {
             imageURL: link.imageURL)
         ]
       } ?? [],
-      imageIDs: imageIDs)
+      imageIDs: imageIDs, fromGift: fromGift)
   }
 
   /// The form fixed to the list, as a list's own Add item row opens it.
@@ -301,7 +372,8 @@ public struct ItemDraft: Sendable, Equatable {
       && first.priceMinor == second.priceMinor
       && first.topPriceMinor == second.topPriceMinor && first.currency == second.currency
       && first.storeLink == second.storeLink && first.options == second.options && first.notes == second.notes
-      && first.notesWereCut == second.notesWereCut && first.note == second.note
+      && first.notesWereCut == second.notesWereCut && first.note == second.note && first.gift == second.gift
+      && first.keepsGiftImage == second.keepsGiftImage
   }
 }
 
@@ -528,9 +600,11 @@ extension SessionModel {
   /// it, and the added item says so. An add refused with `store_blocked` drops the link from the draft, and sets
   /// its note, so a second Add adds the item without the link.
   ///
-  /// An add filled in by hand is an unsent change when the instance can't be reached: at once when the last sync
-  /// found it unreachable, or when the add itself can't reach it. The item is then on its list at once, and the
-  /// add ends as `added`, by the item's stand-in ID (see `addLater(_:to:)`).
+  /// An add filled in by hand, and Add again, are unsent changes when the instance can't be reached: at once when
+  /// the last sync found it unreachable, or when the add itself can't reach it. The item is then on its list at once,
+  /// and the add ends as `added`, by the item's stand-in ID (see `addLater(_:to:)`). Add again names the gift, and
+  /// sends only the fields that the user changed beside it: the server copies the rest, its image as a new image. The
+  /// gift doesn't change.
   ///
   /// An add to a list that New list made, whose create waits, sends the unsent changes first, so the instance has
   /// the list. While the create still waits, an add filled in by hand is an unsent change after it, and any other
@@ -543,13 +617,13 @@ extension SessionModel {
   /// Diagnostics: never here. The client reports each error as its side asks.
   public func add(_ draft: inout ItemDraft) async -> AddOutcome {
     guard !hasEnded, var list = draft.listID.map({ self.list(id: $0) }) ?? primaryList else { return .failed }
-    let addsLater = draft.isFilledInByHand && role.isApp
+    let addsLater = draft.canWait && role.isApp
     if addsLater, isInstanceUnreachable { return await addLater(&draft, to: list) }
     if StandIn.isStandIn(list.id), role.isApp {
       // A list that New list made, whose create waits: it is sent first. The instance has no list by the stand-in.
       switch await listSendingFirst(list) {
       case .sent(let sent): list = sent
-      case .waits where draft.isFilledInByHand: return await addLater(&draft, to: list)
+      case .waits where draft.canWait: return await addLater(&draft, to: list)
       case .waits: return .unreachable
       case .gone: return .failed
       }
@@ -611,8 +685,9 @@ extension SessionModel {
     }
   }
 
-  /// An add filled in by hand, as an unsent change: the photo's upload, when the photo isn't uploaded yet, then the
-  /// item's create, in one change of the journal. The item shows at the end of its list at once, by its stand-in ID,
+  /// An add filled in by hand, or Add again, as an unsent change: the photo's upload, when the photo isn't uploaded
+  /// yet, then the item's create, in one change of the journal. Add again's item shows the gift's image until the
+  /// server answers with its own copy. The item shows at the end of its list at once, by its stand-in ID,
   /// and a sync sends both, now or when the instance answers. See "Unsent changes" in `docs/spec.md`.
   ///
   /// Each keeps the key that the form made, and the create names the upload by the image's stand-in ID. So after an
@@ -635,7 +710,8 @@ extension SessionModel {
     let item = draft.newItem(imageIDs: imageIDs)
     let created = CreatedItem(
       id: StandIn.make(), listID: list.id, item: item, storeLinks: draft.storeLink.map { [$0] } ?? [],
-      addedByID: session.userID, hidesClaimState: list.recipientIDs.contains(session.userID), createdAt: .now)
+      addedByID: session.userID, hidesClaimState: list.recipientIDs.contains(session.userID), createdAt: .now,
+      giftImage: draft.gift?.image)
     changes.append(.init(.createItem(created), title: item.title, key: draft.key(for: item, onList: list.id)))
     do {
       try await database.record(changes)
