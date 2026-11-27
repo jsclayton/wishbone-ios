@@ -3,11 +3,14 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import { crashReport } from './crash-report-fixture.mjs';
 import { eventStream, xctestLog } from './event-stream-fixture.mjs';
 import { duration, readFloor, runGate, usedOfLimit } from './gate.mjs';
+import { partNames, shards } from './parts.mjs';
 import { checkEventStream } from './reading.mjs';
+import { gateSteps } from './steps.mjs';
 
 /** A gate in a folder of its own, with what it wrote. */
 function gateIn(t) {
@@ -381,22 +384,32 @@ test("a step's `after` doesn't run for a step that is skipped", async (t) => {
   assert.equal(ran, 0);
 });
 
-test("the Gate job's limit in CI is above the sum of the gate's step limits, with room for the job's setup", () => {
-  const main = readFileSync(new URL('./main.mjs', import.meta.url), 'utf8');
+// Each Gate job of the CI workflow runs one part of the gate (parts.mjs), and its limit must be above the sum of its
+// steps' limits, with room for the job's own steps, so that the gate stops a hung step and says which it was.
+test("each Gate job's limit in CI is above the sum of its part's step limits, with room for the job's setup", () => {
   const ci = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
-  const stepMinutes = [...main.matchAll(/^\s+limitMs: (\d+) \* minute,$/gm)].map((match) => Number(match[1]));
-  assert.equal(stepMinutes.length, 6, 'each of the six steps has a limit in whole minutes');
-  const gateJob = ci.slice(ci.indexOf('\n  gate:\n'), ci.indexOf('\n  ci-ok:\n'));
-  const jobMinutes = Number(/^\s+timeout-minutes: (\d+)$/m.exec(gateJob)[1]);
-  const sum = stepMinutes.reduce((total, minutes) => total + minutes, 0);
-  assert.ok(jobMinutes >= sum + 10, `the job's ${jobMinutes} minutes are not 10 above the steps' ${sum}`);
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+  const jobMinutes = (job) => {
+    const start = ci.indexOf(`\n  ${job}:\n`);
+    assert.ok(start >= 0, `the workflow has the job ${job}`);
+    return Number(/^\s+timeout-minutes: (\d+)$/m.exec(ci.slice(start))[1]);
+  };
+  const jobs = { build: 'gate-build', ...Object.fromEntries(shards.map((shard) => [shard.name, 'gate-journeys'])) };
+  assert.deepEqual(Object.keys(jobs), partNames, 'each part has its job');
+  for (const part of partNames) {
+    const sum = gateSteps({ root, runDirectory: '/run', part }).reduce((total, step) => total + step.limitMs / 60_000, 0);
+    const minutes = jobMinutes(jobs[part]);
+    assert.ok(minutes >= sum + 10, `${jobs[part]}'s ${minutes} minutes are not 10 above the ${sum} of the part ${part}`);
+  }
+  // Each limit is in whole minutes, so the sums above are whole too.
+  for (const step of gateSteps({ root, runDirectory: '/run' })) assert.equal(step.limitMs % 60_000, 0, `${step.name}'s limit is in whole minutes`);
 });
 
 // Swift Testing starts every test of a process at once, unless a width caps it. A test's time limit counts only
 // its own run, not the wait for a place in the width. So with no cap, each test's limit counts the whole
 // process's work, and a slow runner fails the tests that end last (issue #129).
 test('the package tests run at most 8 at a time, so that a time limit counts one test, not the whole run', () => {
-  const main = readFileSync(new URL('./main.mjs', import.meta.url), 'utf8');
+  const main = readFileSync(new URL('./steps.mjs', import.meta.url), 'utf8');
   const justfile = readFileSync(new URL('../../justfile', import.meta.url), 'utf8');
   assert.match(main, /name: 'package',\n\s+command: \['just', 'test',/, 'the package step runs `just test`');
   const recipe = /^test \*args: server\n((?:    .*\n)+)/m.exec(justfile);
@@ -407,7 +420,7 @@ test('the package tests run at most 8 at a time, so that a time limit counts one
 // The package step's time is the tests' own, so that its limit measures the tests, and the build has a limit of
 // its own (issue #199). `--skip-build` runs what the step before built, and fails when it built nothing.
 test('the package tests are built in the step before the package step, which runs them without a build', () => {
-  const main = readFileSync(new URL('./main.mjs', import.meta.url), 'utf8');
+  const main = readFileSync(new URL('./steps.mjs', import.meta.url), 'utf8');
   const justfile = readFileSync(new URL('../../justfile', import.meta.url), 'utf8');
   const names = [...main.matchAll(/^\s+name: '([a-z-]+)',$/gm)].map((match) => match[1]);
   assert.deepEqual(names, ['lint', 'server', 'package-build', 'package', 'build', 'simulator']);

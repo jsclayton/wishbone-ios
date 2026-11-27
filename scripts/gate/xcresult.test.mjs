@@ -86,7 +86,7 @@ const tiers = {
 
 test('the check gives a count for each tier: the tests of one bundle, not the sum of its settings', () => {
   const bundles = { hosted: testResults({ [item]: 'pass' }), default: testResults({ [signIn]: 'pass' }), dark: testResults({ [signIn]: 'pass' }) };
-  assert.deepEqual(check(tiers, bundles), { counts: { hosted: 1, ui: 1 } });
+  assert.deepEqual(check(tiers, bundles), { counts: { hosted: 1, ui: 1 }, names: { hosted: [item], ui: [signIn] } });
 });
 
 test('the check names the bundle that fails', () => {

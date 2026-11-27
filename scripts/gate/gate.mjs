@@ -6,7 +6,8 @@
 //   in its environment, so a script that takes the slot by itself (`just simulator`) knows that the gate holds it.
 // - `counts`: the test counts that the step gives, such as `['package']`. Each is held against the floor.
 // - `check({ exit, logPath })`: reads the step's own results after it ends, and its log. It returns
-//   `{ fail, counts }`: `fail` is the reason why the step fails, and `counts` are its test counts.
+//   `{ fail, counts, names }`: `fail` is the reason why the step fails, `counts` are its test counts, and `names`
+//   the names of its tests, by count, where it has them (`{ ui: [...] }`).
 // - `after()`: runs when the step has ended, however it ended: it passed, it failed, it was stopped at its limit,
 //   or the gate was interrupted. It stops what the step started and doesn't own, such as a simulator.
 // - `crashes(report)`: says whether a crash report (see crashes.mjs) is of one of the step's test processes. When
@@ -56,15 +57,21 @@ export function readFloor(file) {
 /**
  * Runs the steps. The first failure stops the gate.
  *
+ * `part` is the name of the part of the gate that the steps are, when CI runs the gate in parts (parts.mjs). A part
+ * holds no count against the floor, because its counts are only some of the gate's, and its last line is
+ * `PART PASS <part> · …` or `PART FAIL <part> · …`, so it is never read as the gate's line.
+ *
  * `crashReports` is `{ directory, waitMs }` for `keepCrashReports`: where the crash reports are, and how long to
  * wait for one after a failed step. Tests pass a folder of their own.
  *
  * Writes each step's output and the result to `out`. The last line is the result: `GATE PASS …` or `GATE FAIL …`.
- * Resolves with `{ ok, line }`.
+ * Resolves with `{ ok, line, at, totalMs, counts, names }`: `at` is when it started, as an ISO time, and `names`
+ * the test names that the steps' checks gave, by count.
  */
 export async function runGate({
   steps,
   floor,
+  part,
   root,
   runDirectory,
   slotDirectory,
@@ -79,6 +86,7 @@ export async function runGate({
   const started = Date.now();
   const say = (line) => out.write(`${line}\n`);
   const counts = Object.fromEntries(countNames.map((name) => [name, 0]));
+  const names = {};
   const times = {};
   const limits = {};
   const skipped = [];
@@ -99,6 +107,7 @@ export async function runGate({
         failure = `${place}: ${reason}`;
       };
       const belowFloor = () => {
+        if (part !== undefined) return '';
         const low = (step.counts ?? []).filter((name) => counts[name] < floor[name]);
         return low.map((name) => `${name}=${counts[name]} is below the floor of ${floor[name]}`).join(', ');
       };
@@ -144,6 +153,7 @@ export async function runGate({
       else {
         const checked = (await step.check?.({ exit: result.exit, logPath })) ?? {};
         Object.assign(counts, checked.counts);
+        Object.assign(names, checked.names);
         if (checked.fail !== undefined) fail(checked.fail);
         else if (result.exit !== 0) fail(`exit ${result.exit ?? 'on a signal'} (log: ${logName})`);
         else if (belowFloor() !== '') fail(belowFloor());
@@ -176,15 +186,16 @@ export async function runGate({
     appendFileSync(timesFile, `${JSON.stringify(record)}\n`);
   }
 
-  if (ok) {
+  if (ok && part === undefined) {
     for (const name of countNames.filter((name) => counts[name] > floor[name])) {
       say(`note: ${name}=${counts[name]} is above the floor of ${floor[name]}. Raise the floor in ${floorFile}.`);
     }
     if (totalMs > budgetMs) say(`warning: the gate took ${duration(totalMs)}, over its budget of ${duration(budgetMs)}`);
   }
-  const line = ok
-    ? `GATE PASS ${countsText} · ${duration(totalMs)}${skipped.length > 0 ? ` · skipped: ${skipped.join(', ')}` : ''}`
-    : `GATE FAIL ${failure}`;
+  const result = ok
+    ? `${countsText} · ${duration(totalMs)}${skipped.length > 0 ? ` · skipped: ${skipped.join(', ')}` : ''}`
+    : failure;
+  const line = part === undefined ? `GATE ${ok ? 'PASS' : 'FAIL'} ${result}` : `PART ${ok ? 'PASS' : 'FAIL'} ${part} · ${result}`;
   say(line);
-  return { ok, line };
+  return { ok, line, at: new Date(started).toISOString(), totalMs, counts, names };
 }

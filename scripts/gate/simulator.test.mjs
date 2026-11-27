@@ -906,21 +906,24 @@ test('the line after the journeys names each change that was sent again, and the
   assert.match(resendLines([{}, {}])[0], /sent 2 changes of setting again/);
 });
 
-test("CI uploads the gate's files after a pass too, when a first try was kept", (t) => {
+test("CI uploads the gate's files after a pass too, when a first try was kept, from each Gate job that runs steps", (t) => {
   const ci = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
-  const gateJob = ci.slice(ci.indexOf('\n  gate:\n'), ci.indexOf('\n  ci-ok:\n'));
-  const upload = /^\s+- if: (.+)\n\s+uses: actions\/upload-artifact@/m.exec(gateJob);
-  assert.ok(upload, 'the Gate job has an upload step with a condition');
-  const condition = upload[1];
-  assert.match(condition, /^failure\(\) \|\| hashFiles\(/, 'the upload runs on a failure, or when a first try was kept');
-
   // The patterns match the names that keepFirstTry gives.
   const directory = mkdtempSync(path.join(tmpdir(), 'wishbone-gate-test-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const [bundle, log] = keepFirstTry(directory, path.join(directory, 'journeys-settings.xcresult'), 'journeys-settings.log')
     .map((kept) => path.basename(kept).replace(/^journeys-settings/, ''));
-  assert.ok(condition.includes(`'build/gate/**/*${log}'`), `${condition} has no pattern for *${log}`);
-  assert.ok(condition.includes(`'build/gate/**/*${bundle}/**'`), `${condition} has no pattern for *${bundle}`);
+  for (const job of ['gate-build', 'gate-journeys']) {
+    const start = ci.indexOf(`\n  ${job}:\n`);
+    assert.ok(start >= 0, `the workflow has the job ${job}`);
+    const body = ci.slice(start + 1, ci.indexOf('\n  gate-', start + 1) === -1 ? undefined : ci.indexOf('\n  gate-', start + 1));
+    const upload = /^\s+- if: (failure\(\).+)\n\s+uses: actions\/upload-artifact@/m.exec(body);
+    assert.ok(upload, `${job} has an upload step on a failure`);
+    const condition = upload[1];
+    assert.match(condition, /^failure\(\) \|\| hashFiles\(/, 'the upload runs on a failure, or when a first try was kept');
+    assert.ok(condition.includes(`'build/gate/**/*${log}'`), `${condition} has no pattern for *${log}`);
+    assert.ok(condition.includes(`'build/gate/**/*${bundle}/**'`), `${condition} has no pattern for *${bundle}`);
+  }
 });
 
 /** The error that `simctl ui` gave on CI when the simulator had shut down by itself (run 45151826388). */

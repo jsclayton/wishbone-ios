@@ -4,9 +4,10 @@ name: CI
 # - On a pull request and on a push to main, CI runs only fast checks: Changes
 #   and Lint. The full gate runs on the contributor's Mac before the pull
 #   request is ready, and its last line is in the PR.
-# - The Gate job runs the full `just gate` only on a manual run
-#   (workflow_dispatch): before each release, from `just cloud-build`, or by
-#   hand from the Actions tab. Its input `sha` names the commit to check, and
+# - The Gate jobs run the full gate only on a manual run (workflow_dispatch):
+#   before each release, from `just cloud-build`, or by hand from the Actions
+#   tab. They run the gate's steps in parts, side by side, and the Gate result
+#   job adds them up. Its input `sha` names the commit to check, and
 #   the run's name is "Gate on <sha>", so a run can be matched to a commit.
 #
 # Cost notes (macOS runners cost more than Linux runners, so CI avoids needless
@@ -21,7 +22,8 @@ name: CI
 # - The ruleset requires "PR Title" and "CI OK", and the "gate" and "review"
 #   commit statuses, which people set (docs/workflow.md). CI OK fails if a job it
 #   needs failed or was cancelled. A skipped job counts as passed. On a manual
-#   run, the Gate job is the only one that runs, so CI OK is the gate's result.
+#   run, only the Gate jobs run, and CI OK needs the Gate result job to pass,
+#   so CI OK is the gate's result.
 # - Every job runs on a GitHub-hosted runner. Don't use a self-hosted runner:
 #   it would run code from fork PRs.
 # - CI builds unsigned and uses no secrets, so a fork's PR runs every pull
@@ -138,16 +140,31 @@ jobs:
 
   # The full gate. It runs only on a manual run (workflow_dispatch), on the
   # commit in the input `sha`, or on the head of the branch that it runs on.
-  gate:
-    name: Gate
+  # It runs in parts side by side (scripts/gate/parts.mjs), each part the
+  # gate's own steps for some of its checks, with their limits and named flakes:
+  # - Gate: build lints, builds the test server, and builds the app and its
+  #   test bundles once, for the shards.
+  # - Gate: journeys-1 to journeys-4 each run a shard of the journeys, on a
+  #   runner and a simulator of their own, from the build job's build. One
+  #   shard runs the hosted tests too, and one builds the package and its tests
+  #   and runs them, while its simulator boots.
+  # - Gate result adds the parts' counts up, checks that each journey ran once,
+  #   holds the counts against the floor, and gives the gate's line.
+  # GitHub runs at most 5 macOS jobs at once on this plan. A run has 5: the
+  # build job alone, then the four shards at once, so a run never waits for its
+  # own jobs. It waits only for macOS jobs of other runs, such as a PR's Lint.
+  #
+  # Each job's timeout-minutes is above the sum of the limits of its part's
+  # steps (scripts/gate/steps.mjs), with room for the job's own steps before the
+  # gate, so that a hung step is stopped by the gate, which says which step it
+  # was. A gate test holds it.
+  gate-build:
+    name: "Gate: build"
     env:
       MISE_ENABLE_TOOLS: node,just,go,actionlint,shellcheck
     if: github.event_name == 'workflow_dispatch'
     runs-on: xcode-27
-    # Above the sum of the limits of the gate's steps (scripts/gate/main.mjs),
-    # with room for the job's own steps before the gate, so that a hung step is
-    # stopped by the gate, which says which step it was. A gate test holds it.
-    timeout-minutes: 120
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -194,26 +211,148 @@ jobs:
           path: ~/Library/Caches/org.swift.swiftpm
           key: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Package.resolved') }}
           restore-keys: swiftpm-${{ runner.os }}-${{ runner.arch }}-
-      - name: Gate
-        run: just gate
+      - name: Gate, the build part
+        run: node scripts/gate/main.mjs --part=build
+      # The build and the test server, for the journeys' jobs. A tar keeps the
+      # files' modes and links, which an artifact's zip loses: the app's
+      # binaries must stay executable.
+      - name: Pack the build
+        run: tar -cf build/gate-build.tar build/DerivedData/Build/Products build/server
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gate-build
+          path: build/gate-build.tar
+          compression-level: 1
+          retention-days: 1
+      # The part's record, for the Gate result job, which adds the parts up.
+      - if: always() && hashFiles('build/gate/part-*.json') != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gate-part-build
+          path: build/gate/part-*.json
+          retention-days: 7
       # The gate's logs and results, and the build's log. The gate keeps them
-      # inside the checkout. They are uploaded when the gate fails, and when
-      # the gate ran a run of the journeys again for a named flake and passed:
+      # inside the checkout. They are uploaded when the part fails, and when
+      # the part ran a run of the journeys again for a named flake and passed:
       # then the first try's result bundle and log, with `-first` at the end of
       # their names (keepFirstTry in scripts/gate/simulator.mjs), are kept too.
       - if: failure() || hashFiles('build/gate/**/*-first.log', 'build/gate/**/*-first.xcresult/**') != ''
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: gate-results
+          name: gate-results-build
           path: |
             build/gate/
             build/xcodebuild.log
           if-no-files-found: ignore
           retention-days: 7
 
+  gate-journeys:
+    name: "Gate: ${{ matrix.shard }}"
+    needs: gate-build
+    env:
+      MISE_ENABLE_TOOLS: node,just
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: xcode-27
+    timeout-minutes: 80
+    strategy:
+      # Every shard runs to its end, so one run shows each shard's result, and
+      # "Re-run failed jobs" runs only the shard that failed.
+      fail-fast: false
+      matrix:
+        # The shards in scripts/gate/parts.mjs. A gate test holds the two lists
+        # to one.
+        shard: [journeys-1, journeys-2, journeys-3, journeys-4]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.sha || github.sha }}
+      - name: Select Xcode
+        run: |
+          sudo xcode-select --switch "/Applications/Xcode_${XCODE_VERSION}.app"
+          xcodebuild -version
+      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+        with:
+          install_args: node just
+          minimum_release_age: 3d
+      # The simulator's first boot on a new runner takes minutes. It goes on
+      # while the job gets the build and unpacks it. It starts after the tools
+      # are installed: in run 45885449080, two shards that booted first failed
+      # mise's install, with "sigstore refused the bundle: error refreshing TUF
+      # metadata", while the jobs with no boot beside it passed it.
+      # The shard that builds the package first boots nothing here: the build
+      # beside a first boot was too slow (scripts/gate/boot.mjs).
+      - name: Start the simulator's boot
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: node scripts/gate/boot.mjs "$SHARD"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: gate-build
+          path: build
+      - name: Unpack the build
+        run: tar -xf build/gate-build.tar && rm build/gate-build.tar
+      # The shard that builds the package resolves its packages from this
+      # cache, as the build job does.
+      - name: Cache SwiftPM's cache
+        if: hashFiles('**/Package.resolved') != ''
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/Library/Caches/org.swift.swiftpm
+          key: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Package.resolved') }}
+          restore-keys: swiftpm-${{ runner.os }}-${{ runner.arch }}-
+      - name: Gate, the shard ${{ matrix.shard }}
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: node scripts/gate/main.mjs "--part=$SHARD"
+      # The part's record, for the Gate result job, which adds the parts up.
+      - if: always() && hashFiles('build/gate/part-*.json') != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gate-part-${{ matrix.shard }}
+          path: build/gate/part-*.json
+          retention-days: 7
+      # The gate's logs and results, and the build's log. The gate keeps them
+      # inside the checkout. They are uploaded when the part fails, and when
+      # the part ran a run of the journeys again for a named flake and passed:
+      # then the first try's result bundle and log, with `-first` at the end of
+      # their names (keepFirstTry in scripts/gate/simulator.mjs), are kept too.
+      - if: failure() || hashFiles('build/gate/**/*-first.log', 'build/gate/**/*-first.xcresult/**') != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gate-results-${{ matrix.shard }}
+          path: |
+            build/gate/
+            build/xcodebuild.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+  gate-result:
+    name: Gate result
+    needs: [gate-build, gate-journeys]
+    # It runs when a part failed too, so that its line says which.
+    if: always() && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    env:
+      MISE_ENABLE_TOOLS: node
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.sha || github.sha }}
+      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+        with:
+          install_args: node
+          minimum_release_age: 3d
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: gate-part-*
+          path: build/gate/parts
+      - name: Add the parts up
+        run: node scripts/gate/parts.mjs build/gate/parts
+
   ci-ok:
     name: CI OK
-    needs: [changes, lint, gate]
+    needs: [changes, lint, gate-build, gate-journeys, gate-result]
     if: always() && (github.event_name != 'pull_request' || !github.event.pull_request.draft)
     runs-on: ubuntu-26.04
     timeout-minutes: 5
@@ -221,8 +360,16 @@ jobs:
       - name: Check job results
         env:
           RESULTS: ${{ join(needs.*.result, ' ') }}
+          EVENT: ${{ github.event_name }}
+          GATE_RESULT: ${{ needs.gate-result.result }}
         run: |
           echo "Results: $RESULTS"
+          # On a manual run, the gate is the run's point, so its result must
+          # be there: a Gate result that was skipped is a failure.
+          if [ "$EVENT" = workflow_dispatch ] && [ "$GATE_RESULT" != success ]; then
+            echo "::error::The Gate result ended with '$GATE_RESULT'."
+            exit 1
+          fi
           for r in $RESULTS; do
             case "$r" in
               success|skipped) ;;

@@ -12,6 +12,9 @@
 // Every `xcodebuild` writes its log, and its result bundle, to the results folder. The script prints one line for
 // each run. A run of the journeys that fails with the named flake "the app's launch gets no process ID on a busy
 // machine" runs again, once (`runAgainOnLaunchFlake`).
+//
+// `--shard=<name>` runs one shard of the journeys (parts.mjs), as a job of the dispatched Gate run in CI does: only
+// the shard's journeys, in both runs, and the hosted tests only when the shard has them.
 
 import { execFile, execFileSync, spawn } from 'node:child_process';
 import { closeSync, createWriteStream, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -22,6 +25,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { duration } from './gate.mjs';
+import { shardNamed } from './parts.mjs';
 import { judge } from './reading.mjs';
 import { inSlot, slotDirectory } from './slot.mjs';
 import { checkAuditScreenshots, readAttachmentNames, readResultBundle } from './xcresult.mjs';
@@ -76,24 +80,47 @@ export const journeyRuns = [
 
 /**
  * Reads the script's arguments: the results folder, then the flags, in any order. `--no-build` runs the tests that
- * `just build` built. A word that starts with `--` is a flag, never the folder.
+ * `just build` built, and `--shard=<name>` runs one shard of the journeys (parts.mjs). A word that starts with `--`
+ * is a flag, never the folder. It gives `shard` only with `--shard`.
  */
 export function parseArguments(args) {
-  const known = ['--no-build'];
+  const known = ['--no-build', '--shard=<name>'];
   const flags = args.filter((arg) => arg.startsWith('--'));
   const words = args.filter((arg) => !arg.startsWith('--'));
-  const unknown = flags.filter((flag) => !known.includes(flag));
-  if (unknown.length > 0) throw new Error(`unknown flag ${unknown.join(', ')}. The flag is ${known.join(', ')}`);
+  const unknown = flags.filter((flag) => flag !== '--no-build' && !flag.startsWith('--shard='));
+  if (unknown.length > 0) throw new Error(`unknown flag ${unknown.join(', ')}. The flags are ${known.join(', ')}`);
   if (words.length > 1) throw new Error(`one results folder, not ${words.length}: ${words.join(', ')}`);
-  return { results: words[0] ?? path.join('build', 'simulator'), build: !flags.includes('--no-build') };
+  const shards = flags.filter((flag) => flag.startsWith('--shard='));
+  if (shards.length > 1) throw new Error(`one shard, not ${shards.length}`);
+  const parsed = { results: words[0] ?? path.join('build', 'simulator'), build: !flags.includes('--no-build') };
+  return shards.length === 0 ? parsed : { ...parsed, shard: shardNamed(shards[0].slice('--shard='.length)) };
 }
 
-/** The result bundles of a run, for `checkResultBundles`: the hosted tests, and each run of the journeys. */
-export function resultBundles(directory) {
+/**
+ * The result bundles of a run, for `checkResultBundles`: the hosted tests, and each run of the journeys. A shard
+ * (parts.mjs) that doesn't run the hosted tests has no bundle of them.
+ */
+export function resultBundles(directory, shard) {
+  const hosted = shard === undefined || shard.hosted === true;
   return {
-    hosted: [{ path: path.join(directory, 'hosted.xcresult'), label: 'the hosted tests' }],
+    hosted: hosted ? [{ path: path.join(directory, 'hosted.xcresult'), label: 'the hosted tests' }] : [],
     ui: journeyRuns.map((run) => ({ path: path.join(directory, `journeys-${run.name}.xcresult`), label: `the journeys in ${run.label}` })),
   };
+}
+
+/** The `-only-testing:` arguments of a run of the journeys: every journey, or a shard's (parts.mjs). */
+export function journeyTargets(shard) {
+  return shard === undefined ? ['JourneyTests'] : shard.tests.map((test) => `JourneyTests/${test}`);
+}
+
+/**
+ * The lines after a run of the journeys, with each journey's own time, the slowest first, so that the shards can be
+ * cut again from what each journey takes. `times` maps a test's name to its time (`times` of a reading).
+ */
+export function journeyTimeLines(times) {
+  return Object.entries(times ?? {})
+    .sort(([one, oneMs], [other, otherMs]) => otherMs - oneMs || one.localeCompare(other))
+    .map(([name, ms]) => `    ${name}: ${duration(ms)}`);
 }
 
 /** The number of Swift files that the build in the log compiled. */
@@ -774,7 +801,7 @@ function xcodebuild(args, { root, log, env = {} }) {
  * its step 5 has just built them. On CI, a build next to a newly booted simulator took minutes, even with nothing
  * to compile.
  */
-export async function runSimulatorTier({ root, directory, build = true, say = console.log }) {
+export async function runSimulatorTier({ root, directory, build = true, shard, say = console.log }) {
   rmSync(directory, { recursive: true, force: true });
   mkdirSync(directory, { recursive: true });
   const relative = (file) => path.relative(root, file);
@@ -810,20 +837,23 @@ export async function runSimulatorTier({ root, directory, build = true, say = co
     const testRun = findTestRun(path.join(root, 'build', 'DerivedData', 'Build', 'Products'));
     if (!build) say(`✓ Took the app and the test bundles from the gate's build step (${relative(testRun)})`);
 
-    const bundles = resultBundles(directory);
+    const bundles = resultBundles(directory, shard);
     const test = (only, bundle) => [
       'test-without-building',
       '-xctestrun',
       testRun,
       '-destination',
       `platform=iOS Simulator,id=${simulator}`,
-      `-only-testing:${only}`,
+      ...only.map((target) => `-only-testing:${target}`),
       '-resultBundlePath',
       bundle,
       '-parallel-testing-enabled',
       'NO',
     ];
-    if (!(await run('The hosted tests', test('HostedTests', bundles.hosted[0].path), { log: 'hosted.log', bundle: bundles.hosted[0].path }))) return false;
+    if (shard !== undefined) say(`  The shard ${shard.name}: ${shard.tests.length} journeys${bundles.hosted.length > 0 ? ', and the hosted tests' : ''}.`);
+    for (const hosted of bundles.hosted) {
+      if (!(await run('The hosted tests', test(['HostedTests'], hosted.path), { log: 'hosted.log', bundle: hosted.path }))) return false;
+    }
 
     for (const [index, journeys] of journeyRuns.entries()) {
       const bundle = bundles.ui[index].path;
@@ -843,7 +873,8 @@ export async function runSimulatorTier({ root, directory, build = true, say = co
           TEST_RUNNER_WISHBONE_DOUBLE_LENGTH: journeys.doubleLength ? 'YES' : 'NO',
         };
         let reading = null;
-        const passed = await run(`The journeys in ${journeys.label}`, test('JourneyTests', bundle), { log, bundle, env, onReading: (one) => (reading = one) });
+        const passed = await run(`The journeys in ${journeys.label}`, test(journeyTargets(shard), bundle), { log, bundle, env, onReading: (one) => (reading = one) });
+        for (const line of journeyTimeLines(reading?.times)) say(line);
         if (journeys.helper) {
           const hung = applier.hangs() - helperHangs;
           const again = hung === 0 ? '' : `, and ${hung} of them hung (the named flake "a \`simctl ui\` call hangs on a CI runner")`;
@@ -892,11 +923,11 @@ export async function runSimulatorTier({ root, directory, build = true, say = co
 if (import.meta.main) {
   const root = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8', cwd: path.dirname(fileURLToPath(import.meta.url)) }).trim();
   try {
-    const { results, build } = parseArguments(process.argv.slice(2));
+    const { results, build, shard } = parseArguments(process.argv.slice(2));
     const directory = path.resolve(root, results);
     // Under the gate, the gate holds the slot. By itself, the run takes it, so it never breaks another
     // checkout's gate on the one simulator.
-    const passed = await inSlot(() => runSimulatorTier({ root, directory, build }), {
+    const passed = await inSlot(() => runSimulatorTier({ root, directory, build, shard }), {
       directory: slotDirectory(),
       owner: `just simulator in ${root} (process ${process.pid})`,
       onWait: (holder) => console.log(`── waiting for the gate slot${holder === '' ? '' : `, which ${holder} holds`}`),
