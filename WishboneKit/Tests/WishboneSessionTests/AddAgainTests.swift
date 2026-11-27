@@ -177,6 +177,36 @@ final class AddAgainTests {
     #expect(parent.addAgainForm(gift: onCamping.id)?.listID == camping.id)
   }
 
+  @Test(
+    """
+    For a parent who can't edit the gift's list, Add to starts on the primary list of their child who received it
+    """
+  )
+  func startingListOfTheChild() async throws {
+    let builder = instance.builder
+    let family = try await builder.standardFamily()
+    // An uncle's list, which the child joined and left after the reveal. Nobody in the household can edit it then.
+    let uncle = try await builder.person("Uncle")
+    _ = try await builder.group("Kin", users: [family.relative, uncle], groups: [family.household])
+    let tools = try await builder.list("Tools", of: uncle)
+    try await builder.accept(try await builder.invite(family.child, to: tools, as: uncle))
+    let hammer = try await builder.claim(
+      try await builder.item("Hammer \(builder.tag)", on: tools, as: uncle), as: family.relative,
+      for: family.groupOccasion)
+    try await builder.reveal(giftsFor: family.child)
+    try await family.child.signedIn().send("DELETE", "/lists/\(tools.id)/recipients/\(family.child.id)")
+      .expecting(204)
+    let childsPrimary = try await builder.primaryList(of: family.child)
+    let (_, parent) = try await signedIn(as: family.parent)
+
+    #expect(parent.gift(id: hammer.id)?.canAddAgain == true)
+    #expect(parent.list(id: tools.id)?.canEdit != true)
+    #expect(parent.primaryList?.id != childsPrimary.id)
+    let form = try #require(parent.addAgainForm(gift: hammer.id))
+    #expect(form.listID == childsPrimary.id)
+    #expect(parent.target(of: form)?.list.id == childsPrimary.id)
+  }
+
   // MARK: - 3. A copy of the image, and the gift as it was
 
   @Test("The new item has a copy of the gift's image and its price, and the gift is as it was, for everyone")
@@ -228,6 +258,31 @@ final class AddAgainTests {
     let body = try #require(try createBodies().last)
     #expect(body["from_gift_id"]?.string == kite.id)
     #expect(Set(body.keys) == ["from_gift_id"])
+  }
+
+  @Test("In Add again's sheet, the duplicate hint is text: it never opens the item, as on the Add screen it does")
+  func duplicateHintIsText() async throws {
+    let builder = instance.builder
+    let family = try await builder.standardFamily()
+    let primary = try await builder.primaryList(of: family.child)
+    let kite = try await givenKite(on: primary, as: family.child, in: family)
+    let (_, session) = try await signedIn(as: family.child)
+
+    // The given item left the list at reveal, so the first Add again has no hint.
+    var first = try #require(session.addAgainForm(gift: kite.id))
+    #expect(session.duplicateHint(for: first) == nil)
+    let item = try added(await session.add(&first))
+
+    // A second Add again of the same gift finds the first one, and says so in words only.
+    let second = try #require(session.addAgainForm(gift: kite.id))
+    let hint = try #require(session.duplicateHint(for: second))
+    #expect(hint.itemID == item.id)
+    #expect(hint.title == kite.item.title)
+    #expect(!hint.opensItem)
+
+    // The same title typed on the Add screen gets a hint that opens the item.
+    let typed = ItemDraft(given: .words(kite.item.title))
+    #expect(session.duplicateHint(for: typed)?.opensItem == true)
   }
 
   // MARK: - 4. With the network dropped

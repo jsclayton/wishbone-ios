@@ -53,8 +53,8 @@ public struct DuplicateHint: Equatable, Sendable {
   public let itemID: String
   public let title: String
 
-  /// Whether the hint opens the item. On the Add screen, it does. In a sheet it is text, because a sheet never
-  /// opens a second sheet, and so it is in the share extension, which shows no item.
+  /// Whether the hint opens the item. On the Add screen, it does. In a sheet, a list's or Add again's, it is text,
+  /// because a sheet never opens a second sheet, and so it is in the share extension, which shows no item.
   public let opensItem: Bool
 }
 
@@ -115,8 +115,12 @@ extension SessionModel {
       if let link, storeLinks(ofItem: item.id).contains(where: { $0.url == link }) { return true }
       return !title.isEmpty && DuplicateHint.comparable(item.title) == title
     }
-    // In a sheet, and in the share extension, the hint is text: neither can open the item.
-    return match.map { DuplicateHint(itemID: $0.id, title: $0.title, opensItem: !draft.isFixedToList && role.isApp) }
+    // In a sheet (a list's, or Add again's), and in the share extension, the hint is text: none of them can open the
+    // item.
+    return match.map {
+      DuplicateHint(
+        itemID: $0.id, title: $0.title, opensItem: !draft.isFixedToList && !draft.isAddAgain && role.isApp)
+    }
   }
 
   private func target(_ list: ListRow) -> AddTo.Target {
