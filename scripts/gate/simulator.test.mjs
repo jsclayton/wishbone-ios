@@ -10,6 +10,9 @@ import { readTestResults } from './xcresult.mjs';
 import {
   auditRetryLines,
   auditTimeOutFlake,
+  bridgeRecovery,
+  bridgeRecoveryLines,
+  bridgeService,
   lostElementFlake,
   lostElementRetryLines,
   partlyScalingFlake,
@@ -27,6 +30,7 @@ import {
   pickDevice,
   readinessAnswerLimitMs,
   readinessCallLimitMs,
+  recoveryLimitMs,
   resendAnswerLimitMs,
   resendFlake,
   resendLines,
@@ -370,6 +374,164 @@ test('a read that fails or hangs after a hang counts as a setting that is not se
   await applier.apply(settings[0]);
   await applier.apply(settings[2]);
   assert.equal(applier.calls(), 5);
+});
+
+test('after a hang, the applier runs its recovery before it reads the setting back, and keeps what the recovery found', async () => {
+  const order = [];
+  const { applier, ran } = fakeSimulator({
+    hangs: (command, calls) => command[3] === 'dark' && calls.filter((one) => one === 'appearance dark').length === 1,
+    recover: async () => {
+      order.push(`recover after ${ran.at(-1)}`);
+      return 'the bridge was stopped; restarted it';
+    },
+  });
+  await applier.apply(settings[0]);
+  await applier.apply(settings[2]);
+  assert.deepEqual(order, ['recover after appearance dark']);
+  assert.deepEqual(ran.slice(3), ['appearance dark', 'read appearance', 'appearance dark']);
+  assert.deepEqual(applier.recoveries(), ['simctl ui SIM appearance dark: the bridge was stopped; restarted it']);
+});
+
+test("a recovery that fails doesn't fail the change, and its line says why", async () => {
+  const { applier } = fakeSimulator({
+    hangs: (command, calls) => command[3] === 'dark' && calls.filter((one) => one === 'appearance dark').length === 1,
+    recover: async () => {
+      throw new Error('launchctl is gone');
+    },
+  });
+  await applier.apply(settings[0]);
+  await applier.apply(settings[2]);
+  assert.deepEqual(applier.recoveries(), ["simctl ui SIM appearance dark: the recovery failed: launchctl is gone"]);
+});
+
+test('the applier runs no recovery that could end after the change has used its time', async () => {
+  let recovered = 0;
+  const { applier, clock } = fakeSimulator({
+    hangs: (command) => command[3] === 'dark',
+    answerLimitMs: settingCallLimitMs + recoveryLimitMs - 1,
+    recover: async () => {
+      recovered += 1;
+      return 'restarted';
+    },
+  });
+  await applier.apply(settings[0]);
+  await assert.rejects(applier.apply(settings[2]), /appearance dark didn't return within 30s, /);
+  assert.equal(recovered, 0);
+  assert.ok(clock.longest <= settingCallLimitMs + recoveryLimitMs);
+  // With the time for it, a hang is recovered, and the recovery's time counts toward the change's.
+  const roomy = fakeSimulator({
+    hangs: (command) => command[3] === 'dark',
+    recover: async () => {
+      roomy.clock.ms += 3_000;
+      return 'restarted';
+    },
+  });
+  await roomy.applier.apply(settings[0]);
+  await assert.rejects(roomy.applier.apply(settings[2]), /appearance dark didn't return within 30s/);
+  assert.ok(roomy.applier.recoveries().length >= 1);
+  assert.ok(roomy.clock.longest <= helperAnswerLimitMs, `the apply took ${roomy.clock.longest}ms`);
+});
+
+/** `launchctl print` of a running bridge, cut to the lines that `bridgeRecovery` reads, and a nested one. */
+const bridgePrint = [
+  'user/501/com.apple.CoreSimulator.bridge = {',
+  '\tactive count = 1',
+  '\tstate = running',
+  '\tprogram = /usr/libexec/CoreSimulatorBridge',
+  '\truns = 1',
+  '\tpid = 4242',
+  '\tevent triggers = {',
+  '\t\tstate = active',
+  '\t}',
+  '}',
+].join('\n');
+
+/** A sample's file, with the part that `bridgeRecovery` reads: the top of the stack. */
+const bridgeSample = [
+  'Analysis of sampling CoreSimulatorBridge (pid 4242) every 1 millisecond',
+  'Call graph:',
+  '    1900 Thread_1   DispatchQueue_1: com.apple.main-thread  (serial)',
+  '',
+  'Sort by top of stack, same collapsed (when >= 5):',
+  '        __psynch_cvwait  (in libsystem_kernel.dylib)        1890',
+  '        mach_msg2_trap  (in libsystem_kernel.dylib)        1800',
+  '        __workq_kernreturn  (in libsystem_kernel.dylib)        900',
+  '        kevent_id  (in libsystem_kernel.dylib)        12',
+  '',
+  'Binary images:',
+].join('\n');
+
+/**
+ * The runs of a `bridgeRecovery` on a fake simulator and host. `fails(args)` gives an error for a call that fails.
+ * Returns `{ recover, ran, directory }`: `ran` has each call's words, with its limit.
+ */
+function fakeBridge(t, { fails = () => null } = {}) {
+  const directory = mkdtempSync(path.join(tmpdir(), 'bridge-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const ran = [];
+  const answer = async (args, limitMs) => {
+    ran.push(`${args.join(' ')} (${limitMs}ms)`);
+    const error = fails(args);
+    if (error !== null) throw error;
+    if (args.includes('print')) return `${bridgePrint}\n`;
+    if (args[0] === 'ps') return ' S     0.0   04:12\n';
+    if (args[0] === 'sample') writeFileSync(args[4], bridgeSample);
+    return '';
+  };
+  const recover = bridgeRecovery('SIM', { directory, run: answer, host: (file, args, limitMs) => answer([file, ...args], limitMs), relative: (file) => path.basename(file) });
+  return { recover, ran, directory };
+}
+
+test("a recovery records the bridge's state and the top of its stack, then restarts it and holds the status bar again", async (t) => {
+  const { recover, ran, directory } = fakeBridge(t);
+  assert.equal(
+    await recover(),
+    'CoreSimulatorBridge was pid 4242, launchd state running, run 1, ps S 0.0% CPU up 04:12; ' +
+      'top of its stack: __psynch_cvwait 1890, mach_msg2_trap 1800, __workq_kernreturn 900 (sample: bridge-1.txt). ' +
+      'Restarted it, and held the status bar again.',
+  );
+  assert.deepEqual(
+    ran.map((one) => one.replace(directory, 'DIR')),
+    [
+      `spawn SIM launchctl print ${bridgeService} (10000ms)`,
+      'ps -o stat=,%cpu=,etime= -p 4242 (5000ms)',
+      'sample 4242 1 -file DIR/bridge-1.txt (10000ms)',
+      `spawn SIM launchctl kickstart -k ${bridgeService} (10000ms)`,
+      'status_bar SIM override --time 9:41 --dataNetwork wifi --wifiBars 3 --batteryState charged --batteryLevel 100 (10000ms)',
+    ],
+  );
+  // Each recovery has a sample of its own.
+  await recover();
+  assert.ok(existsSync(path.join(directory, 'bridge-2.txt')));
+});
+
+test('the limits of a recovery add up to its limit', () => {
+  assert.equal(recoveryLimitMs, 10_000 + 5_000 + 10_000 + 10_000 + 10_000);
+});
+
+test('a recovery goes on when one of its steps fails, and says which', async (t) => {
+  // The print hangs: there is no pid, so nothing to look at, but the bridge is still restarted.
+  const noPrint = fakeBridge(t, { fails: (args) => (args.includes('print') ? hung() : null) });
+  assert.equal(
+    await noPrint.recover(),
+    "Couldn't read CoreSimulatorBridge's state: didn't return within 30s. Restarted it, and held the status bar again.",
+  );
+  assert.ok(noPrint.ran.some((one) => one.includes('kickstart')));
+  // The restart fails: the line says so, and the status bar is held anyway.
+  const noRestart = fakeBridge(t, { fails: (args) => (args.includes('kickstart') ? new Error('Operation not permitted') : null) });
+  assert.match(await noRestart.recover(), /Couldn't restart it: Operation not permitted\. Held the status bar again\.$/);
+  // The status bar fails: the line says so.
+  const noHold = fakeBridge(t, { fails: (args) => (args[0] === 'status_bar' ? new Error('Invalid device state') : null) });
+  assert.match(await noHold.recover(), /Restarted it, but couldn't hold the status bar again: Invalid device state\.$/);
+});
+
+test("the lines after the journeys give each recovery, under the flake's name", () => {
+  assert.deepEqual(bridgeRecoveryLines([]), []);
+  assert.deepEqual(bridgeRecoveryLines(['simctl ui SIM appearance dark: restarted', 'simctl ui SIM content_size large: restarted']), [
+    '  After each hang, the helper looked at the simulator\'s CoreSimulatorBridge, which answers `simctl ui`, and restarted it:',
+    '    simctl ui SIM appearance dark: restarted',
+    '    simctl ui SIM content_size large: restarted',
+  ]);
 });
 
 test("an apply can give its calls a longer limit, as the step's start does while the simulator gets ready", async () => {

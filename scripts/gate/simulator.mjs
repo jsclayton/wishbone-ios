@@ -33,6 +33,9 @@ import { checkAuditScreenshots, readAttachmentNames, readResultBundle } from './
 /** The name of the gate's own simulator. The gate makes it when the machine has none. */
 export const simulatorName = 'Wishbone gate';
 
+/** The status bar that the gate holds still: see `holdStatusBar`. */
+const statusBarOverride = ['--time', '9:41', '--dataNetwork', 'wifi', '--wifiBars', '3', '--batteryState', 'charged', '--batteryLevel', '100'];
+
 /** The device that the gate's simulator is, when the newest iOS has it. Otherwise it is that iOS's first iPhone. */
 const preferredDevice = 'iPhone 18 Pro';
 
@@ -271,6 +274,118 @@ export function simctlWithLimit(args, limitMs = settingCallLimitMs, { file = 'xc
 }
 
 /**
+ * The simulator's CoreSimulatorBridge, as its launchd knows it. It is a daemon inside the simulator, and it answers
+ * each `simctl ui` call, and `simctl status_bar`, for the Mac. Its launchd keeps it alive, so a restart starts it
+ * again at once.
+ */
+export const bridgeService = 'user/foreground/com.apple.CoreSimulator.bridge';
+
+/** The limit of each call of a recovery (`bridgeRecovery`). */
+const recoveryCallLimitsMs = { print: 10_000, ps: 5_000, sample: 10_000, restart: 10_000, hold: 10_000 };
+
+/** The longest time that a recovery takes: its calls' limits, added up. */
+export const recoveryLimitMs = Object.values(recoveryCallLimitsMs).reduce((sum, one) => sum + one, 0);
+
+/** The words of an error, on one line, with no full stop at the end. */
+function errorWords(error) {
+  return String(error.message ?? error).trim().split('\n')[0].replace(/\.$/, '');
+}
+
+/** The first three lines of a sample's "Sort by top of stack", as `<function> <count>`. */
+function topOfStack(sample) {
+  const lines = sample.split('\n');
+  const start = lines.findIndex((line) => line.startsWith('Sort by top of stack'));
+  if (start === -1) return 'not in the sample';
+  const top = [];
+  for (const line of lines.slice(start + 1)) {
+    if (line.trim() === '' || top.length === 3) break;
+    const match = line.match(/^\s*(.+?)\s+\(in [^)]*\)\s+(\d+)\s*$/);
+    top.push(match === null ? line.trim() : `${match[1]} ${match[2]}`);
+  }
+  return top.join(', ');
+}
+
+/**
+ * The recovery from a hung `simctl ui` call, for `settingsApplier`: the named flake "a `simctl ui` call hangs on a
+ * CI runner" in docs/development.md. A call of `simctl ui` waits for the simulator's CoreSimulatorBridge to answer.
+ * A bridge that is stopped (SIGSTOP) makes every `simctl ui` call, a change or a read, hang until its limit, which
+ * is the flake's signature. A restart of the bridge ends that at once, and drops the status bar's override.
+ *
+ * So the recovery first records what the bridge was doing: its state in launchd, its process's state and CPU on the
+ * Mac (`ps`), and a sample of it for a second, whose file it keeps in `directory`. Then it restarts the bridge
+ * (`launchctl kickstart -k`), and holds the status bar again. Each step has its own limit, and a step that fails
+ * doesn't stop the ones after it. It resolves with one line that says what it found and did.
+ *
+ * `run(args, limitMs)` is a `simctl` call, and `host(file, args, limitMs)` a call of a program on the Mac, both with
+ * a limit, as `simctlWithLimit`. `relative(file)` gives a file's name for the line.
+ */
+export function bridgeRecovery(
+  simulator,
+  {
+    directory,
+    run = simctlWithLimit,
+    host = (file, args, limitMs) => simctlWithLimit(args, limitMs, { file, prefix: [] }),
+    relative = (file) => file,
+  },
+) {
+  let count = 0;
+  return async () => {
+    count += 1;
+    const limits = recoveryCallLimitsMs;
+    let found;
+    try {
+      const print = await run(['spawn', simulator, 'launchctl', 'print', bridgeService], limits.print);
+      const field = (name) => print.match(new RegExp(`^\\t${name} = (.+)$`, 'm'))?.[1].trim() ?? null;
+      const pid = field('pid');
+      found = `CoreSimulatorBridge was ${pid === null ? 'not running' : `pid ${pid}`}, launchd state ${field('state') ?? 'unknown'}, run ${field('runs') ?? 'unknown'}`;
+      if (pid !== null) {
+        try {
+          const [stat, cpu, up] = (await host('ps', ['-o', 'stat=,%cpu=,etime=', '-p', pid], limits.ps)).trim().split(/\s+/);
+          found += `, ps ${stat} ${cpu}% CPU up ${up}`;
+        } catch (error) {
+          found += `, ps couldn't read it: ${errorWords(error)}`;
+        }
+        const file = path.join(directory, `bridge-${count}.txt`);
+        try {
+          await host('sample', [pid, '1', '-file', file], limits.sample);
+          found += `; top of its stack: ${topOfStack(readFileSync(file, 'utf8'))} (sample: ${relative(file)})`;
+        } catch (error) {
+          found += `; couldn't sample it: ${errorWords(error)}`;
+        }
+      }
+      found += '.';
+    } catch (error) {
+      found = `Couldn't read CoreSimulatorBridge's state: ${errorWords(error)}.`;
+    }
+    let restarted = null;
+    try {
+      await run(['spawn', simulator, 'launchctl', 'kickstart', '-k', bridgeService], limits.restart);
+    } catch (error) {
+      restarted = errorWords(error);
+    }
+    let held = null;
+    try {
+      await run(['status_bar', simulator, 'override', ...statusBarOverride], limits.hold);
+    } catch (error) {
+      held = errorWords(error);
+    }
+    if (restarted === null && held === null) return `${found} Restarted it, and held the status bar again.`;
+    if (restarted === null) return `${found} Restarted it, but couldn't hold the status bar again: ${held}.`;
+    if (held === null) return `${found} Couldn't restart it: ${restarted}. Held the status bar again.`;
+    return `${found} Couldn't restart it: ${restarted}, or hold the status bar again: ${held}.`;
+  };
+}
+
+/** The lines after the journeys in the four settings, for each recovery of a hung call (`bridgeRecovery`). */
+export function bridgeRecoveryLines(recoveries) {
+  if (recoveries.length === 0) return [];
+  return [
+    "  After each hang, the helper looked at the simulator's CoreSimulatorBridge, which answers `simctl ui`, and restarted it:",
+    ...recoveries.map((line) => `    ${line}`),
+  ];
+}
+
+/**
  * Puts the simulator in a setting, and every other setting back to its default, with `run(command, limitMs)` (a
  * `simctl` call with a time limit, `simctlWithLimit`). It remembers what it set, and runs only the calls that
  * change something: a change from the default to one setting, and back, is one call each way, not three. Its first
@@ -285,6 +400,12 @@ export function simctlWithLimit(args, limitMs = settingCallLimitMs, { file = 'xc
  * an error that names the setting, the call, and how many times it hung. So a hang in CI shows as itself, not as a
  * journey's request that timed out. A call that fails in any other way fails the setting at once.
  *
+ * After a hang, and before the wait, the applier runs `recover()`, when it was given one and the change has
+ * `recoveryLimitMs` left: `bridgeRecovery` records what the simulator's CoreSimulatorBridge, which answers
+ * `simctl ui`, was doing, and restarts it. `recover` resolves with a line that says what it found and did. The
+ * applier keeps each line, after the call that hung. A recovery that fails doesn't fail the change: its line says
+ * why.
+ *
  * `apply` takes `{ limitMs, answerLimitMs }`, which are `limitMs` and `answerLimitMs` unless it says otherwise.
  *
  * It applies one setting at a time: an `apply` that comes while another runs waits for it, also when that one
@@ -297,8 +418,9 @@ export function simctlWithLimit(args, limitMs = settingCallLimitMs, { file = 'xc
  * is `<option> unread`. The helper reads them when a journey sends a change again (`startSettingsHelper`), so the
  * gate's line says whether the simulator had the setting that the app didn't show.
  *
- * Returns `{ apply(setting, { limitMs, answerLimitMs }), read(), calls(), hangs(), ms() }`: the number of calls
- * that changed a setting, how many of them hung, and the time that the changes took.
+ * Returns `{ apply(setting, { limitMs, answerLimitMs }), read(), calls(), hangs(), ms(), recoveries() }`: the
+ * number of calls that changed a setting, how many of them hung, the time that the changes took, and the line of
+ * each recovery, in the order they ran.
  */
 export function settingsApplier(
   simulator,
@@ -308,6 +430,7 @@ export function settingsApplier(
     answerLimitMs = helperAnswerLimitMs,
     readLimitMs = settingReadLimitMs,
     pauseMs = settingPauseMs,
+    recover = null,
     now = Date.now,
     sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   } = {},
@@ -316,6 +439,7 @@ export function settingsApplier(
   let calls = 0;
   let hangs = 0;
   let ms = 0;
+  const recoveries = [];
   let queue = Promise.resolve();
   const applyNow = async (setting, callLimitMs, applyLimitMs) => {
     const started = now();
@@ -351,6 +475,15 @@ export function settingsApplier(
             if (!error.timedOut) throw error;
             hung += 1;
             hangs += 1;
+          }
+          if (recover !== null && fits(recoveryLimitMs)) {
+            let found;
+            try {
+              found = await recover();
+            } catch (error) {
+              found = `the recovery failed: ${error.message}`;
+            }
+            recoveries.push(`simctl ${command.join(' ')}: ${found}`);
           }
           await sleep(Math.min(pauseMs, Math.max(0, applyLimitMs - (now() - started))));
           if ((await readBack(command)) === value) break;
@@ -388,6 +521,7 @@ export function settingsApplier(
     calls: () => calls,
     hangs: () => hangs,
     ms: () => ms,
+    recoveries: () => [...recoveries],
   };
 }
 
@@ -608,7 +742,7 @@ export function resendLines(resends) {
  * comparing screenshots, so the clock and the rest of the bar are held still.
  */
 function holdStatusBar(simulator) {
-  simctl(['status_bar', simulator, 'override', '--time', '9:41', '--dataNetwork', 'wifi', '--wifiBars', '3', '--batteryState', 'charged', '--batteryLevel', '100']);
+  simctl(['status_bar', simulator, 'override', ...statusBarOverride]);
 }
 
 /**
@@ -703,12 +837,14 @@ export async function prepareSimulator({ directory, say = console.log, relative 
   const started = Date.now();
   const simulator = findOrMakeSimulator();
   say(`✓ Found the gate's simulator (${duration(Date.now() - started)})`);
+  // One recovery for every applier of the step, so that each sample has a name of its own.
+  const recover = bridgeRecovery(simulator, { directory, relative });
   const applier = await startSimulator({
     boot: () => simctl(['bootstatus', simulator, '-b'], { stdio: 'ignore' }),
     hold: () => holdStatusBar(simulator),
     // A new applier each time: it runs every call, because the simulator that booted again can be in any setting.
     putInDefault: async () => {
-      const one = settingsApplier(simulator);
+      const one = settingsApplier(simulator, { recover });
       await one.apply(settings[0], { limitMs: readinessCallLimitMs, answerLimitMs: readinessAnswerLimitMs });
       return one;
     },
@@ -864,6 +1000,7 @@ export async function runSimulatorTier({ root, directory, build = true, shard, s
         const helperCalls = applier.calls();
         const helperHangs = applier.hangs();
         const helperMs = applier.ms();
+        const helperRecoveries = applier.recoveries().length;
         // Only the run in the four settings has a helper, so the screens that it remembers are that run's.
         await helper?.close();
         helper = journeys.helper ? await startSettingsHelper((setting, options) => applier.apply(setting, options), { readSettings: () => applier.read() }) : null;
@@ -879,6 +1016,7 @@ export async function runSimulatorTier({ root, directory, build = true, shard, s
           const hung = applier.hangs() - helperHangs;
           const again = hung === 0 ? '' : `, and ${hung} of them hung (the named flake "a \`simctl ui\` call hangs on a CI runner")`;
           say(`  The settings helper made ${applier.calls() - helperCalls} simctl calls, in ${duration(applier.ms() - helperMs)}${again}.`);
+          for (const line of bridgeRecoveryLines(applier.recoveries().slice(helperRecoveries))) say(line);
           for (const line of resendLines(helper.resends())) say(line);
           for (const line of auditRetryLines(helper.auditRetries())) say(line);
           for (const line of screenshotRetryLines(helper.screenshotRetries())) say(line);
