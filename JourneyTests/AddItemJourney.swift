@@ -43,6 +43,12 @@ nonisolated final class AddItemJourney: JourneyTestCase {
     tabs.buttons[Audit.words("Add")].tap()
     let field = app.searchFields[Audit.words("Paste a link or type what you want")]
     XCTAssertTrue(field.waitForExistence(timeout: 30), "The Add screen's field didn't show.")
+    // The screen opens with its field ready, but on a slow runner the field can stay without the keyboard: on
+    // 2026-11-27, in CI run 45984048541 attempt 1 (journeys-4), the app went idle 12 seconds after the plus, and the
+    // field showed in the tab bar's place with no keyboard until typeText gave up, 9 seconds later. This journey is
+    // about the add, not the field's first focus (the sign-in journey checks that), so it taps the field first, as a
+    // person would, and types once the field has the keyboard.
+    focus(field, "The Add screen's field didn't get the keyboard.")
     field.typeText("\(title)\n")
 
     // The add form is pushed, with the words as the title, and Add in its bar.
@@ -100,7 +106,7 @@ nonisolated final class AddItemJourney: JourneyTestCase {
   @MainActor
   private func openTheDuplicate(titled title: String, on listName: String, in app: XCUIApplication) throws {
     let field = app.searchFields[Audit.words("Paste a link or type what you want")]
-    field.tap()
+    focus(field, "The Add screen's field didn't get the keyboard for the same title.")
     field.typeText("\(title)\n")
     let form = app.navigationBars[Audit.words("Add item")]
     XCTAssertTrue(form.waitForExistence(timeout: 30), "The add form didn't show for the same title.")

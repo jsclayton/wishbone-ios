@@ -41,6 +41,25 @@ nonisolated class JourneyTestCase: XCTestCase {
     app.activate()
     XCTAssertTrue(app.wait(for: .runningForeground, timeout: Self.foregroundTimeout), "The app didn't come back.")
   }
+
+  /// How long a journey waits for a field to get the keyboard's focus. A wait for a state that comes ends when it
+  /// comes, so a long limit costs a passing run nothing.
+  static let focusTimeout: TimeInterval = 30
+
+  /// Waits until the field has the keyboard's focus, so that `typeText` has somewhere to type. XCTest's `typeText`
+  /// tries for only a few seconds, and then fails with `Neither element nor any descendant has keyboard focus`.
+  @MainActor
+  func waitForKeyboardFocus(of field: XCUIElement, _ message: String) {
+    let focused = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hasKeyboardFocus == true"), object: field)
+    XCTAssertEqual(XCTWaiter.wait(for: [focused], timeout: Self.focusTimeout), .completed, message)
+  }
+
+  /// Taps the field, as a person does before typing, and waits until it has the keyboard's focus.
+  @MainActor
+  func focus(_ field: XCUIElement, _ message: String) {
+    field.tap()
+    waitForKeyboardFocus(of: field, message)
+  }
 }
 
 /// The screenshots that a journey reads, with the named flake "XCTest doesn't get a screenshot on a CI runner" in
