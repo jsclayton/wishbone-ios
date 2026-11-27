@@ -1,8 +1,9 @@
 // Starts the boot of the gate's own simulator, and returns before the boot ends. CI's journeys jobs run it once
-// their tools are installed, so that the simulator's first boot on a new runner goes on while the job gets the
-// build and unpacks it. On 2026-11-26 that boot took 1m16s, and then 2m45s before its status bar took a change,
+// they have the build and the caches, just before the gate, so that the simulator's first boot on a new runner goes
+// on while the gate starts. On 2026-11-26 that boot took 1m16s, and then 2m45s before its status bar took a change,
 // and 2m02s before its settings did. The simulator step then finds it booted, or booting, and waits for it as it
-// always does.
+// always does. Beside the boot, a download is slow: the build's download took 165 s to 479 s in each shard that
+// booted, and 3 s to 11 s in the shard that didn't, in 12 Gate runs (ci.yml has the runs).
 //
 // It makes the simulator when the runner has none, as the simulator step does, so the step uses this one.
 //

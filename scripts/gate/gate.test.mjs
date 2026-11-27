@@ -408,6 +408,30 @@ test("each Gate job's limit in CI is above the sum of its part's step limits, wi
 // Swift Testing starts every test of a process at once, unless a width caps it. A test's time limit counts only
 // its own run, not the wait for a place in the width. So with no cap, each test's limit counts the whole
 // process's work, and a slow runner fails the tests that end last (issue #129).
+// A simulator's first boot uses the whole runner: beside it, the build's download took minutes and was once
+// cancelled (run 46007974356), where it takes seconds alone. So each journeys job boots after every download.
+test("each journeys job in CI starts its simulator's boot after it has the build and the caches", () => {
+  const ci = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  const start = ci.indexOf('\n  gate-journeys:\n');
+  assert.ok(start >= 0, 'the workflow has the job gate-journeys');
+  const end = ci.indexOf('\n  gate-result:\n', start);
+  const steps = ci
+    .slice(start, end === -1 ? undefined : end)
+    .split(/\n {6}- /)
+    .slice(1);
+  const boot = steps.findIndex((step) => step.includes('run: node scripts/gate/boot.mjs'));
+  const gate = steps.findIndex((step) => step.includes('run: node scripts/gate/main.mjs'));
+  assert.ok(boot >= 0, 'the job starts the boot');
+  assert.equal(gate, boot + 1, 'the boot starts just before the gate');
+  const fetches = steps
+    .map((step, index) => ({ step, index }))
+    .filter(({ step }) => /uses: actions\/(download-artifact|cache)|tar -xf|mise-action/.test(step));
+  assert.ok(fetches.length >= 3, 'the job gets its tools, the build, and a cache');
+  for (const { step, index } of fetches) {
+    assert.ok(index < boot, `the boot starts before this step:\n${step.split('\n')[0]}`);
+  }
+});
+
 test('the package tests run at most 8 at a time, so that a time limit counts one test, not the whole run', () => {
   const main = readFileSync(new URL('./steps.mjs', import.meta.url), 'utf8');
   const justfile = readFileSync(new URL('../../justfile', import.meta.url), 'utf8');
