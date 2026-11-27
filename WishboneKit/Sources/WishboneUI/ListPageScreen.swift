@@ -88,7 +88,9 @@ struct ListPageScreen: View {
           AddItemRow(session: session, listID: page.list.id)
         }
       }
-      if !page.otherInvitations.isEmpty || page.offersInvite {
+      // In edit mode, the system disables the rows, so they show only outside it, as Add item does: edit mode is for
+      // Reorder.
+      if (!page.otherInvitations.isEmpty || page.offersInvite) && !isReordering {
         Section {
           ForEach(page.otherInvitations) { invitation in
             OtherInvitationRow(invitation: invitation, session: session)
