@@ -584,6 +584,16 @@ export function dragRetryLines(retries) {
   ];
 }
 
+/**
+ * Each drag that a journey made again, from the log of a run with no settings helper: the line that the journey
+ * logs, from "The server's order" on. See `dragRetryLines`.
+ */
+export function loggedDragRetries(log) {
+  return [...log.matchAll(/^The dragged item isn't first on the page: the page snapped back, .* (The server's order: .*\.) The journey drags again \((\d+) of \d+\)\.$/gm)].map(
+    (match) => `ReorderJourney, try ${match[2]}: ${match[1]}`,
+  );
+}
+
 /** The name of the flake that a journey meets by asking for a screenshot again. See `startSettingsHelper`. */
 export const screenshotTimeOutFlake = "XCTest doesn't get a screenshot on a CI runner";
 
@@ -908,6 +918,11 @@ export async function runSimulatorTier({ root, directory, build = true, shard, s
           for (const line of lostElementRetryLines(helper.lostElementRetries())) say(line);
           for (const line of partlyScalingRetryLines(helper.partlyScalingRetries())) say(line);
           for (const line of dragRetryLines(helper.dragRetries())) say(line);
+        } else {
+          // A run with no helper has the drag's retry only in its log, which CI uploads only when the part fails.
+          // So the line names each one here too: each is a sighting.
+          const logged = existsSync(path.join(directory, log)) ? readFileSync(path.join(directory, log), 'utf8') : '';
+          for (const line of dragRetryLines(loggedDragRetries(logged))) say(line);
         }
         return { passed, reading };
       };

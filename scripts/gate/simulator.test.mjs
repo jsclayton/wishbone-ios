@@ -12,6 +12,7 @@ import {
   auditTimeOutFlake,
   dragFlake,
   dragRetryLines,
+  loggedDragRetries,
   lostElementFlake,
   lostElementRetryLines,
   partlyScalingFlake,
@@ -809,6 +810,20 @@ test('the line after the journeys names each drag made again, with its evidence,
     "    ReorderJourney, try 1: The server's order: Ball, Bat, Cap.",
   ]);
   assert.match(dragRetryLines(['a', 'b'])[0], /made 2 drags again/);
+});
+
+test("a run with no helper names each drag made again from its log, as the helper's line does", () => {
+  const journey = readFileSync(new URL('../../JourneyTests/ReorderJourney.swift', import.meta.url), 'utf8');
+  // The journey's own words, as its log has them.
+  assert.match(journey, /"The dragged item isn't first on the page: the page snapped back, and the server has the old order, so the "/);
+  assert.match(journey, /print\("\\\(snappedBack\) The journey drags again \(\\\(tries\) of \\\(Self\.dragRetryLimit\)\)\."\)/);
+  const log = [
+    '    t =    80.00s Synthesize event',
+    "The dragged item isn't first on the page: the page snapped back, and the server has the old order, so the drop never reached the app. The server's order: Ball 1a, Bat 1a, Cap 1a. The journey drags again (1 of 1).",
+    "The dragged item isn't first on the page, and the server has another order than before the drag: the page and the copy disagree.",
+  ].join('\n');
+  assert.deepEqual(loggedDragRetries(log), ["ReorderJourney, try 1: The server's order: Ball 1a, Bat 1a, Cap 1a."]);
+  assert.deepEqual(loggedDragRetries(''), []);
 });
 
 test('the Reorder journey drags again at most once, and only when the server has the order from before the drag', () => {
