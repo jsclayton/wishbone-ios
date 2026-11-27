@@ -112,7 +112,7 @@ extension SessionModel {
   ///
   /// Diagnostics: never here. A refused raise is a 403 or a 409, which the client doesn't capture.
   public func raiseQuantity(gift id: String) async -> RaiseOutcome {
-    guard let gift = editableGift(id), gift.canRaiseQuantity else { return .notOffered }
+    guard let gift = editableGift(id), offersRaise(onGift: gift) else { return .notOffered }
     do {
       if try await database.hasUnsentQuantityChange(toGift: id) {
         // A sync sends it: the unsent changes go only as the first step of a sync. A sync that runs now may be past
@@ -145,6 +145,13 @@ extension SessionModel {
       Log.fault(.session, "The copy can't take the raise.", detail: "\(error)")
       return .failed
     }
+  }
+
+  /// Whether How many can go higher: the gift's `can_raise_quantity`, and the giver is not a recipient of its list,
+  /// as the copy shows the list. An accept that waits to be sent counts: once a giver is a recipient, how many can
+  /// only go down, and the gift's `can_raise_quantity` is the giver's until the next pull.
+  func offersRaise(onGift gift: GiftRow) -> Bool {
+    gift.canRaiseQuantity && !isRecipient(ofList: gift.listID)
   }
 
   /// The giver's open gift that they can edit, from the copy. Nil for the rest.

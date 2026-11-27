@@ -155,6 +155,7 @@ final class InvitationsTests {
     let session = try await signedIn(as: family.me)
     await until { session.anotherOccasion(forGift: gift.id) != nil }
     #expect(session.itemPage(id: lamp.id)?.claims.map(\.id) == [gift.id])
+    #expect(session.giftPage(id: gift.id)?.offersRaise == true)
 
     await session.acceptInvitation(invitation.id)
 
@@ -162,6 +163,10 @@ final class InvitationsTests {
     #expect(session.listPage(id: family.ourHouse.id)?.isRecipient == true)
     #expect(session.itemPage(id: lamp.id)?.claims == [])
     #expect(session.anotherOccasion(forGift: gift.id) == nil)
+    // Once the giver is a recipient, how many can only go down.
+    #expect(session.giftPage(id: gift.id)?.offersRaise == false)
+    #expect(await session.raiseQuantity(gift: gift.id) == .notOffered)
+    #expect(session.gift(id: gift.id)?.quantity == 1)
     await until { session.unsentChangeCount == 0 }
     #expect(session.lateRefusals.isEmpty)
   }

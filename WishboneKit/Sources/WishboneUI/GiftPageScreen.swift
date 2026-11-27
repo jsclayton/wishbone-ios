@@ -81,7 +81,7 @@ struct GiftPageScreen: View {
           }
         }
         if gift.canEdit {
-          QuantityStepper(gift: gift, session: session)
+          QuantityStepper(gift: gift, offersRaise: page.offersRaise, session: session)
         }
         OccasionField(page: page, session: session, pick: pick)
         if gift.canEdit {
@@ -289,17 +289,18 @@ private struct GetAnotherRow: View {
 }
 
 /// How many, a stepper. Lowering is an unsent change: it shows at once. Raising waits for the server, says "Raising"
-/// meanwhile, and says in place why it didn't raise. It can't go higher without `can_raise_quantity`, or lower than
-/// one. VoiceOver reads "How many, {n}", and says when it can't go higher.
+/// meanwhile, and says in place why it didn't raise. It can't go higher unless the page offers a raise (see
+/// `GiftPage.offersRaise`), or lower than one. VoiceOver reads "How many, {n}", and says when it can't go higher.
 private struct QuantityStepper: View {
   let gift: GiftRow
+  let offersRaise: Bool
   let session: SessionModel
 
   @State private var isRaising = false
   @State private var said: String?
 
   var body: some View {
-    let canRaise = gift.canRaiseQuantity && !isRaising
+    let canRaise = offersRaise && !isRaising
     Stepper(
       onIncrement: canRaise ? { Task { await raise() } } : nil,
       onDecrement: canLower ? { Task { await lower() } } : nil
@@ -317,7 +318,7 @@ private struct QuantityStepper: View {
     }
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(Text("How many", bundle: #bundle))
-    .accessibilityValue(Text(GiftWords.howManyValue(gift.quantity, canRaise: gift.canRaiseQuantity)))
+    .accessibilityValue(Text(GiftWords.howManyValue(gift.quantity, canRaise: offersRaise)))
     .accessibilityAdjustableAction { direction in
       switch direction {
       case .increment where canRaise: Task { await raise() }
