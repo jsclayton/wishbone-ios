@@ -10,6 +10,8 @@ import { readTestResults } from './xcresult.mjs';
 import {
   auditRetryLines,
   auditTimeOutFlake,
+  dragFlake,
+  dragRetryLines,
   lostElementFlake,
   lostElementRetryLines,
   partlyScalingFlake,
@@ -775,6 +777,49 @@ test('the line after the journeys names each audit run again for text called par
     '    the add form, in the largest text size.',
   ]);
   assert.match(partlyScalingRetryLines(['a', 'b'])[0], /ran 2 audits again/);
+});
+
+test('the settings helper remembers each drag that a journey made again, apart from the audits', async (t) => {
+  const { applier, ran } = fakeSimulator();
+  const helper = await startSettingsHelper((setting, options) => applier.apply(setting, options));
+  t.after(() => helper.close());
+  const post = (body, method = 'POST') => fetch(`${helper.address}/drag-retries`, { method, body });
+  assert.deepEqual(helper.dragRetries(), []);
+  const sighting = "ReorderJourney, try 1: The server's order: Ball, Bat, Cap.";
+  assert.equal((await post(sighting)).status, 204);
+  assert.deepEqual(helper.dragRetries(), [sighting]);
+  // A drag with no words, or a request that isn't a POST, is not a retry.
+  const empty = await post('');
+  assert.equal(empty.status, 400);
+  assert.equal(await empty.text(), "the journey, its try and the server's order, as the body");
+  assert.equal((await post(undefined, 'GET')).status, 404);
+  assert.equal(helper.dragRetries().length, 1);
+  // It is not an audit's retry, changes no setting, and is not a screen.
+  assert.deepEqual(helper.auditRetries(), []);
+  assert.deepEqual(helper.lostElementRetries(), []);
+  assert.deepEqual(helper.partlyScalingRetries(), []);
+  assert.deepEqual(ran, []);
+  assert.deepEqual(helper.screens(), []);
+});
+
+test('the line after the journeys names each drag made again, with its evidence, and the flake', () => {
+  assert.deepEqual(dragRetryLines([]), []);
+  assert.deepEqual(dragRetryLines(["ReorderJourney, try 1: The server's order: Ball, Bat, Cap."]), [
+    `  The journeys made 1 drag again, because the page put the row back and the server had the old order (the named flake "${dragFlake}"):`,
+    "    ReorderJourney, try 1: The server's order: Ball, Bat, Cap.",
+  ]);
+  assert.match(dragRetryLines(['a', 'b'])[0], /made 2 drags again/);
+});
+
+test('the Reorder journey drags again at most once, and only when the server has the order from before the drag', () => {
+  const journey = readFileSync(new URL('../../JourneyTests/ReorderJourney.swift', import.meta.url), 'utf8');
+  assert.match(journey, /static let dragRetryLimit = 1\n/);
+  // The diagnostics come first: the server's order, read once, and a screenshot, before any retry or failure.
+  assert.match(journey, /if isFirst \{ break \}[\s\S]*?order\(on: list\.id, as: robin, until: nil\)[\s\S]*?Screenshot\.take[\s\S]*?guard serverOrder == before/);
+  // Any other order on the server fails at once: the app took a drop, and a retry would hide that.
+  assert.match(journey, /guard serverOrder == before else \{\n\s*throw AuditError\(/);
+  assert.match(journey, /guard tries <= Self\.dragRetryLimit else \{\n\s*throw AuditError\(/);
+  assert.match(journey, /Audit\.reportRetry\("ReorderJourney, try \\\(tries\): \\\(evidence\)", at: "drag-retries"\)/);
 });
 
 test('a journey runs an audit again for text called partially unsupported a bounded number of times, on a still screen', () => {

@@ -417,16 +417,19 @@ export function settingsApplier(
  * issue that no exception allows had no element: the named flake "an audit's issue has no element".
  * `POST /partly-scaling-retries`, the same way, records an audit that ran again because every issue that no
  * exception allows was text that the Dynamic Type check called partially unsupported: the named flake "the Dynamic
- * Type check calls text that scales partially unsupported".
+ * Type check calls text that scales partially unsupported". `POST /drag-retries`, with the journey, its try and the
+ * server's order as the body, records a drag that a journey made again because the page put the row back and the
+ * server had the order from before the drag: the named flake "a drag to reorder doesn't reach the app on a CI
+ * runner".
  *
  * Resolves with `{ address, close, screens, resends, auditRetries, screenshotRetries, lostElementRetries,
- * partlyScalingRetries }`, where `screens()` gives the names, in the
+ * partlyScalingRetries, dragRetries }`, where `screens()` gives the names, in the
  * order they came, `resends()` gives each change that a journey sent again: `{ setting, after, read }`, with the
  * settings' labels and what `readSettings` read before the change was sent again, and `auditRetries()` gives each
  * audit that ran again, by its screen and setting, in the order they came. `screenshotRetries()` gives each
  * screenshot that was asked for again, the same way, `lostElementRetries()` each audit that ran again for an
- * issue with no element, and `partlyScalingRetries()` each audit that ran again for text called partially
- * unsupported.
+ * issue with no element, `partlyScalingRetries()` each audit that ran again for text called partially
+ * unsupported, and `dragRetries()` each drag that a journey made again.
  */
 export function startSettingsHelper(applySetting, { readSettings = async () => 'not read' } = {}) {
   const resends = [];
@@ -434,26 +437,28 @@ export function startSettingsHelper(applySetting, { readSettings = async () => '
   const screenshotRetries = [];
   const lostElementRetries = [];
   const partlyScalingRetries = [];
+  const dragRetries = [];
   const retries = {
-    '/audit-retries': [auditRetries, 'audit'],
-    '/screenshot-retries': [screenshotRetries, 'screenshot'],
-    '/lost-element-retries': [lostElementRetries, 'audit'],
-    '/partly-scaling-retries': [partlyScalingRetries, 'audit'],
+    '/audit-retries': [auditRetries, "the audit's screen and setting"],
+    '/screenshot-retries': [screenshotRetries, "the screenshot's screen and setting"],
+    '/lost-element-retries': [lostElementRetries, "the audit's screen and setting"],
+    '/partly-scaling-retries': [partlyScalingRetries, "the audit's screen and setting"],
+    '/drag-retries': [dragRetries, "the journey, its try and the server's order"],
   };
   const screens = new Set();
   const server = createServer((request, response) => {
     if (Object.hasOwn(retries, request.url ?? '')) {
-      const [list, what] = retries[request.url];
+      const [list, body] = retries[request.url];
       if (request.method !== 'POST') {
         response.writeHead(404).end();
         return;
       }
-      const body = [];
-      request.on('data', (chunk) => body.push(chunk));
+      const chunks = [];
+      request.on('data', (chunk) => chunks.push(chunk));
       request.on('end', () => {
-        const retried = Buffer.concat(body).toString('utf8');
+        const retried = Buffer.concat(chunks).toString('utf8');
         if (retried === '') {
-          response.writeHead(400, { 'Content-Type': 'text/plain' }).end(`the ${what}'s screen and setting, as the body`);
+          response.writeHead(400, { 'Content-Type': 'text/plain' }).end(`${body}, as the body`);
           return;
         }
         list.push(retried);
@@ -517,6 +522,7 @@ export function startSettingsHelper(applySetting, { readSettings = async () => '
         screenshotRetries: () => [...screenshotRetries],
         lostElementRetries: () => [...lostElementRetries],
         partlyScalingRetries: () => [...partlyScalingRetries],
+        dragRetries: () => [...dragRetries],
       });
     });
   });
@@ -558,6 +564,23 @@ export function partlyScalingRetryLines(retries) {
   return [
     `  The journeys ran ${audits} again, because the Dynamic Type check called text partially unsupported (the named flake "${partlyScalingFlake}"):`,
     ...retries.map((audit) => `    ${audit}.`),
+  ];
+}
+
+/** The name of the flake that a journey meets by dragging again. See `startSettingsHelper`. */
+export const dragFlake = "a drag to reorder doesn't reach the app on a CI runner";
+
+/**
+ * The lines after a run of the journeys, one for each drag that a journey made again because the page put the row
+ * back and the server had the order from before the drag (`dragRetries()` of `startSettingsHelper`). Each is a
+ * sighting of the flake. None when no drag was made again.
+ */
+export function dragRetryLines(retries) {
+  if (retries.length === 0) return [];
+  const drags = retries.length === 1 ? '1 drag' : `${retries.length} drags`;
+  return [
+    `  The journeys made ${drags} again, because the page put the row back and the server had the old order (the named flake "${dragFlake}"):`,
+    ...retries.map((drag) => `    ${drag}`),
   ];
 }
 
@@ -884,6 +907,7 @@ export async function runSimulatorTier({ root, directory, build = true, shard, s
           for (const line of screenshotRetryLines(helper.screenshotRetries())) say(line);
           for (const line of lostElementRetryLines(helper.lostElementRetries())) say(line);
           for (const line of partlyScalingRetryLines(helper.partlyScalingRetries())) say(line);
+          for (const line of dragRetryLines(helper.dragRetries())) say(line);
         }
         return { passed, reading };
       };
