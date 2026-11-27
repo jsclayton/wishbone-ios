@@ -399,10 +399,10 @@ enum Audit {
     }
   }
 
-  /// Tells the settings helper that an audit ran again, at the path of its flake, so the gate's line names the flake.
-  /// A run with no helper has only the line in the log. A report that doesn't arrive is not a failure: the retry is
-  /// in the log too.
-  private static func reportRetry(_ audited: String, at path: String) async {
+  /// Tells the settings helper that an audit, or another step of a named flake, ran again, at the path of its flake,
+  /// so the gate's line names the flake. A run with no helper has only the line in the log. A report that doesn't
+  /// arrive is not a failure: the retry is in the log too.
+  static func reportRetry(_ audited: String, at path: String) async {
     guard let helper else { return }
     var request = URLRequest(url: helper.appending(path: path))
     request.httpMethod = "POST"
