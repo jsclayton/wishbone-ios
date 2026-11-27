@@ -8,15 +8,17 @@ const details = { fail: 'Failure Message', skip: 'Skip Message', known: 'Expecte
  * `tests` maps a test's name, such as `HostedTests.SessionKeychainTests/item()`, to how it ends: `pass`, `fail`,
  * `skip`, `known` (it passes with an expected failure), or `fail-case` (one case of a test with arguments fails).
  * `runFailed` makes Xcode fail the run whatever its tests did. `messages` maps a test's name to the failure
- * messages of a test that fails, in place of the one planted message.
+ * messages of a test that fails, in place of the one planted message. `reasons` maps a test's name to the reasons
+ * of the expected failures of a test that passes with them, in place of the one planted reason.
  */
-export function testResults(tests, { runFailed, messages = {} } = {}) {
+export function testResults(tests, { runFailed, messages = {}, reasons = {} } = {}) {
   const bundles = new Map();
   for (const [name, outcome] of Object.entries(tests)) {
     const [bundle, identifier] = [name.slice(0, name.indexOf('.')), name.slice(name.indexOf('.') + 1)];
     const suite = identifier.split('/')[0];
     const node = { durationInSeconds: 1.5, name: identifier.split('/')[1], nodeIdentifier: identifier, nodeType: 'Test Case', result: results[outcome] ?? 'Failed' };
     if (details[outcome] !== undefined) node.children = [{ name: 'planted', nodeType: details[outcome] }];
+    if (reasons[name] !== undefined) node.children = reasons[name].map((reason) => ({ name: reason, nodeType: 'Expected Failure' }));
     if (messages[name] !== undefined) node.children = messages[name].map((message) => ({ name: message, nodeType: 'Failure Message' }));
     if (outcome === 'fail-case') {
       node.children = [

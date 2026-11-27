@@ -269,7 +269,7 @@ The gate reads its own results:
 - It counts the tests from Swift Testing's summary for each test target, from XCTest's summary for each test target with an XCTest test, and from each result bundle. XCTest runs before Swift Testing, so only the XCTest part of the log gives the XCTest count.
 - The journeys' result bundles hold the same tests, once for each run. So the UI count is the count of one of them, and a bundle that holds other tests than the first fails.
 - It fails on any failure or recorded issue, on a bundle with 0 tests, and on a skip that is not on a short named list.
-- A known issue is a recorded issue, so it fails too: in Swift Testing (`withKnownIssue`) and in XCTest (`XCTExpectFailure`).
+- A known issue is a recorded issue, so it fails too: in Swift Testing (`withKnownIssue`) and in XCTest (`XCTExpectFailure`). The one exception is the share extension's journey's activation lag, the named flake "XCTest's record of an app's state lags on a CI runner": `allowedKnownIssues` in `scripts/gate/steps.mjs` names the test and the one reason that it gives `XCTExpectFailure`. The gate reads the reason from the result bundle, which has the reason and not the issue's message. A known issue in another test, or with another reason, fails. So does one in a reading with no reasons, from Swift Testing's event stream or XCTest's log.
 - An issue recorded with the severity `.warning` (`Issue.record(_:severity:)`) is not a failure, so the gate passes it. Swift Testing leaves a warning out of the event stream that the gate reads.
 - A test that cancels itself with `Test.cancel`, or that has a case cancelled, is a skip. So is an XCTest test that throws `XCTSkip`.
 - It fails when a count falls below the **floor**: the counts (package, hosted, and UI) in a small file in git, `scripts/gate/floor.json`. A change that adds tests can raise the floor. A commit that lowers it must say why.
@@ -396,6 +396,27 @@ The cause was a sync, and the app no longer closes Sort for one. The app syncs e
 - What the gate does: the journey waits up to 30 seconds until Price can be tapped, reads where Price is from a snapshot, and taps that point. XCTest's own tap queries Price again, and that query can outlast Sort. When Edit is still there 10 seconds later, or Price couldn't be tapped or went before its place was read, the journey opens Sort again, and the menu first if it closed. It opens Sort at most 3 times in all (`sortTries`), so again at most twice. It taps Sort only when no Price shows, because a tap on Sort's own button in an open Sort closes it. The double-length run does the same.
 - What shows: after each run of the journeys, a line names this flake and how many times Sort was opened again, then a line for each with the journey, its try and what showed. In the run in the four settings, the journey tells the settings helper (`/sort-retries`). The double-length run has no helper, so the gate reads the journey's line from that run's log. The journey's log, in every run, has the line `Price wasn't chosen in Sort: <what showed>. The journey opens Sort again (<N> of 2).` Each retry is a sighting: name its run, its attempt and its line in the hand-off.
 - What stays red: a Price that doesn't sort the list. Edit still shows after each tap, and after the third try the journey fails with `The journey tapped Price in Sort, and Edit still shows: the list isn't sorted by price.` A Price that can't be tapped three times in a row fails with `The journey couldn't tap Price in Sort 3 times in a row.`
+
+**XCTest's record of an app's state lags on a CI runner.** Signature: `ShareExtensionJourney/testAddFromTheShareExtension()` fails after Add in the share extension with `Failed to activate application 'com.codemonkeylabs.wishbone at …/Wishbone.app' (current state: Running Background)`, about 60 seconds after `Activate com.codemonkeylabs.wishbone`, while the system log has the app in the foreground. Seen on 2026-11-27 on CI in run 46046440049 attempt 1 (journeys-3), in a release gate. A re-run of the job passed.
+
+What the result bundle shows, in UTC:
+
+| Time | What happened |
+|---|---|
+| 18:20:13.06 | The journey opens the store's page. testmanagerd starts to watch Safari |
+| 18:20:13.67 | SpringBoard: Safari is in the foreground |
+| 18:20:20.19 | SpringBoard: the app is in the background |
+| 18:21:10.85 | testmanagerd's process monitor gives the runner both states, 57 seconds late. The journey's wait for Safari, then 60 seconds, passed by 3 seconds |
+| 18:22:00.76 | After Add, `activate()` asks for the app. SpringBoard executes the request |
+| 18:22:01.77 | SpringBoard: the app is in the foreground. From then on, its process runs its UIKit lifecycle and makes network calls |
+| 18:22:01.96 | In the runner, the launch "via platform mechanisms" completes after 1.2 seconds. `activate()` then waits 60 seconds for its record to say Running Foreground |
+| 18:23:02.03 | `activate()` fails on its record. No state of any app reached the runner after 18:21:10, until the runner ended at 18:23:26 |
+
+So the app came to the front in about a second, and XCTest's record of app states, which testmanagerd keeps from a RunningBoard process monitor, lagged behind it. The cause wasn't found: why testmanagerd's monitor stops updating. The lag began when testmanagerd started to watch Safari. Two launches of the app earlier in the same session updated in seconds. The simulator's log hides the runtime's own words, and its volume was lower in those minutes than before them. The lag doesn't happen on the maintainer's Mac.
+
+- What the gate does: the journey waits up to 180 seconds for XCTest's record that Safari is in the foreground. To come back to the app, it turns `continueAfterFailure` on only around `app.activate()`, inside a non-strict `XCTExpectFailure` that matches only `Failed to activate application 'com.codemonkeylabs.wishbone at …'` with `(current state: Running Background)`, and turns it off again. Its reason is this flake's name, and the test is the one known issue that `allowedKnownIssues` lets pass. Any other issue in the test is not expected, so the test fails. When the record still doesn't say Running Foreground, the journey waits on the record itself, up to 180 seconds. The double-length run does the same.
+- What shows: after each run of the journeys, a line names this flake and how many activations the journeys waited past, then a line for each with the journey and how long the record took. In the run in the four settings, the journey tells the settings helper. The double-length run has no helper, so the gate reads the journey's line from that run's log. The journey's log, in every run, has the line `XCTest's activation of the app timed out on its record of the app's state: the record said so after <N> s.` Each one is a sighting: name its run, its attempt and its line in the hand-off.
+- What stays red: a record that doesn't say Running Foreground within 180 seconds of the activation, which fails with `XCTest's record of the app's state didn't say Running Foreground within 180 seconds of the activation.`, and has the line `… the record didn't say so within <N> s.` Any other failure in `activate()`, or anywhere else, fails as before.
 
 ### Seen on CI, not retried
 

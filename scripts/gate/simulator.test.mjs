@@ -4,14 +4,18 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 
+import { allowedKnownIssues } from './steps.mjs';
 import { testResults } from './xcresult-fixture.mjs';
 import { readTestResults } from './xcresult.mjs';
 
 import {
+  activationLagFlake,
+  activationLagLines,
   auditRetryLines,
   auditTimeOutFlake,
   dragFlake,
   dragRetryLines,
+  loggedActivationLags,
   loggedDragRetries,
   loggedSortRetries,
   sortFlake,
@@ -1078,6 +1082,26 @@ test('the settings helper remembers each time a journey opened Sort again, apart
   assert.deepEqual(helper.screens(), []);
 });
 
+test('the settings helper remembers each activation that a journey waited past, apart from the drags', async (t) => {
+  const { applier, ran } = fakeSimulator();
+  const helper = await startSettingsHelper((setting, options) => applier.apply(setting, options));
+  t.after(() => helper.close());
+  const post = (body, method = 'POST') => fetch(`${helper.address}/activation-lags`, { method, body });
+  assert.deepEqual(helper.activationLags(), []);
+  const sighting = 'ShareExtensionJourney: the record said so after 75 s';
+  assert.equal((await post(sighting)).status, 204);
+  assert.deepEqual(helper.activationLags(), [sighting]);
+  const empty = await post('');
+  assert.equal(empty.status, 400);
+  assert.equal(await empty.text(), "the journey and how long XCTest's record took, as the body");
+  assert.equal((await post(undefined, 'GET')).status, 404);
+  assert.equal(helper.activationLags().length, 1);
+  assert.deepEqual(helper.dragRetries(), []);
+  assert.deepEqual(helper.auditRetries(), []);
+  assert.deepEqual(ran, []);
+  assert.deepEqual(helper.screens(), []);
+});
+
 test('the line after the journeys names each time Sort was opened again, with what showed, and the flake', () => {
   assert.deepEqual(sortRetryLines([]), []);
   assert.deepEqual(sortRetryLines(['ReorderJourney, try 1: Price was tapped, and Edit still showed.']), [
@@ -1115,6 +1139,61 @@ test('the Reorder journey opens Sort at most 3 times, tells the helper of each t
   // Only Edit's absence ends the loop well, and the error says whether Price was ever tapped.
   assert.match(journey, /if edit\.waitForNonExistence\(timeout: 10\) \{ return \}/);
   assert.match(journey, /if wasTapped \{\n\s*throw AuditError\(/);
+});
+
+test('the line after the journeys names each activation waited past, with how long the record took, and the flake', () => {
+  assert.deepEqual(activationLagLines([]), []);
+  assert.deepEqual(activationLagLines(['ShareExtensionJourney: the record said so after 75 s']), [
+    `  The journeys waited past 1 activation, because XCTest's record of the app's state lagged (the named flake "${activationLagFlake}"):`,
+    '    ShareExtensionJourney: the record said so after 75 s',
+  ]);
+  assert.match(activationLagLines(['a', 'b'])[0], /waited past 2 activations/);
+});
+
+test("a run with no helper names each activation waited past from its log, as the helper's line does", () => {
+  const journey = readFileSync(new URL('../../JourneyTests/ShareExtensionJourney.swift', import.meta.url), 'utf8');
+  // The journey's own words, as its log has them.
+  assert.match(journey, /print\("XCTest's activation of the app timed out on its record of the app's state: \\\(record\)\."\)/);
+  assert.match(journey, /"the record said so after \\\(seconds\) s"/);
+  assert.match(journey, /"the record didn't say so within \\\(seconds\) s"/);
+  const log = [
+    '    t =   135.73s     Activate com.codemonkeylabs.wishbone',
+    "XCTest's activation of the app timed out on its record of the app's state: the record said so after 75 s.",
+    "XCTest's activation of the app timed out on its record of the app's state: the record didn't say so within 241 s.",
+  ].join('\n');
+  assert.deepEqual(loggedActivationLags(log), [
+    'ShareExtensionJourney: the record said so after 75 s',
+    "ShareExtensionJourney: the record didn't say so within 241 s",
+  ]);
+  assert.deepEqual(loggedActivationLags(''), []);
+});
+
+test("the gate allows one known issue: the share extension's journey's activation lag, by the flake's name", () => {
+  const journey = readFileSync(new URL('../../JourneyTests/ShareExtensionJourney.swift', import.meta.url), 'utf8');
+  const docs = readFileSync(new URL('../../docs/development.md', import.meta.url), 'utf8');
+  assert.deepEqual(allowedKnownIssues, [
+    { test: 'JourneyTests.ShareExtensionJourney/testAddFromTheShareExtension()', reason: activationLagFlake },
+  ]);
+  // The journey gives XCTExpectFailure the same reason, and it is the flake's name under Named flakes.
+  assert.ok(journey.includes(`XCTExpectFailure("${activationLagFlake}", options: options)`));
+  assert.ok(docs.includes(`**${activationLagFlake}.**`));
+  // The journey's one expected failure is the only XCTExpectFailure in it.
+  assert.equal(journey.match(/XCTExpectFailure\(/g).length, 1);
+});
+
+test("the share extension's journey expects only activate()'s time-out on this app's lagging record, and then waits itself", () => {
+  const journey = readFileSync(new URL('../../JourneyTests/ShareExtensionJourney.swift', import.meta.url), 'utf8');
+  assert.match(journey, /static let stateRecordTimeout: TimeInterval = 180\n/);
+  // Only the app's own activation, on a record that says background, is expected, and never strictly.
+  assert.match(journey, /description\.contains\("Failed to activate application 'com\.codemonkeylabs\.wishbone at "\)\n\s*&& description\.contains\("\(current state: Running Background\)"\)/);
+  assert.match(journey, /options\.isStrict = false/);
+  // continueAfterFailure is on only around activate(), and the journey's own wait on the record follows.
+  assert.match(journey, /continueAfterFailure = true\n\s*XCTExpectFailure\(".*", options: options\) \{\n\s*app\.activate\(\)\n\s*\}\n\s*continueAfterFailure = false\n/);
+  assert.match(journey, /app\.wait\(for: \.runningForeground, timeout: Self\.stateRecordTimeout\)/);
+  assert.match(journey, /Audit\.reportRetry\("ShareExtensionJourney: \\\(record\)", at: "activation-lags"\)/);
+  assert.match(journey, /XCTAssertTrue\(\n\s*caughtUp,/);
+  // The journey has no other activate().
+  assert.equal(journey.match(/\.activate\(\)/g).length, 1);
 });
 
 test('a journey runs an audit again for text called partially unsupported a bounded number of times, on a still screen', () => {

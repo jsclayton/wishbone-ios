@@ -20,7 +20,9 @@ const unreadable = { tests: null, runFailed: null, failed: [], known: [], skippe
  * its own time in milliseconds, and `messages`, which maps each failed
  * test's name to its failure messages, in order. A test's name is `Bundle.Suite/function()`. A test with
  * arguments is one test. A test that passes with an expected failure (`XCTExpectFailure`, `withKnownIssue`) is
- * `known`. `tests` is null when the tree is not one of a test run.
+ * `known`, and `knownReasons` maps its name to the reason of each expected failure, as the test gave it to
+ * `XCTExpectFailure`. The tree has the reason, not the issue's message. `tests` is null when the tree is not one of
+ * a test run.
  */
 export function readTestResults(results) {
   const plans = results?.testNodes;
@@ -30,6 +32,7 @@ export function readTestResults(results) {
   const known = [];
   const skipped = [];
   const messages = {};
+  const knownReasons = {};
   const times = {};
   let testsMs = 0;
   /** The failure messages in a node and its children, such as the cases of a test with arguments. */
@@ -37,6 +40,11 @@ export function readTestResults(results) {
     ...(node.nodeType === 'Failure Message' ? [node.name] : []),
     ...(node.children ?? []).flatMap(failureMessages),
   ];
+  /** The reasons of the expected failures in a node and its children. */
+  const expectedReasons = (node) => (node.children ?? []).flatMap((child) => [
+    ...(child.nodeType === 'Expected Failure' ? [child.name] : []),
+    ...expectedReasons(child),
+  ]);
   const visit = (node, bundle) => {
     if (typeof node.nodeType === 'string' && node.nodeType.endsWith('test bundle')) bundle = node.name;
     if (node.nodeType === 'Test Case') {
@@ -44,7 +52,10 @@ export function readTestResults(results) {
       names.push(name);
       times[name] = Math.round((node.durationInSeconds ?? 0) * 1000);
       testsMs += times[name];
-      if (node.result === 'Expected Failure') known.push(name);
+      if (node.result === 'Expected Failure') {
+        known.push(name);
+        knownReasons[name] = expectedReasons(node);
+      }
       else if (node.result === 'Skipped') skipped.push(name);
       // Any other result that is not a pass is a failure, so a result that Xcode adds later can't pass by default.
       else if (node.result !== 'Passed') {
@@ -70,6 +81,7 @@ export function readTestResults(results) {
     testsMs,
     times,
     messages,
+    knownReasons,
   };
 }
 
@@ -98,7 +110,7 @@ export function readResultBundle(bundle) {
  * Returns `{ fail, counts, names }`: the reason why the step fails, if it does, the counts, and the names of each
  * tier's tests.
  */
-export function checkResultBundles(tiers, { exit, allowedSkips = [], read = readResultBundle }) {
+export function checkResultBundles(tiers, { exit, allowedSkips = [], allowedKnownIssues = [], read = readResultBundle }) {
   const counts = {};
   const names = {};
   for (const [countName, bundles] of Object.entries(tiers)) {
@@ -108,7 +120,7 @@ export function checkResultBundles(tiers, { exit, allowedSkips = [], read = read
       // With no summary, the tests didn't run to the end: the build failed, or the run died. The step's exit code
       // and its log say which. A step that says it passed with no summary fails here.
       if (reading.tests === null) return exit === 0 ? { fail: `${bundle.label}: ${judge(reading)}`, counts } : { counts };
-      const problem = judge(reading, allowedSkips);
+      const problem = judge(reading, allowedSkips, allowedKnownIssues);
       if (problem !== null) return { fail: `${bundle.label}: ${problem}`, counts };
       first ??= reading;
       if (reading.names.join('\n') !== first.names.join('\n')) {

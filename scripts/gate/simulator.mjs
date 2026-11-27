@@ -28,6 +28,7 @@ import { duration } from './gate.mjs';
 import { shardNamed } from './parts.mjs';
 import { judge } from './reading.mjs';
 import { inSlot, slotDirectory } from './slot.mjs';
+import { allowedKnownIssues } from './steps.mjs';
 import { checkAuditScreenshots, readAttachmentNames, readResultBundle } from './xcresult.mjs';
 
 /** The name of the gate's own simulator. The gate makes it when the machine has none. */
@@ -568,17 +569,19 @@ export function settingsApplier(
  * server had the order from before the drag: the named flake "a drag to reorder doesn't reach the app on a CI
  * runner". `POST /sort-retries`, with the journey, its try and what showed as the body, records each time a journey
  * opened Sort again because Price wasn't chosen: the named flake "the Sort menu closes before the journey taps Price
- * on a CI runner".
+ * on a CI runner". `POST /activation-lags`, with the journey and how long XCTest's record took as the body, records
+ * an activation that timed out on XCTest's record of the app's state, after which the journey waited on the record
+ * itself: the named flake "XCTest's record of an app's state lags on a CI runner".
  *
  * Resolves with `{ address, close, screens, resends, auditRetries, screenshotRetries, lostElementRetries,
- * partlyScalingRetries, dragRetries, sortRetries }`, where `screens()` gives the names, in the
+ * partlyScalingRetries, dragRetries, sortRetries, activationLags }`, where `screens()` gives the names, in the
  * order they came, `resends()` gives each change that a journey sent again: `{ setting, after, read }`, with the
  * settings' labels and what `readSettings` read before the change was sent again, and `auditRetries()` gives each
  * audit that ran again, by its screen and setting, in the order they came. `screenshotRetries()` gives each
  * screenshot that was asked for again, the same way, `lostElementRetries()` each audit that ran again for an
  * issue with no element, `partlyScalingRetries()` each audit that ran again for text called partially
- * unsupported, `dragRetries()` each drag that a journey made again, and `sortRetries()` each time a journey opened
- * Sort again.
+ * unsupported, `dragRetries()` each drag that a journey made again, `sortRetries()` each time a journey opened
+ * Sort again, and `activationLags()` each activation whose time-out a journey waited past.
  */
 export function startSettingsHelper(applySetting, { readSettings = async () => 'not read' } = {}) {
   const resends = [];
@@ -588,6 +591,7 @@ export function startSettingsHelper(applySetting, { readSettings = async () => '
   const partlyScalingRetries = [];
   const dragRetries = [];
   const sortRetries = [];
+  const activationLags = [];
   const retries = {
     '/audit-retries': [auditRetries, "the audit's screen and setting"],
     '/screenshot-retries': [screenshotRetries, "the screenshot's screen and setting"],
@@ -595,6 +599,7 @@ export function startSettingsHelper(applySetting, { readSettings = async () => '
     '/partly-scaling-retries': [partlyScalingRetries, "the audit's screen and setting"],
     '/drag-retries': [dragRetries, "the journey, its try and the server's order"],
     '/sort-retries': [sortRetries, 'the journey, its try and what showed'],
+    '/activation-lags': [activationLags, "the journey and how long XCTest's record took"],
   };
   const screens = new Set();
   const server = createServer((request, response) => {
@@ -675,6 +680,7 @@ export function startSettingsHelper(applySetting, { readSettings = async () => '
         partlyScalingRetries: () => [...partlyScalingRetries],
         dragRetries: () => [...dragRetries],
         sortRetries: () => [...sortRetries],
+        activationLags: () => [...activationLags],
       });
     });
   });
@@ -762,6 +768,23 @@ export function sortRetryLines(retries) {
   ];
 }
 
+/** The name of the flake that a journey meets by waiting past an activation's time-out. See `startSettingsHelper`. */
+export const activationLagFlake = "XCTest's record of an app's state lags on a CI runner";
+
+/**
+ * The lines after a run of the journeys, one for each activation that timed out on XCTest's record of the app's
+ * state, after which the journey waited on the record itself (`activationLags()` of `startSettingsHelper`). Each is a
+ * sighting of the flake, with how long the record took. None when no activation timed out.
+ */
+export function activationLagLines(lags) {
+  if (lags.length === 0) return [];
+  const activations = lags.length === 1 ? '1 activation' : `${lags.length} activations`;
+  return [
+    `  The journeys waited past ${activations}, because XCTest's record of the app's state lagged (the named flake "${activationLagFlake}"):`,
+    ...lags.map((lag) => `    ${lag}`),
+  ];
+}
+
 /**
  * Each time a journey opened Sort again, from the log of a run with no settings helper: the line that the journey
  * logs, with what showed. See `sortRetryLines`.
@@ -769,6 +792,16 @@ export function sortRetryLines(retries) {
 export function loggedSortRetries(log) {
   return [...log.matchAll(/^Price wasn't chosen in Sort: (.*)\. The journey opens Sort again \((\d+) of \d+\)\.$/gm)].map(
     (match) => `ReorderJourney, try ${match[2]}: ${match[1]}.`,
+  );
+}
+
+/**
+ * Each activation whose time-out a journey waited past, from the log of a run with no settings helper: the line
+ * that the journey logs. See `activationLagLines`.
+ */
+export function loggedActivationLags(log) {
+  return [...log.matchAll(/^XCTest's activation of the app timed out on its record of the app's state: (the record .*)\.$/gm)].map(
+    (match) => `ShareExtensionJourney: ${match[1]}`,
   );
 }
 
@@ -1061,7 +1094,7 @@ export async function runSimulatorTier({ root, directory, build = true, shard, s
     const exit = await xcodebuild(args, { root, log: path.join(directory, log), env });
     const reading = bundle === undefined ? null : readResultBundle(bundle);
     onReading?.(reading);
-    const problem = reading === null ? null : judge(reading);
+    const problem = reading === null ? null : judge(reading, [], allowedKnownIssues);
     const ok = exit === 0 && problem === null;
     const why = problem ?? `xcodebuild ended with ${exit}`;
     // The rest of a run's time is Xcode's own: installing the app, and launching the test runner.
@@ -1134,12 +1167,14 @@ export async function runSimulatorTier({ root, directory, build = true, shard, s
           for (const line of partlyScalingRetryLines(helper.partlyScalingRetries())) say(line);
           for (const line of dragRetryLines(helper.dragRetries())) say(line);
           for (const line of sortRetryLines(helper.sortRetries())) say(line);
+          for (const line of activationLagLines(helper.activationLags())) say(line);
         } else {
-          // A run with no helper has the drag's and Sort's retries only in its log, which CI uploads only when the
-          // part fails. So the lines name each one here too: each is a sighting.
+          // A run with no helper has the drag's and Sort's retries, and an activation's lag, only in its log, which CI
+          // uploads only when the part fails. So the lines name each one here too: each is a sighting.
           const logged = existsSync(path.join(directory, log)) ? readFileSync(path.join(directory, log), 'utf8') : '';
           for (const line of dragRetryLines(loggedDragRetries(logged))) say(line);
           for (const line of sortRetryLines(loggedSortRetries(logged))) say(line);
+          for (const line of activationLagLines(loggedActivationLags(logged))) say(line);
         }
         return { passed, reading };
       };
