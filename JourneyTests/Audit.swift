@@ -139,8 +139,9 @@ enum Audit {
     }
   }
 
-  /// Audits the screen at the largest text size: first the Dynamic Type check on its own, then every other check,
-  /// on the screen when it is still again. Returns the screen as the second audit read it.
+  /// Audits the screen at the largest text size in three parts: first the Dynamic Type check on its own, then every
+  /// other check but clipped text, on the screen when it is still again, and last the clipped text check on its own.
+  /// Returns the screen when it is still after the third audit.
   ///
   /// This is the journey's answer to the named flake "an audit's issue has no element" in `docs/development.md`.
   /// In a gate run on 2026-11-25, each screen with a large title, the first time it was audited at the largest text
@@ -153,8 +154,17 @@ enum Audit {
   /// the bar at 127 points, passed. The issue most likely comes with the short bar. With the Dynamic Type check
   /// first, the other checks read the screen with the bar at its own height.
   ///
-  /// The second audit's screenshot has words after the setting, so it is not one of the screen's four in the gate's
-  /// count.
+  /// The clipped text check comes last, on its own, after the checks that don't move the screen. At the largest text
+  /// size, the clipped text check moves a list, as the Dynamic Type check does: in a local gate run on 2026-11-27,
+  /// each of the two moved Home's list down by 3.67 points, each time it ran, and no other check moved it. The
+  /// journey reads an issue's element after the audit, and XCUI can't place an element that moved during the audit.
+  /// With the two checks in one audit, the contrast check's issue for the group's heading under the tab bar, which
+  /// the tab bar's exception allows, came with no element, in every try: the named flake "an audit's issue has no
+  /// element", on Home after a sign-in in CI runs 45893856729, 45901661533 and 45907072555. The contrast check on its
+  /// own gave the issue with its element.
+  ///
+  /// The screenshots of the second and the third audit have words after the setting, so they are not among the
+  /// screen's four in the gate's count.
   private static func auditAtLargestText(
     _ app: XCUIApplication, _ screen: String, shown: (screenshot: XCUIScreenshot, pixels: Data), test: XCTestCase
   ) async throws -> (screenshot: XCUIScreenshot, pixels: Data) {
@@ -163,10 +173,17 @@ enum Audit {
     let settled = try await settledScreen(of: app, screen, in: largestText, where: { _ in true })
     try await audit(
       app, screen, in: largestText.label, screenshot: settled.screenshot, rows: [],
-      types: XCUIAccessibilityAuditType.all.subtracting(.dynamicType), test: test,
+      types: XCUIAccessibilityAuditType.all.subtracting(movingChecks), test: test,
       attachedAs: "\(screen), in \(largestText.label), after the Dynamic Type check")
-    return settled
+    // The checks before it don't move the screen, so the screen is still, and as the second audit read it.
+    try await audit(
+      app, screen, in: largestText.label, screenshot: settled.screenshot, rows: [], types: .textClipped, test: test,
+      attachedAs: "\(screen), in \(largestText.label), the clipped text check")
+    return try await stillScreen(of: app, screen, in: largestText.label)
   }
+
+  /// The checks that move a list at the largest text size, each time that they run. See `auditAtLargestText`.
+  private static let movingChecks: XCUIAccessibilityAuditType = [.dynamicType, .textClipped]
 
   /// How many drags may bring a row on the screen.
   private static let scrollLimit = 20
