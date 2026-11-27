@@ -42,6 +42,9 @@ public struct GiftPage: Equatable, Sendable {
   /// Whether the list's name pushes the list's page: the giver can see the list, and the copy holds it.
   public let linksList: Bool
 
+  /// Whether How many can go higher. See `SessionModel.offersRaise(onGift:)`.
+  public let offersRaise: Bool
+
   /// A change of a changed item, with what its words need. See "Words" in `docs/screens/gift.md`.
   public enum Change: Equatable, Sendable {
     /// "Title: {old} → {new}".
@@ -135,6 +138,7 @@ extension SessionModel {
       flags: givingGift(gift).flags,
       changes: changes.compactMap(GiftPage.Change.init),
       linksItem: !isRemoved && itemPage(id: gift.itemID) != nil,
-      linksList: !gift.recipientIDs.isHidden && listPage(id: gift.listID) != nil)
+      linksList: !gift.recipientIDs.isHidden && listPage(id: gift.listID) != nil,
+      offersRaise: offersRaise(onGift: gift))
   }
 }
