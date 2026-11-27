@@ -1,12 +1,11 @@
 import SwiftUI
-import UniformTypeIdentifiers
 import WishboneAPI
 import WishboneSession
 
 /// The share extension's screen: the add form, filled in from the one thing that another app shared, with Cancel and
 /// Add. See `docs/screens/share-extension.md`, and "The share extension" in `docs/spec.md`.
 ///
-/// It reads the lists that the user can edit while the link is read, and shows the form when both are in. It shows
+/// It reads the lists that the user can edit while the link or the photo is read, and shows the form when both are in. It shows
 /// no claim state, nothing about a gift, and no support row. Nothing waits for later: when the instance can't be
 /// reached, it offers Try again and Copy the link, and Cancel keeps nothing.
 ///
@@ -67,7 +66,7 @@ public struct ShareExtensionScreen: View {
     if case .reading = shared {
       progress(nil)
     } else if input == nil {
-      message(String(localized: "Wishbone can't add this. Share a link or some text.", bundle: #bundle))
+      message(String(localized: "Wishbone can't add this. Share a link, some text, or a photo.", bundle: #bundle))
     } else {
       switch device.state {
       case .signedOut:
@@ -134,7 +133,7 @@ public struct ShareExtensionScreen: View {
     }
   }
 
-  /// The progress line, with Fill it in myself while a link is read.
+  /// The progress line, with Fill it in myself while a link or a photo is read.
   private func progress(_ words: String?) -> some View {
     List {
       Section {
@@ -179,8 +178,11 @@ public struct ShareExtensionScreen: View {
   }
 
   private var readingWords: String? {
-    guard case .reading(.link(_, let store)) = state.phase else { return nil }
-    return String(localized: "Reading \(store)…", bundle: #bundle)
+    switch state.phase {
+    case .reading(.link(_, let store)): String(localized: "Reading \(store)…", bundle: #bundle)
+    case .reading(.photo): String(localized: "Looking at your photo…", bundle: #bundle)
+    default: nil
+    }
   }
 
   private var tryAgainButton: some View {
@@ -258,29 +260,11 @@ public enum SharedReading: Sendable, Equatable {
   /// The items are being read.
   case reading
 
-  /// What was read: one link or one text, or nil for anything else.
+  /// What was read: one link, one text or one image, or nil for anything else.
   case read(SharedThing?)
 
-  /// Reads the one thing that the input items hold: a web link, or a text. Several things, or a thing of another
-  /// kind, give nil: Wishbone can't use them. The activation rule keeps Wishbone out of a share sheet for most of
-  /// them already.
+  /// Reads the one thing that the input items hold. See `SharedThing.read(_:untitled:)`.
   public static func read(_ items: [NSExtensionItem]) async -> SharedThing? {
-    let providers = items.flatMap { $0.attachments ?? [] }
-    guard providers.count == 1, let provider = providers.first else { return nil }
-    if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier),
-      !provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
-    {
-      let url: URL? = await withCheckedContinuation { continuation in
-        _ = provider.loadObject(ofClass: URL.self) { url, _ in continuation.resume(returning: url) }
-      }
-      return url.map(SharedThing.link)
-    }
-    if provider.hasItemConformingToTypeIdentifier(UTType.plainText.identifier) {
-      let text: String? = await withCheckedContinuation { continuation in
-        _ = provider.loadObject(ofClass: String.self) { text, _ in continuation.resume(returning: text) }
-      }
-      return text.map(SharedThing.text)
-    }
-    return nil
+    await SharedThing.read(items.flatMap { $0.attachments ?? [] }, untitled: PhotoWords.untitled)
   }
 }

@@ -17,6 +17,11 @@ public struct Photo: Sendable, Equatable, Identifiable {
   /// The longest side that the app sends.
   public static let longestSide = 2400
 
+  /// The longest side that the share extension sends: the most that the server keeps. The extension has a memory
+  /// limit of about 120 MB, and a decode for 2400 px of a 48 MP JPEG takes about 100 MB of it. For 1200 px, the
+  /// decoder reads the file at a quarter of its size, so the peak stays near 30 MB.
+  public static let sharedLongestSide = 1200
+
   public let id: UUID
 
   /// The bytes that are sent. From a file, always the JPEG that the device made of it.
@@ -41,6 +46,17 @@ public struct Photo: Sendable, Equatable, Identifiable {
     self.init(data: jpeg, untitled: untitled(Self.dateTaken(of: file) ?? now))
   }
 
+  /// The photo of an image file that another app shared, as a JPEG of at most `longestSide` px, under the limit.
+  /// The file is read from where it is, and decoded only at the size that is sent, so the image is made smaller
+  /// before it is held: the share extension never holds the file's bytes, or its full-size image. `untitled` gets
+  /// the date that the photo was taken, from its metadata, or now. Nil when the device can't make the JPEG.
+  public init?(fileAt url: URL, longestSide side: Int, now: Date = .now, untitled: (Date) -> String) {
+    guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
+      let jpeg = Self.jpeg(of: source, longestSide: side)
+    else { return nil }
+    self.init(data: jpeg, untitled: untitled(Self.dateTaken(of: source) ?? now))
+  }
+
   /// Two photos are the same photo when they are one pick: the form compares them on every change.
   public static func == (first: Photo, second: Photo) -> Bool {
     first.id == second.id
@@ -49,9 +65,14 @@ public struct Photo: Sendable, Equatable, Identifiable {
   /// The file as a JPEG of at most `longestSide` px, turned upright, under `byteLimit`, with no metadata. Nil when
   /// the device can't read the file as an image.
   public static func jpeg(of file: Data) -> Data? {
-    guard let source = CGImageSourceCreateWithData(file as CFData, nil), CGImageSourceGetCount(source) > 0 else {
-      return nil
-    }
+    guard let source = CGImageSourceCreateWithData(file as CFData, nil) else { return nil }
+    return jpeg(of: source, longestSide: longestSide)
+  }
+
+  /// The source's first image as a JPEG of at most `longestSide` px, turned upright, under `byteLimit`, with no
+  /// metadata.
+  private static func jpeg(of source: CGImageSource, longestSide: Int) -> Data? {
+    guard CGImageSourceGetCount(source) > 0 else { return nil }
     var side = longestSide
     var quality = 0.85
     while side >= 300 {
@@ -91,8 +112,11 @@ public struct Photo: Sendable, Equatable, Identifiable {
   /// When the photo was taken, from its EXIF metadata. Nil when the file says nothing. The EXIF time has no zone,
   /// so it is read in the device's.
   static func dateTaken(of file: Data) -> Date? {
-    guard let source = CGImageSourceCreateWithData(file as CFData, nil),
-      let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+    CGImageSourceCreateWithData(file as CFData, nil).flatMap(dateTaken(of:))
+  }
+
+  private static func dateTaken(of source: CGImageSource) -> Date? {
+    guard let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
       let exif = properties[kCGImagePropertyExifDictionary] as? [CFString: Any],
       let text = exif[kCGImagePropertyExifDateTimeOriginal] as? String
     else { return nil }

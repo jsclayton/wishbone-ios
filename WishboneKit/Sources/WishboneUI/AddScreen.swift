@@ -339,13 +339,19 @@ struct AddScreen: View {
   /// The photo of the file, as a JPEG under the server's limit, made away from the main actor. Its title, when no
   /// guess comes back, names the day it was taken. Nil when the device can't read the file as an image.
   @concurrent nonisolated private static func photo(of file: Data) async -> Photo? {
-    Photo(file: file) { date in
-      String(localized: "Photo from \(date.formatted(date: .abbreviated, time: .omitted))", bundle: #bundle)
-    }
+    Photo(file: file, untitled: PhotoWords.untitled)
   }
 
   private func announce(_ words: String) {
     AccessibilityNotification.Announcement(words).post()
+  }
+}
+
+/// The words of a photo's title when no guess comes back.
+enum PhotoWords {
+  /// "Photo from {date}", with the day that the photo was taken.
+  nonisolated static func untitled(_ date: Date) -> String {
+    String(localized: "Photo from \(date.formatted(date: .abbreviated, time: .omitted))", bundle: #bundle)
   }
 }
 

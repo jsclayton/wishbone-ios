@@ -7,7 +7,8 @@ import WishboneUI
 /// The share extension's entry point: it reads the one thing that the other app shared, builds the extension's
 /// device from the shared Keychain item, and shows the add form. See `docs/screens/share-extension.md`.
 ///
-/// The activation rule in `Info.plist` offers Wishbone for one web link or one text, and never for several things.
+/// The activation rule in `Info.plist` offers Wishbone for one web link, one text or one image, and never for several
+/// things.
 /// The extension links no diagnostics: it sends nothing.
 final class ShareViewController: UIViewController {
   override func viewDidLoad() {
