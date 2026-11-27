@@ -108,6 +108,10 @@ public final class Device {
     /// notification center.
     public var reminders: Reminders
 
+    /// Where the session hears that the share extension added an item, and syncs at once. The default hears
+    /// nothing: only the app gives the Darwin notification's.
+    public var addsFromShareExtension: any AddsFromShareExtension
+
     public init(
       userAgent: UserAgent,
       keychain: any SessionKeychain,
@@ -120,7 +124,8 @@ public final class Device {
       refresh: any RefreshScheduler = .none,
       timeZone: TimeZoneSource = .system,
       diagnostics: any DiagnosticsReporter = .none,
-      reminders: Reminders = .none
+      reminders: Reminders = .none,
+      addsFromShareExtension: any AddsFromShareExtension = .none
     ) {
       self.userAgent = userAgent
       self.keychain = keychain
@@ -134,6 +139,7 @@ public final class Device {
       self.timeZone = timeZone
       self.diagnostics = diagnostics
       self.reminders = reminders
+      self.addsFromShareExtension = addsFromShareExtension
     }
   }
 
@@ -432,6 +438,7 @@ public final class Device {
       imageFolder: ImageCache.folder(of: session, in: setup.images), timeZone: setup.timeZone,
       timerClock: setup.timerClock, network: setup.network, refresh: setup.refresh, diagnostics: setup.diagnostics,
       reminders: setup.reminders, reminderSettingsFile: ReminderSettingsFile(of: session, in: setup.storage),
+      addsFromShareExtension: setup.addsFromShareExtension,
       endedByServer: { [weak self] model in await self?.endedByServer(model) })
   }
 }

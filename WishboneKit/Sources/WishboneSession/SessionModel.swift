@@ -173,6 +173,12 @@ public final class SessionModel {
   /// Starts a sync at each change of the device's network, until the session model ends.
   private var watchingNetwork: Task<Void, Never>?
 
+  /// Starts a sync each time the share extension says that it added an item, until the session model ends.
+  private var watchingShareExtension: Task<Void, Never>?
+
+  /// Whose session model this is: the app's, or the share extension's. See `SessionModel.Role`.
+  let role: Role
+
   /// Where the session asks iOS for its next background refresh.
   private let refresh: any RefreshScheduler
 
@@ -217,9 +223,12 @@ public final class SessionModel {
     diagnostics: any DiagnosticsReporter,
     reminders: Reminders,
     reminderSettingsFile: ReminderSettingsFile,
+    addsFromShareExtension: any AddsFromShareExtension = .none,
+    role: Role = .app,
     endedByServer: @escaping @MainActor (SessionModel) async -> Void
   ) {
     self.session = session
+    self.role = role
     self.client = client
     self.database = database
     images = ImageCache(client: client, folder: imageFolder, network: network)
@@ -239,6 +248,13 @@ public final class SessionModel {
     let changes = network.changes()
     watchingNetwork = Task { [weak self] in
       for await _ in changes {
+        await self?.syncNow()
+      }
+    }
+    // The share extension added an item: the app syncs at once. See "When the app syncs" in `docs/spec.md`.
+    let adds = addsFromShareExtension.adds()
+    watchingShareExtension = Task { [weak self] in
+      for await _ in adds {
         await self?.syncNow()
       }
     }
@@ -453,7 +469,8 @@ public final class SessionModel {
   /// first ask for authorization on a simulator. A sync that waited for it held every later sync, and with them the
   /// line "Can't reach {address}" after the instance went away.
   private func startSync() async -> SyncOutcome {
-    guard !hasEnded, versionBlock == nil else { return .stopped }
+    // The share extension never syncs: its copy is what it read from the API, and it keeps no unsent change.
+    guard !hasEnded, versionBlock == nil, role.isApp else { return .stopped }
     let task = Task { await runSync() }
     running = task
     let outcome = await task.value
@@ -734,6 +751,8 @@ public final class SessionModel {
     timer = nil
     watchingNetwork?.cancel()
     watchingNetwork = nil
+    watchingShareExtension?.cancel()
+    watchingShareExtension = nil
     windowsInForeground = []
     windowsOnScreen = []
     // A send in flight is abandoned, and its answer is never written: the database is about to go.

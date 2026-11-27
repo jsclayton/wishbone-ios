@@ -11,7 +11,7 @@ import WishboneSession
 ///
 /// The fixture user, Robin, is both a recipient (Casey claimed an item on Robin's list) and a giver (Robin has open
 /// gifts, with notes and from labels, on Jordan's list, where Casey has one too). A new system surface joins the suite
-/// when it is built.
+/// when it is built: the reminders, and the share extension's target lists.
 @Suite("The secrecy suite", .timeLimit(.minutes(2)))
 @MainActor
 struct SecrecyTests {
@@ -91,6 +91,57 @@ struct SecrecyTests {
   /// occasion, and how early. The catalog's words carry only the person, the occasion and the timing: a hosted test
   /// holds them to the table.
   static let words = ReminderWords(title: { "Wishbone" }, body: { "\($0)" })
+
+  // MARK: - The share extension's target lists
+
+  @Test(
+    "The share extension's target lists hold exactly the allow list's fields, and no value from the fixture's gifts")
+  func shareExtensionTargets() async throws {
+    let fixture = try await fixture()
+    let device = instance.device()
+    await device.signIn(pasting: try await instance.loginLink(for: fixture.robin))
+    let app = try #require(device.session)
+    await until { app.gifts.count == 1 }
+
+    // The extension, from the app's Keychain item, with its copy in memory.
+    let share = ShareDevice(
+      .init(
+        userAgent: UserAgent(version: "1.0", isPad: false), keychain: instance.keychain, marker: instance.marker))
+    await share.load()
+    let session = try #require(share.session)
+    let targets = session.addTo.targets
+
+    // The payload is the lists that Robin can edit, and nothing else: none of Jordan's, where Robin gives.
+    #expect(!targets.isEmpty)
+    #expect(Set(targets.map(\.id)) == Set(app.lists.filter(\.canEdit).map(\.id)))
+    #expect(targets.allSatisfy { $0.list.recipientIDs == [fixture.robin.id] && $0.isMine })
+
+    // The fields of the payload, exactly.
+    for target in targets {
+      #expect(Mirror(reflecting: target).children.map(\.label) == ["list", "isMine", "recipientNames"])
+      #expect(
+        Mirror(reflecting: target.list).children.map(\.label) == [
+          "id", "name", "description", "isPrimary", "recipientIDs", "itemCount", "createdAt", "canEdit", "canDelete",
+          "canInvite", "canLeave", "version",
+        ])
+    }
+    // The extension's copy has no gift to show.
+    #expect(session.gifts.isEmpty)
+
+    // A second net: no text of the payload holds a value from the gifts. Robin's own name is the primary list's
+    // name, and is no secret from Robin.
+    for target in targets {
+      let texts = [target.list.name, target.list.description ?? ""] + target.recipientNames
+      for text in texts {
+        for secret in fixture.secrets where !fixture.giftIDs.contains(secret) && secret != fixture.robin.name {
+          #expect(!text.contains(secret), "\(text) holds \(secret)")
+        }
+      }
+      let words = Set(texts.joined(separator: " ").split { !$0.isLetter && !$0.isNumber }.map(String.init))
+      #expect(words.isDisjoint(with: fixture.giftIDs))
+    }
+    await share.end()
+  }
 
   // MARK: - Reminders
 
