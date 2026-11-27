@@ -78,7 +78,9 @@ nonisolated final class ShareExtensionJourney: JourneyTestCase {
     app.activate()
     XCTAssertTrue(lists.waitForExistence(timeout: 60), "The app didn't come back.")
     lists.tap()
-    let listRow = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", list.name)).firstMatch
+    // In the double-length pseudo-language, iOS puts a row's format places before its doubled words, so the row is
+    // found by the words that it contains.
+    let listRow = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", list.name)).firstMatch
     XCTAssertTrue(listRow.waitForExistence(timeout: 30), "The Lists tab has no row for Robin's list.")
     listRow.tap()
     let itemRow = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", page.title)).firstMatch
