@@ -7,12 +7,16 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<key>WishboneAppGroup</key>
+	<string>group.$(WISHBONE_BUNDLE_PREFIX)</string>
+	<key>WishboneKeychainAccessGroup</key>
+	<string>$(AppIdentifierPrefix)$(WISHBONE_BUNDLE_PREFIX)</string>
 	<key>NSExtension</key>
 	<dict>
 		<key>NSExtensionAttributes</key>
 		<dict>
 			<key>NSExtensionActivationRule</key>
-			<string>SUBQUERY(extensionItems, $item, SUBQUERY($item.attachments, $attachment, ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.codemonkeylabs.wishbone.never").@count &gt; 0).@count &gt; 0</string>
+			<string>SUBQUERY(extensionItems, $item, $item.attachments.@count == 1 AND SUBQUERY($item.attachments, $attachment, NOT (ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.file-url") AND (ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.url" OR ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.plain-text")).@count == 1).@count == 1 AND extensionItems.@count == 1</string>
 		</dict>
 		<key>NSExtensionPointIdentifier</key>
 		<string>com.apple.share-services</string>

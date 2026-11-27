@@ -122,6 +122,9 @@ final class ShareExtensionTests {
     let asked = instance.conditioner.requests.dropFirst(before).map(\.target)
     #expect(asked.allSatisfy { $0.contains("/users/") || $0.contains("/lists") })
     #expect(session.gifts.isEmpty && session.occasions.isEmpty && session.groups.isEmpty)
+    // The copy holds only the lists that the parent can edit: none where the parent is only a giver.
+    #expect(!session.lists.isEmpty && session.lists.allSatisfy(\.canEdit))
+    #expect(Set(session.lists.map(\.id)) == Set(appSession.lists.filter(\.canEdit).map(\.id)))
 
     // It never syncs, and keeps no unsent change.
     #expect(await session.syncNow() == .stopped)

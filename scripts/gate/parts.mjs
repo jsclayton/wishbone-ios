@@ -60,7 +60,12 @@ export const shards = [
   },
   {
     name: 'journeys-3',
-    tests: ['FirstSyncFailedJourney/testFirstSyncFailed', 'MoveJourney/testMove', 'ReorderJourney/testReorder'],
+    tests: [
+      'FirstSyncFailedJourney/testFirstSyncFailed',
+      'MoveJourney/testMove',
+      'ReorderJourney/testReorder',
+      'ShareExtensionJourney/testAddFromTheShareExtension',
+    ],
   },
   {
     name: 'journeys-4',

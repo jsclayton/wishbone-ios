@@ -127,7 +127,9 @@ extension Device.Setup {
       network: .system,
       refresh: SystemRefreshScheduler(),
       diagnostics: diagnostics,
-      reminders: Reminders(center: SystemReminderCenter(), words: .catalog)
+      reminders: Reminders(center: SystemReminderCenter(), words: .catalog),
+      // The share extension says when it added an item, and the session syncs at once.
+      addsFromShareExtension: ItemAddedNotification(appGroup: appGroup)
     )
   }
 
