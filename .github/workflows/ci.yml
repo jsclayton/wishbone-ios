@@ -274,17 +274,6 @@ jobs:
         with:
           install_args: node just
           minimum_release_age: 3d
-      # The simulator's first boot on a new runner takes minutes. It goes on
-      # while the job gets the build and unpacks it. It starts after the tools
-      # are installed: in run 45885449080, two shards that booted first failed
-      # mise's install, with "sigstore refused the bundle: error refreshing TUF
-      # metadata", while the jobs with no boot beside it passed it.
-      # The shard that builds the package first boots nothing here: the build
-      # beside a first boot was too slow (scripts/gate/boot.mjs).
-      - name: Start the simulator's boot
-        env:
-          SHARD: ${{ matrix.shard }}
-        run: node scripts/gate/boot.mjs "$SHARD"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: gate-build
@@ -300,6 +289,23 @@ jobs:
           path: ~/Library/Caches/org.swift.swiftpm
           key: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Package.resolved') }}
           restore-keys: swiftpm-${{ runner.os }}-${{ runner.arch }}-
+      # The simulator's first boot on a new runner takes minutes, and uses the
+      # whole runner. It starts only when every download is done:
+      # - In run 45885449080, two shards that booted before mise's install
+      #   failed it, with "sigstore refused the bundle: error refreshing TUF
+      #   metadata", while the jobs with no boot beside it passed it.
+      # - Beside the boot, the 115 MB gate-build download took 165 s to 479 s
+      #   in each shard that booted, in 12 Gate runs on 2026-11-26 and -27,
+      #   and 3 s to 11 s in the shard that boots nothing. In run 46007974356,
+      #   journeys-1 was cancelled in the download after 6m21s. A cache restore
+      #   beside it took 328 s once (run 45972613217).
+      # It goes on while the gate starts. The shard that builds the package
+      # first boots nothing here: the build beside a first boot was too slow
+      # (scripts/gate/boot.mjs).
+      - name: Start the simulator's boot
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: node scripts/gate/boot.mjs "$SHARD"
       - name: Gate, the shard ${{ matrix.shard }}
         env:
           SHARD: ${{ matrix.shard }}
