@@ -7,7 +7,9 @@ import WishboneAPI
 //
 // **Each waits for the server.** The server reads the store's page during the request, and can refuse it: a store
 // that the admin blocked, a read over the hourly limit, an eleventh link. So neither is an unsent change. With no
-// connection, each says "Can't reach {address}", and nothing changes and nothing waits to be sent.
+// connection, each says "Can't reach {address}", and nothing changes and nothing waits to be sent. So does each while
+// the server hasn't finished what came before: the same request from an earlier tap (409 `idempotency_key_in_use`),
+// or, for Refresh prices, an unsent change to the item that waits.
 //
 // **The answer goes into the copy at once,** as an answer that a pull which asked before it never undoes (see
 // `Answers.swift`). The item comes with it: Add link gives an item with no price the link's price, and a refresh
@@ -50,9 +52,16 @@ public struct AddLinkKey: Sendable, Equatable {
 
   /// The key for the address on the item: the one kept, when both are the same, or a new one. The address is
   /// compared with no space at either end, as Add link sends it.
-  public mutating func key(for address: String, toItem itemID: String) -> String {
+  ///
+  /// The item is compared by the server's ID, which `serverID` gives for a stand-in ID whose create was sent (see
+  /// `SessionModel.serverID(of:)`). So a tap on an item that waits to be created, whose add sends the create and
+  /// then loses its answer, keeps its key for the next tap, which names the item by the server's ID.
+  public mutating func key(
+    for address: String, toItem itemID: String, serverID: (String) -> String = { $0 }
+  ) -> String {
     let address = address.trimmingCharacters(in: .whitespacesAndNewlines)
-    if let kept, kept.address == address, kept.itemID == itemID { return kept.value }
+    let itemID = serverID(itemID)
+    if let kept, kept.address == address, serverID(kept.itemID) == itemID { return kept.value }
     let value = UUID().uuidString
     kept = Kept(value: value, address: address, itemID: itemID)
     return value
@@ -140,7 +149,10 @@ extension SessionModel {
   /// The unsent changes are sent first, in the journal's order, so the server has them in the user's order: a price
   /// typed while the instance couldn't be reached comes before the refresh, which then replaces it, as the server's
   /// rule says. When they can't be sent because the instance can't be reached, it is `unreachable`, and nothing is
-  /// refreshed. A change that must wait for another reason, such as the hourly limit, doesn't hold the refresh.
+  /// refreshed. So it is when the send leaves a change to the item or its links in the journal, which the server
+  /// hasn't decided: a 408, the same change still running from an earlier send (`idempotency_key_in_use`), or the
+  /// hourly limit. That change would land after the refresh, and undo it. A change to anything else that must wait
+  /// doesn't hold the refresh.
   ///
   /// It does nothing (`failed`) for an item that doesn't offer it (see `offersRefreshPrices(onItem:)`).
   ///
@@ -148,6 +160,12 @@ extension SessionModel {
   public func refreshPrices(ofItem id: String) async -> RefreshOutcome {
     guard !hasEnded, offersRefreshPrices(onItem: id), let item = item(id: id) else { return .failed }
     if await sendUnsentChanges() == .unreachable { return .unreachable }
+    guard !hasEnded else { return .failed }
+    switch await journalHoldsChange(toItem: item.id) {
+    case true?: return .unreachable
+    case false?: break
+    case nil: return .failed
+    }
     guard !hasEnded else { return .failed }
     do {
       let answered = try await client.refreshPrices(ofItem: item.id)
@@ -189,8 +207,22 @@ extension SessionModel {
     return end == .unreachable ? .unreachable : .notSent
   }
 
+  /// Whether the journal holds an unsent change to the item or one of its store links, by the server's ID. Nil when
+  /// the journal can't be read.
+  private func journalHoldsChange(toItem id: String) async -> Bool? {
+    do {
+      let (changes, standIns) = try await database.unsentChangesAndStandIns()
+      return changes.contains { change in change.action.itemID.map { standIns[$0] ?? $0 } == id }
+    } catch {
+      Log.fault(.session, "The journal can't be read.", detail: "\(error)")
+      return nil
+    }
+  }
+
   /// What an error of a write that waits for the server means for its screen, after the session has done what the
-  /// error asks: the API's own 401 ends the session, and its 410 shows the block for an app that is too old.
+  /// error asks: the API's own 401 ends the session, and its 410 shows the block for an app that is too old. The same
+  /// request still running from an earlier tap (409 `idempotency_key_in_use`) is `unreachable`: the server hasn't
+  /// finished it, and a later tap sends the same key again.
   private enum WaitedOutcome {
     case unreachable
     case refused(APIError.Refusal)
@@ -200,7 +232,9 @@ extension SessionModel {
   private func waitedOutcome(of error: any Error) async -> WaitedOutcome {
     switch error {
     case let error as APIError:
-      if let refusal = await outcome(of: error) { return .refused(refusal) }
+      if let refusal = await outcome(of: error) {
+        return refusal.code == .idempotencyKeyInUse ? .unreachable : .refused(refusal)
+      }
       if case .unreachable = error { return .unreachable }
       return .failed
     case is CancellationError:
@@ -235,5 +269,23 @@ extension LocalDatabase {
     // link is then the server's answer, as the add saved it.
     let saved = try await writer.read { database in try StoreLinkRow.fetchOne(database, key: id) }
     return saved ?? StoreLinkRow(link.resource, ofItem: itemID, at: 0, version: "")
+  }
+}
+
+extension UnsentChange.Action {
+  /// The item that the change is to, itself or one of its store links, by the ID that the journal names it by. Nil
+  /// for a change to anything else.
+  fileprivate var itemID: String? {
+    switch self {
+    case .createItem(let item): item.id
+    case .editItem(let id, _), .deleteItem(let id, _), .deleteStoreLink(let id, _): id
+    case .editStoreLink(let edit): edit.itemID
+    case .moveItem(let move): move.itemID
+    case .reorderItem(let reorder): reorder.itemID
+    case .markBought, .setFromLabel, .setNote, .lowerQuantity, .unclaim, .acknowledge, .setOccasion, .editList,
+      .deleteList, .acceptInvitation, .declineInvitation, .uploadImage, .createList, .createInvitation,
+      .withdrawInvitation:
+      nil
+    }
   }
 }

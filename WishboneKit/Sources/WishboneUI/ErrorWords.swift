@@ -67,12 +67,13 @@ public enum ErrorWords {
     case .unknownFilter, .unknownSort, .cursorMismatch, .imageAttached, .resourceChanged:
       return fault
     case .unauthorized, .apiVersionRemoved, .userDeactivated, .lastRecipient, .listHasOtherRecipients, .parentLoop,
-      .storeBlocked, .cannotEditTargetList, .unknown:
+      .storeBlocked, .cannotEditTargetList, .idempotencyKeyInUse, .unknown:
       // The first two have screens of their own, and reach here only in an answer that those screens don't take.
       // `user_deactivated` names a person, `last_recipient`, `list_has_other_recipients` and
       // `cannot_edit_target_list` a list, and `store_blocked` a store, so the screen that meets each gives its words
       // (see `lastRecipient(of:)`, `otherRecipients(of:)` and `cannotAddTo(_:)`). `parent_loop` shows the server's
-      // `detail`, as the table says.
+      // `detail`, as the table says. `idempotency_key_in_use` is not in the table: an unsent change waits on it, and
+      // Add link and Refresh prices say "Can't reach {address}" for it.
       return refusal.detail
     case .alreadyClaimed, .alreadyInvited, .alreadyRecipient, .alreadyInGroup, .alreadyAttached, .alreadyBlocked:
       // These count as success: see above.

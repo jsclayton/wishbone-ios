@@ -50,6 +50,7 @@ A sheet with the fields that the add form has, and the ones it leaves out:
 - **An unlimited item:** "Always wanted". It never leaves a giver's list.
 - **Add link over the hourly limit:** nothing is added, and the words for `rate_limited` show.
 - **Add link to a blocked store:** nothing is added, and the words for `store_blocked` show.
+- **Add link or Refresh prices before the server has finished what came before:** the same request from an earlier tap that the server still runs (409 `idempotency_key_in_use`), or, for Refresh prices, an unsent change to the item that waits. Nothing changes, and "Can't reach {address}" shows, as with no connection.
 - **Gone:** a deleted item, or one that a giver can no longer see, shows the [not-found](not-found.md) page.
 - **Can't reach, and the rest:** as every screen. Edits, Move to…, and Delete are unsent changes. Add link and Refresh prices need the instance.
 

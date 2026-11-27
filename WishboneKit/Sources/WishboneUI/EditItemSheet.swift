@@ -458,7 +458,8 @@ private struct StoreLinksSection: View {
     guard canAdd else { return }
     isAdding = true
     said = nil
-    let outcome = await session.addStoreLink(address, toItem: item.id, key: key.key(for: address, toItem: item.id))
+    let sent = key.key(for: address, toItem: item.id, serverID: session.serverID(of:))
+    let outcome = await session.addStoreLink(address, toItem: item.id, key: sent)
     isAdding = false
     switch outcome {
     case .added(let link):
