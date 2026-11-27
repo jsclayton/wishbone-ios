@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 
-import { crashReport } from './crash-report-fixture.mjs';
+import { crashReport, stalledWaitCrash } from './crash-report-fixture.mjs';
 import { crashSummary, keepCrashReports, readCrashReport } from './crashes.mjs';
 
 /** A folder of crash reports, and a run folder to keep them in. */
@@ -48,6 +48,36 @@ test('a crashed thread with no frame of its own shows its top frames, and a fram
   ];
   const report = readCrashReport(crashReport({ process: 'Wishbone', signal: 'SIGSEGV', frames }));
   assert.equal(crashSummary(report, 3), 'Wishbone crashed (SIGSEGV) at __pthread_kill ← abort ← -[__NSURLSessionLocal taskForClassInfo:]');
+});
+
+test("a crash in XCTest's stall handler reads as stalled, with the main thread's frames", () => {
+  const report = readCrashReport(crashReport({ process: 'JourneyTests-Runner', binary: 'JourneyTests', ...stalledWaitCrash }));
+  assert.equal(report.stalled, true);
+  assert.equal(report.mainFrames[0].image, 'dyld_sim');
+  assert.equal(report.mainFrames.at(-1).symbol, '-[XCTestDriver _runTests]');
+  assert.equal(readCrashReport(crashReport()).stalled, false);
+});
+
+test("the summary of a stalled wait names XCTest's stall handler, the wait, and where the main thread was", () => {
+  const report = readCrashReport(crashReport({ process: 'JourneyTests-Runner', binary: 'JourneyTests', ...stalledWaitCrash }));
+  assert.equal(
+    crashSummary(report),
+    "JourneyTests-Runner crashed (SIGABRT) in XCTest's stall handler (-[XCTWaiter(StallHandling) handleStalledWait:]):" +
+      ' a wait on its main thread, in -[XCAXClient_iOS _loadAccessibility:], passed its time-out, and the main thread' +
+      ' was still at mach_o::Header::fromDyldMapped(mach_header const*) (dyld_sim), in -[NSBundle loadAndReturnError:]' +
+      ' ← -[UIApplication(UIKitApplicationAccessibility) _accessibilityBundlePrincipalClass]' +
+      ' ← -[UIApplication(UIKitApplicationAccessibility) _updateApplicationAccessibility]',
+  );
+});
+
+test("the summary of a stalled wait shows the test's own frames on the main thread first", () => {
+  const main = [
+    { symbol: 'semaphore_wait_trap', image: 'kernel' },
+    { symbol: 'Journey.waitForever()', image: 'own', file: 'Journey.swift', line: 12 },
+    { symbol: '+[XCTWaiter _synchronouslyWaitForTimeInterval:]', image: 'xctestCore' },
+  ];
+  const report = readCrashReport(crashReport({ process: 'JourneyTests-Runner', binary: 'JourneyTests', ...stalledWaitCrash, main }));
+  assert.match(crashSummary(report), /a wait on its main thread passed its time-out, and the main thread was still at semaphore_wait_trap \(libsystem_kernel\.dylib\), in Journey\.waitForever\(\) \(Journey\.swift:12\)$/);
 });
 
 test('a file that is not a crash report reads as none', () => {
