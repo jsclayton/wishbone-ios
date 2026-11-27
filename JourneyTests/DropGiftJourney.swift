@@ -93,11 +93,25 @@ nonisolated final class DropGiftJourney: JourneyTestCase {
 
     // The page scrolls to its foot: a list makes a row only near the screen. A scroll is not an action, so the
     // row is still reached through its own button.
+    //
+    // The journey taps the button only when it is above the tab bar, as a person would. XCUI calls a button under
+    // the bar's glass hittable. In the double-length pseudo-language, one swipe left the button at 788–840 points,
+    // under the bar at 791–874, in four of five runs on 2026-11-27. A tap at its middle goes to the bar: in a gate
+    // run on 2026-11-26, the confirmation never came. Each drag holds at its end, so the list doesn't coast, and the
+    // frames that the journey reads are where the list stays.
     let foot = app.buttons[wontGetThis].firstMatch
-    for _ in 0..<5 where !(foot.exists && foot.isHittable) {
-      app.swipeUp(velocity: .slow)
+    let tabBar = app.tabBars.firstMatch
+    let window = app.windows.firstMatch
+    let isAboveTheTabBar = {
+      foot.exists && foot.isHittable && foot.frame.maxY <= (tabBar.exists ? tabBar.frame.minY : window.frame.maxY)
+    }
+    for _ in 0..<8 where !isAboveTheTabBar() {
+      let middle = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+      let higher = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+      middle.press(forDuration: 0.05, thenDragTo: higher, withVelocity: .slow, thenHoldForDuration: 0.2)
     }
     XCTAssertTrue(foot.waitForExistence(timeout: 10), "The gift's page has no I won't get this.")
+    XCTAssertTrue(isAboveTheTabBar(), "I won't get this didn't come out from under the tab bar.")
 
     // After the confirmation, the page closes back to Giving, which is now empty, and never shows "not found".
     foot.tap()
