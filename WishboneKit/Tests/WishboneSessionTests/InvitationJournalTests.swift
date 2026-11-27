@@ -75,8 +75,10 @@ struct InvitationJournalTests {
     }
     let lists = LocalDatabase.applying(
       [change(.createList(list(for: "me"))), change(.createList(list(for: "emma")), id: 2)], to: [ListRow]())
-    #expect(lists.map(\.recipientIDs) == [["me"], ["emma"]])
-    #expect(lists.map(\.canInvite) == [true, false])
+    // The two have one name, so their order is by their stand-in IDs: each is read by its recipient.
+    #expect(lists.count == 2)
+    #expect(lists.first { $0.recipientIDs == ["me"] }?.canInvite == true)
+    #expect(lists.first { $0.recipientIDs == ["emma"] }?.canInvite == false)
   }
 
   @Test("The journal keeps an invite and a withdraw as they were made, and the invite sends only user_id")
