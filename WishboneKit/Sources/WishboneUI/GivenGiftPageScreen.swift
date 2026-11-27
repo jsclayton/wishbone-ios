@@ -9,6 +9,9 @@ import WishboneSession
 /// page's links wait with it. When the server takes the gift back, the page closes in this window, which shows what
 /// was under it, and then the gift leaves the copy. Otherwise the row says why, in place, and nothing changes.
 ///
+/// From `can_add_again`, Add again is the last row. It opens the add form in a sheet, filled from the gift, and Add to
+/// starts on the gift's list when the user can still edit it. The gift doesn't change.
+///
 /// **A recipient never sees the giver's note or bought mark.** The server doesn't send them, and the page shows them
 /// only to the giver. The page never says who else claimed the item. Nothing on it goes to a system surface or into
 /// the shared container.
@@ -33,6 +36,9 @@ struct GivenGiftPageScreen: View {
 
   /// The words of the last restore that didn't happen.
   @State private var restoreSaid: String?
+
+  /// The add form that Add again opened, in its sheet.
+  @State private var addingAgain: AddAgainForm?
 
   /// The width of the window, for the list's column of readable width.
   @State private var width: CGFloat = 0
@@ -121,7 +127,19 @@ struct GivenGiftPageScreen: View {
           }
         }
       }
+      if page.offersAddAgain {
+        Section {
+          Button {
+            addingAgain = session.addAgainForm(gift: gift.id).map { AddAgainForm(draft: $0) }
+          } label: {
+            Text("Add again", bundle: #bundle)
+              .frame(maxWidth: .infinity)
+          }
+          .disabled(isRestoring)
+        }
+      }
     }
+    .addAgainSheet($addingAgain, session: session)
     .didntGetThisConfirmation(of: $confirmingRestore) { ask in
       Task { await restore(ask) }
     }

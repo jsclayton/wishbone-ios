@@ -139,6 +139,10 @@ public struct SearchOption: Model, Equatable {
 }
 
 /// The body of `POST /lists/{id}/items`: the item that the add form holds.
+///
+/// **Add again** names the given gift with `from_gift_id`, and the server copies its title, its image (as a new
+/// image), and its price. Only the fields that the user changed in the form go beside it, so the copy is the
+/// server's: see `FromGift`.
 public struct NewItem: Encodable, Sendable, Equatable {
   public var title: String
   public var notes: String?
@@ -152,9 +156,45 @@ public struct NewItem: Encodable, Sendable, Equatable {
   /// Uploaded images, in order. The first is the primary image.
   public var imageIDs: [String]
 
+  /// The given gift that the item is added again from. Nil for any other add.
+  public var fromGift: FromGift?
+
+  /// Add again: the given gift, and the fields that the server copies from it, because the user didn't change them
+  /// in the form. A field that is not copied goes in the body, and wins over the copy: the title, the price fields as
+  /// a group (a cleared price goes as `null`), and the images (an empty array means no image). See "Add again" in
+  /// the server's route table.
+  public struct FromGift: Sendable, Equatable {
+    public let giftID: String
+    public let copies: Copies
+
+    public init(giftID: String, copies: Copies) {
+      self.giftID = giftID
+      self.copies = copies
+    }
+
+    /// The fields that the server copies from the gift.
+    public struct Copies: OptionSet, Sendable, Hashable {
+      public let rawValue: Int
+
+      public init(rawValue: Int) {
+        self.rawValue = rawValue
+      }
+
+      public static let title = Copies(rawValue: 1 << 0)
+
+      /// The price, the top price and the currency, together.
+      public static let price = Copies(rawValue: 1 << 1)
+
+      /// The gift's image, as a new image.
+      public static let image = Copies(rawValue: 1 << 2)
+
+      public static let all: Copies = [.title, .price, .image]
+    }
+  }
+
   public init(
     title: String, notes: String? = nil, priceMinor: Int? = nil, topPriceMinor: Int? = nil,
-    currency: String? = nil, storeLinks: [NewStoreLink] = [], imageIDs: [String] = []
+    currency: String? = nil, storeLinks: [NewStoreLink] = [], imageIDs: [String] = [], fromGift: FromGift? = nil
   ) {
     self.title = title
     self.notes = notes
@@ -163,6 +203,7 @@ public struct NewItem: Encodable, Sendable, Equatable {
     self.currency = currency
     self.storeLinks = storeLinks
     self.imageIDs = imageIDs
+    self.fromGift = fromGift
   }
 
   enum CodingKeys: String, CodingKey, CaseIterable {
@@ -174,17 +215,33 @@ public struct NewItem: Encodable, Sendable, Equatable {
     case storeLinks = "store_links"
     case imageIDs = "image_ids"
     case primaryImageID = "primary_image_id"
+    case fromGiftID = "from_gift_id"
   }
 
   public func encode(to encoder: any Encoder) throws {
     var container = encoder.container(keyedBy: CodingKeys.self)
-    try container.encode(title, forKey: .title)
+    let copies = fromGift?.copies ?? []
+    if let fromGift { try container.encode(fromGift.giftID, forKey: .fromGiftID) }
+    if !copies.contains(.title) { try container.encode(title, forKey: .title) }
     try container.encodeIfPresent(notes, forKey: .notes)
-    try container.encodeIfPresent(priceMinor, forKey: .priceMinor)
-    try container.encodeIfPresent(topPriceMinor, forKey: .topPriceMinor)
-    if priceMinor != nil { try container.encodeIfPresent(currency, forKey: .currency) }
+    if fromGift != nil, !copies.contains(.price) {
+      // The price fields go as a group, so the server takes none of them from the gift. A cleared price is a null.
+      try container.encode(priceMinor, forKey: .priceMinor)
+      if priceMinor != nil {
+        try container.encodeIfPresent(topPriceMinor, forKey: .topPriceMinor)
+        try container.encodeIfPresent(currency, forKey: .currency)
+      }
+    } else if fromGift == nil {
+      try container.encodeIfPresent(priceMinor, forKey: .priceMinor)
+      try container.encodeIfPresent(topPriceMinor, forKey: .topPriceMinor)
+      if priceMinor != nil { try container.encodeIfPresent(currency, forKey: .currency) }
+    }
     if !storeLinks.isEmpty { try container.encode(storeLinks, forKey: .storeLinks) }
-    if let primary = imageIDs.first {
+    if fromGift != nil, !copies.contains(.image) {
+      // The images go even when there are none: an empty array means that the item has no image.
+      try container.encode(imageIDs, forKey: .imageIDs)
+      if let primary = imageIDs.first { try container.encode(primary, forKey: .primaryImageID) }
+    } else if fromGift == nil, let primary = imageIDs.first {
       try container.encode(imageIDs, forKey: .imageIDs)
       try container.encode(primary, forKey: .primaryImageID)
     }

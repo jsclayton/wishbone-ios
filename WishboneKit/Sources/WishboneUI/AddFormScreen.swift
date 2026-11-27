@@ -15,6 +15,9 @@ import WishboneSession
 /// In the share extension, the form has Cancel in place of Back, and after an Add that can't reach the instance,
 /// Copy the link. See `docs/screens/share-extension.md`.
 ///
+/// From Add again, the form opens in a sheet, filled from the given gift: its image is the one to tick, and Cancel
+/// closes the sheet, after the confirmation when the form has changes. See `docs/screens/gift.md`.
+///
 /// **Provisional.** Plain default: a system form, in the order of the screen's spec. Add is in the toolbar.
 struct AddFormScreen: View {
   let session: SessionModel
@@ -28,6 +31,9 @@ struct AddFormScreen: View {
   /// Cancel, in the share extension: it closes the extension, and keeps nothing. Nil in the app.
   private let cancel: (() -> Void)?
 
+  /// Whether the form is the root of a sheet, as Add again opens it: Cancel closes the sheet.
+  private let isInSheet: Bool
+
   @State private var draft: ItemDraft
   @State private var isAdding = false
 
@@ -38,11 +44,13 @@ struct AddFormScreen: View {
   @Environment(\.dismiss) private var dismiss
 
   init(
-    session: SessionModel, draft: ItemDraft, cancel: (() -> Void)? = nil, didAdd: @escaping (AddedItem) -> Void
+    session: SessionModel, draft: ItemDraft, cancel: (() -> Void)? = nil, isInSheet: Bool = false,
+    didAdd: @escaping (AddedItem) -> Void
   ) {
     self.session = session
     opened = draft
     self.cancel = cancel
+    self.isInSheet = isInSheet
     self.didAdd = didAdd
     _draft = State(initialValue: draft)
   }
@@ -68,6 +76,11 @@ struct AddFormScreen: View {
         Section {
           ImagePicker(images: $draft.images)
             .listRowInsets(EdgeInsets())
+        }
+      }
+      if let image = draft.gift?.image {
+        Section {
+          GiftImageToggle(image: image, isTicked: $draft.keepsGiftImage)
         }
       }
       Section {
@@ -138,6 +151,15 @@ struct AddFormScreen: View {
             Text("Cancel", bundle: #bundle)
           }
         }
+      } else if isInSheet {
+        ToolbarItem(placement: .cancellationAction) {
+          Button {
+            if hasChanges { isConfirmingDiscard = true } else { dismiss() }
+          } label: {
+            Text("Cancel", bundle: #bundle)
+          }
+          .discardConfirmation(isPresented: $isConfirmingDiscard) { dismiss() }
+        }
       } else if hasChanges {
         ToolbarItem(placement: .cancellationAction) {
           Button {
@@ -149,19 +171,7 @@ struct AddFormScreen: View {
               Image(systemName: "chevron.backward")
             }
           }
-          .confirmationDialog(
-            Text("Discard this item?", bundle: #bundle), isPresented: $isConfirmingDiscard, titleVisibility: .visible
-          ) {
-            Button(role: .destructive) {
-              dismiss()
-            } label: {
-              Text("Discard", bundle: #bundle)
-            }
-            Button(role: .cancel) {
-            } label: {
-              Text("Keep editing", bundle: #bundle)
-            }
-          }
+          .discardConfirmation(isPresented: $isConfirmingDiscard) { dismiss() }
         }
       }
       ToolbarItem(placement: .confirmationAction) {
@@ -269,6 +279,56 @@ struct AddFormScreen: View {
         if let words = problemWords ?? noteWords { AccessibilityNotification.Announcement(words).post() }
       }
     }
+  }
+}
+
+extension View {
+  /// "Discard this item?", with Discard and Keep editing, before a form with typed changes closes.
+  fileprivate func discardConfirmation(isPresented: Binding<Bool>, discard: @escaping () -> Void) -> some View {
+    confirmationDialog(
+      Text("Discard this item?", bundle: #bundle), isPresented: isPresented, titleVisibility: .visible
+    ) {
+      Button(role: .destructive, action: discard) {
+        Text("Discard", bundle: #bundle)
+      }
+      Button(role: .cancel) {
+      } label: {
+        Text("Keep editing", bundle: #bundle)
+      }
+    }
+  }
+}
+
+/// Add again's image: the given gift's, to tick. Ticked, the item gets a copy of it, as its primary image. It is an
+/// image of the instance, which loads through the session's image cache.
+private struct GiftImageToggle: View {
+  let image: ImageSummary
+  @Binding var isTicked: Bool
+
+  var body: some View {
+    Button {
+      isTicked.toggle()
+    } label: {
+      SessionImage(image: image) {
+        Rectangle().fill(.quaternary)
+      }
+      .frame(width: 96, height: 96)
+      .clipShape(.rect(cornerRadius: 12))
+      .overlay(alignment: .topTrailing) {
+        Image(systemName: isTicked ? "checkmark.circle.fill" : "circle")
+          .font(.title3)
+          .foregroundStyle(isTicked ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+          .background(Circle().fill(.background))
+          .padding(6)
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel(Text("Photo \(1) of \(1)", bundle: #bundle))
+    .accessibilityValue(
+      isTicked ? Text("Selected, primary", bundle: #bundle) : Text("Not selected", bundle: #bundle)
+    )
+    .accessibilityAddTraits(isTicked ? .isSelected : [])
   }
 }
 
