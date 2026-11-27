@@ -208,6 +208,7 @@ nonisolated final class SignInJourney: JourneyTestCase {
     XCTAssertTrue(field.waitForExistence(timeout: 10), "The Add screen's field didn't show.")
     // The field is ready: the words go in with no tap on it first. The keyboard's Search key searches them, and
     // pushes the add form. Back goes to the field, with the words still in it, and the keyboard gone.
+    waitForKeyboardFocus(of: field, "The Add screen opened with its field not ready.")
     field.typeText("Kite\n")
     let form = app.navigationBars[Audit.words("Add item")]
     XCTAssertTrue(form.waitForExistence(timeout: 30), "The Search key didn't open the add form.")
