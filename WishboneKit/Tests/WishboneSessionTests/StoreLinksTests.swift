@@ -729,6 +729,131 @@ final class StoreLinksTests {
     #expect(session.storeLinks(ofItem: item.id).first?.priceMinor == 2499)
   }
 
+  @Test(
+    """
+    Refresh prices stops when the send before it ends unreachable: a price edit, to the item or to another, whose \
+    connection is lost, and its resend's too, holds the refresh, which would have got through, and nothing is \
+    refreshed
+    """,
+    arguments: [false, true]
+  )
+  func refreshStopsWhenTheSendIsUnreachable(toAnotherItem: Bool) async throws {
+    let page = try await StorePage(title: "Kite \(instance.builder.tag)", priceMinor: 2499)
+    let builder = instance.builder
+    let person = try await builder.person("Robin")
+    let list = try await builder.primaryList(of: person)
+    let item = try await builder.item("Kite", on: list, as: person, storeLinks: [(page.url.absoluteString, 1000)])
+    let other = try await builder.item("Paints", on: list, as: person, storeLinks: [twoShops[0]])
+    let session = try await signedIn(as: person)
+    let edited = toAnotherItem ? other : item
+
+    instance.conditioner.dropEverything()
+    let opened = try await draft(of: edited.id, in: session)
+    var draft = opened
+    draft.storeLinks[0].priceMinor = 777
+    await session.editItem(edited.id, from: opened, to: draft)
+    await until { session.isInstanceUnreachable }
+
+    // The instance is back, and the price edit and its resend each lose their connection. The refresh after them
+    // would get through.
+    instance.conditioner.passEverything()
+    instance.conditioner.loseConnection(Self.updateLink, count: 2)
+    let sent = instance.conditioner.requests.count
+    #expect(await session.refreshPrices(ofItem: item.id) == .unreachable)
+
+    #expect(seen(Self.updateLink, from: sent).count == 2)
+    #expect(seen(Self.refresh, from: sent).isEmpty)
+    #expect(page.reads == 0)
+    #expect(session.unsentChangeCount == 1)
+    #expect(session.storeLinks(ofItem: edited.id).first?.priceMinor == 777)
+    #expect(try await linksOnServer(item.id, as: person).first?["price_minor"].number == 1000)
+
+    // The next Refresh prices sends the price first, then refreshes.
+    #expect(await session.refreshPrices(ofItem: item.id) == .checked)
+    #expect(session.unsentChangeCount == 0)
+    #expect(session.storeLinks(ofItem: item.id).first?.priceMinor == 2499)
+    #expect(try await linksOnServer(item.id, as: person).first?["price_minor"].number == 2499)
+    #expect(try await linksOnServer(edited.id, as: person).first?["price_minor"].number == (toAnotherItem ? 777 : 2499))
+  }
+
+  @Test(
+    """
+    Refresh prices after a price edit that the server hasn't decided, a 408 or idempotency_key_in_use, says Can't \
+    reach and sends no refresh, so the price can't land after it; once the price is sent, the refresh replaces it
+    """,
+    arguments: [(408, "bad_request"), (409, "idempotency_key_in_use")]
+  )
+  func refreshAfterAnUndecidedPrice(status: Int, code: String) async throws {
+    let page = try await StorePage(title: "Kite \(instance.builder.tag)", priceMinor: 2499)
+    let (person, item) = try await person(withItem: "Kite", links: [(page.url.absoluteString, 1000)])
+    let diagnostics = RecordingDiagnostics()
+    let session = try await signedIn(as: person, diagnostics: diagnostics)
+
+    instance.conditioner.answer(Self.updateLink, with: try .problem(status, code: code))
+    let opened = try await draft(of: item.id, in: session)
+    var draft = opened
+    draft.storeLinks[0].priceMinor = 777
+    await session.editItem(item.id, from: opened, to: draft)
+    #expect(await session.refreshPrices(ofItem: item.id) == .unreachable)
+
+    #expect(!seen(Self.updateLink).isEmpty)
+    #expect(seen(Self.refresh).isEmpty)
+    #expect(page.reads == 0)
+    #expect(session.unsentChangeCount == 1)
+    #expect(session.lateRefusals.isEmpty)
+    #expect(session.storeLinks(ofItem: item.id).first?.priceMinor == 777)
+    if code == "idempotency_key_in_use" {
+      #expect(diagnostics.faults.isEmpty, "\(diagnostics.faults)")
+    }
+
+    // The server has finished with the price edit: the next Refresh prices sends it, then refreshes.
+    instance.conditioner.passEverything()
+    let sent = instance.conditioner.requests.count
+    #expect(await session.refreshPrices(ofItem: item.id) == .checked)
+    let order = instance.conditioner.requests[sent...].compactMap { request in
+      [Self.updateLink, Self.refresh].firstIndex { request.isOn($0) }
+    }
+    #expect(order == [0, 1])
+    #expect(session.unsentChangeCount == 0)
+    #expect(session.storeLinks(ofItem: item.id).first?.priceMinor == 2499)
+    #expect(try await linksOnServer(item.id, as: person).first?["price_minor"].number == 2499)
+  }
+
+  @Test(
+    """
+    Add link and Refresh prices while the server still runs the same request from an earlier tap, a 409 \
+    idempotency_key_in_use, say Can't reach, change nothing, and are never captured
+    """
+  )
+  func whileTheEarlierTapRuns() async throws {
+    let page = try await StorePage(title: "Kite \(instance.builder.tag)", priceMinor: 2499)
+    let (person, item) = try await person(withItem: "Kite", links: twoShops)
+    let diagnostics = RecordingDiagnostics()
+    let session = try await signedIn(as: person, diagnostics: diagnostics)
+    let before = session.storeLinks(ofItem: item.id)
+    let address = page.url.absoluteString
+    var key = AddLinkKey()
+
+    let inUse = try NetworkConditioner.CannedAnswer.problem(409, code: "idempotency_key_in_use")
+    instance.conditioner.answer(Self.addLink, with: inUse)
+    instance.conditioner.answer(Self.refresh, with: inUse)
+    let firstKey = key.key(for: address, toItem: item.id)
+    #expect(await session.addStoreLink(address, toItem: item.id, key: firstKey) == .unreachable)
+    #expect(await session.refreshPrices(ofItem: item.id) == .unreachable)
+
+    #expect(session.storeLinks(ofItem: item.id) == before)
+    #expect(session.unsentChangeCount == 0)
+    #expect(diagnostics.faults.isEmpty, "\(diagnostics.faults)")
+
+    // The earlier request has ended without a link: the next tap, with the same key, adds it.
+    instance.conditioner.passEverything()
+    let secondKey = key.key(for: address, toItem: item.id)
+    #expect(secondKey == firstKey)
+    let link = try added(await session.addStoreLink(address, toItem: item.id, key: secondKey))
+    #expect(try await linksOnServer(item.id, as: person).compactMap { $0["id"].string }.last == link.id)
+    #expect(try await linksOnServer(item.id, as: person).count == 3)
+  }
+
   // MARK: - An item that waits to be created
 
   @Test(
@@ -797,5 +922,54 @@ final class StoreLinksTests {
     let later = try await self.draft(of: created.id, in: session)
     #expect(later.storeLinks.allSatisfy { $0.canEdit && $0.canDelete })
     #expect(session.offersRefreshPrices(onItem: created.id))
+  }
+
+  @Test(
+    """
+    A tap of Add link after a lost answer, on an item whose create the first tap sent, sends the same key by the \
+    server's ID, and the server adds the link once
+    """
+  )
+  func lostAnswerOfAStandIn() async throws {
+    let page = try await StorePage(title: "Kite \(instance.builder.tag)", priceMinor: 2499)
+    let person = try await instance.person("Robin")
+    let session = try await signedIn(as: person)
+    instance.conditioner.dropEverything()
+    var form = ItemDraft(given: .words("Kite \(instance.builder.tag)"))
+    guard case .added(let created) = await session.add(&form) else {
+      Issue.record("The add gave no item")
+      return
+    }
+    #expect(StandIn.isStandIn(created.id))
+    await until { session.isInstanceUnreachable }
+    let address = page.url.absoluteString
+    var key = AddLinkKey()
+
+    // The first tap sends the create, and the server adds the link. Its answer is lost on the way back.
+    instance.conditioner.passEverything()
+    let hold = instance.conditioner.hold(Self.addLink, at: .answer)
+    let firstKey = key.key(for: address, toItem: created.id, serverID: session.serverID(of:))
+    let first = Task { await session.addStoreLink(address, toItem: created.id, key: firstKey) }
+    await hold.waitUntilHeld()
+    instance.conditioner.dropEverything()
+    hold.release()
+    #expect(await first.value == .unreachable)
+    #expect(session.unsentChangeCount == 0)
+
+    // The sheet's item is the server's now.
+    await until { !StandIn.isStandIn(session.serverID(of: created.id)) }
+    let serverID = session.serverID(of: created.id)
+    #expect(try await linksOnServer(serverID, as: person).count == 1)
+
+    // The user taps Add link again, with the address still in the field.
+    instance.conditioner.passEverything()
+    let secondKey = key.key(for: address, toItem: serverID, serverID: session.serverID(of:))
+    #expect(secondKey == firstKey)
+    let link = try added(await session.addStoreLink(address, toItem: serverID, key: secondKey))
+
+    #expect(try await linksOnServer(serverID, as: person).compactMap { $0["id"].string } == [link.id])
+    #expect(session.storeLinks(ofItem: serverID).map(\.id) == [link.id])
+    #expect(Set(seen(Self.addLink).compactMap { $0.headers["idempotency-key"] }) == [firstKey])
+    #expect(page.reads == 1)
   }
 }

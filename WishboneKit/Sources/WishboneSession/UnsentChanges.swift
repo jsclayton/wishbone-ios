@@ -235,7 +235,7 @@ extension SessionModel {
   /// Whether the instance answered without deciding the change: too many requests, a request that took too long,
   /// or the same change still running from an earlier send. The change waits.
   private static func waits(_ refusal: APIError.Refusal) -> Bool {
-    refusal.status == 408 || refusal.status == 429 || refusal.code.text == "idempotency_key_in_use"
+    refusal.status == 408 || refusal.status == 429 || refusal.code == .idempotencyKeyInUse
   }
 
   /// Whether a late refusal is captured here: never a 404 or a 410, for something deleted elsewhere, and never a 400
