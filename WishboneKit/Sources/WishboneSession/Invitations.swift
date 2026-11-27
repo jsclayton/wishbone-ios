@@ -109,3 +109,92 @@ extension SessionModel {
     await record(.declineInvitation(invitationID: id), title: invitation.row.listName)
   }
 }
+
+// Invite and Withdraw, on a list's page, for a recipient of an extra list. See Invite and Withdraw in
+// `docs/screens/list.md`, "Unsent changes" in `docs/spec.md`, and the server's route table for `?invitable_to=`.
+//
+// **Who can be invited** comes from the copy, by the server's rule: users whom the user can see, with the admin's
+// access not counted (their children, their parents, and the users of their groups: Home's People), who are active,
+// are not recipients of the list, and have no pending invitation to it. So the admin, as a recipient, can invite only
+// the people they see as anyone else does.
+//
+// **Each is an unsent change,** with no confirmation. An invite shows on the page at once, by a stand-in ID, and the
+// user leaves the Invite sheet. A withdraw takes the invitation out at once. A refusal rolls it back, and shows once
+// (see `UnsentChanges.swift`).
+
+/// A pending invitation to a list, for someone other than the session's user and their children, as a recipient of
+/// the list sees it on the list's page: "Grandpa · invited by Mom", with Withdraw.
+public struct ListInvitation: Equatable, Sendable, Identifiable {
+  public let row: InvitationRow
+
+  /// The invited user, in full or as a summary: their name and avatar.
+  public let user: UserRow
+
+  /// The name of the recipient who invited them. Nil once that user is deleted.
+  public let inviterName: String?
+
+  /// Whether Withdraw shows: the invitation's `can_delete`.
+  public let canWithdraw: Bool
+
+  public var id: String { row.id }
+}
+
+extension SessionModel {
+  /// The list's other pending invitations, for its page: the ones that a recipient of the list sees, for anyone but
+  /// the user and their children, whose invitations are at the top of the page. The oldest first, and an invite that
+  /// waits to be sent last. Empty for a user who is not a recipient of the list.
+  public func otherInvitations(toList id: String) -> [ListInvitation] {
+    guard let list = list(id: id), list.recipientIDs.contains(session.userID) else { return [] }
+    let shown = Set(pendingInvitations(toList: list.id).map(\.id))
+    return invitations.compactMap { row in
+      guard row.listID == list.id, !shown.contains(row.id), row.userID != session.userID,
+        let user = user(id: row.userID)
+      else { return nil }
+      return ListInvitation(
+        row: row, user: user, inviterName: row.invitedByID.flatMap { self.user(id: $0)?.name },
+        canWithdraw: row.canDelete)
+    }
+  }
+
+  /// The users whom the user can invite to the list, by name, for the Invite sheet: whom the user can see, with the
+  /// admin's access not counted, who are active, are not recipients of the list, and have no pending invitation to
+  /// it. Empty when the list's `can_invite` is false, and for a primary list.
+  public func invitableUsers(toList id: String) -> [UserRow] {
+    guard let list = list(id: id), list.canInvite, !list.isPrimary else { return [] }
+    let seen = Set(people.flatMap { $0.users.map(\.id) })
+    let invited = Set(invitations.filter { $0.listID == list.id }.map(\.userID))
+    let recipients = Set(list.recipientIDs)
+    return users.filter { user in
+      seen.contains(user.id) && !user.isSummary && !user.isDeactivated && !recipients.contains(user.id)
+        && !invited.contains(user.id)
+    }
+  }
+
+  /// Invite: invites the user to the list, as an unsent change. The invitation shows on the list's page at once, and
+  /// the user leaves the Invite sheet.
+  ///
+  /// It does nothing for a user whom the session's user can't invite to the list. It returns when the change is in
+  /// the journal and published, and doesn't wait for the sync.
+  public func invite(_ userID: String, toList id: String) async {
+    guard !hasEnded, let list = list(id: id),
+      let user = invitableUsers(toList: list.id).first(where: { $0.id == userID })
+    else { return }
+    let invitation = CreatedInvitation(
+      id: StandIn.make(), listID: list.id, listName: list.name, userID: user.id, userName: user.name,
+      invitedByID: session.userID, createdAt: .now)
+    await record(.createInvitation(invitation), title: list.name)
+  }
+
+  /// Withdraw: removes the invitation, as an unsent change, with no confirmation. It goes at once.
+  ///
+  /// It does nothing for an invitation that is not among its list's other invitations, or that the user can't
+  /// withdraw. It returns when the change is in the journal and published, and doesn't wait for the sync.
+  public func withdrawInvitation(_ id: String) async {
+    guard !hasEnded, let row = invitations.first(where: { $0.id == id }),
+      let invitation = otherInvitations(toList: row.listID).first(where: { $0.id == id }), invitation.canWithdraw
+    else { return }
+    await record(
+      .withdrawInvitation(WithdrawnInvitation(invitationID: id, userName: invitation.user.name)),
+      title: row.listName)
+  }
+}

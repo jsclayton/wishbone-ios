@@ -26,7 +26,7 @@ From top to bottom:
 7. For a recipient: the list's other pending invitations, each with who invited them and Withdraw, and **Invite**.
 8. **Leave**, **Make {child} leave**, and **Delete list**, from their `can_*` fields.
 
-**Provisional.** Plain default: a system list. The name is the navigation title, the recipients and the description are the first section, and the items are rows with the image at the leading edge. An item with no image has a tile in its recipient's person color. Each web link in the description also has a link row under its block. Edit list, Sort, and Open in New Window are in the toolbar's menu, and Reorder is the toolbar's Edit button. While its edit mode shows the handles, the Add item row doesn't show: the system disables it there. Leave, Make {child} leave, and Delete list are destructive rows in the last section, and each confirmation is an alert, with the warning after its line.
+**Provisional.** Plain default: a system list. The name is the navigation title, the recipients and the description are the first section, and the items are rows with the image at the leading edge. An item with no image has a tile in its recipient's person color. Each web link in the description also has a link row under its block. Edit list, Sort, and Open in New Window are in the toolbar's menu, and Reorder is the toolbar's Edit button. While its edit mode shows the handles, the Add item row, the other invitations, and the Invite row don't show: the system disables them there. Leave, Make {child} leave, and Delete list are destructive rows in the last section, and each confirmation is an alert, with the warning after its line. The other invitations and the Invite row are a section after the items: each invitation is a row with the invited user's avatar, its line, and a Withdraw button at the trailing edge.
 
 ### Edit list
 
@@ -37,6 +37,8 @@ A sheet with **Name** and **Description**.
 ### Invite
 
 A sheet with the users that the user can invite, with names and avatars, by name. A tap invites that user at once, and the sheet stays open for another.
+
+**Provisional.** Plain default: a system list in a sheet, each row the avatar and the name, with Done in the toolbar.
 
 ## States
 
@@ -117,6 +119,11 @@ Decided in the spec: "Move to…", "Reorder", "Add item", "Open in New Window".
 | Edit list, title | "Edit list" |
 | Invite, title | "Invite to {list}" |
 | Nobody to invite | "There's nobody else to invite. You can invite people you can see who aren't on this list." |
+| Invite, the row and the sheet's button | "Invite", "Done" |
+| Withdraw, the button | "Withdraw" |
+| Another invitation whose inviter was deleted | "{name}", with no "invited by" |
+| A late refusal of Invite | "Inviting {name} to {list}: {reason}" |
+| A late refusal of Withdraw | "Withdrawing the invitation of {name} to {list}: {reason}" |
 | A refused move or reorder | "{title} couldn't be moved.", then the words for the code |
 
 ## Accessibility
@@ -124,6 +131,7 @@ Decided in the spec: "Move to…", "Reorder", "Add item", "Open in New Window".
 - An item row is one element: the title, the price, then for a giver how many are still wanted and the user's own claim. Its actions are Open, I'll get this, Move to…, Copy link, Edit, and Delete, as allowed.
 - Reorder uses the system's move up and move down actions. Move to… is the way to move an item without a drag.
 - Each recipient's avatar reads their name. The "For {names}" line is one element.
+- Each of the list's other invitations is one element, its line, with the action Withdraw. The button is also on screen. Each user's row in the Invite sheet reads the name.
 - The description is read as it shows, and each web link in it is a link, for the Links rotor and Voice Control. Each web link also has a row under its block, which reads its words, then "opens in browser".
 - At the largest text sizes, an item's image sits above its text, and the price moves under the title.
 

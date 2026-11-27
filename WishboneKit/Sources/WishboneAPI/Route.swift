@@ -30,6 +30,7 @@ public enum Route: String, Sendable, CaseIterable {
   case invitation
   case acceptInvitation
   case declineInvitation
+  case createInvitation
   case gifts
   case gift
   case updateGift
@@ -59,7 +60,7 @@ public enum Route: String, Sendable, CaseIterable {
       .gifts, .gift, .blockedStores:
       "GET"
     case .redeemLoginLink, .confirmProfile, .uploadImage, .blockStore, .claim, .search, .createItem, .acknowledgeGift,
-      .restoreGift, .acceptInvitation, .addStoreLink, .refreshPrices, .createList:
+      .restoreGift, .acceptInvitation, .addStoreLink, .refreshPrices, .createList, .createInvitation:
       "POST"
     case .updateMe, .updateGift, .updateList, .updateItem, .updateStoreLink: "PATCH"
     case .revokeCurrentSession, .unblockStore, .leaveList, .unclaimGift, .deleteList, .declineInvitation, .deleteItem,
@@ -98,6 +99,7 @@ public enum Route: String, Sendable, CaseIterable {
     case .invitations: "/invitations"
     case .invitation, .declineInvitation: "/invitations/{id}"
     case .acceptInvitation: "/invitations/{id}/accept"
+    case .createInvitation: "/lists/{id}/invitations"
     case .gifts: "/gifts"
     case .gift, .updateGift, .unclaimGift: "/gifts/{id}"
     case .acknowledgeGift: "/gifts/{id}/acknowledge"
@@ -125,7 +127,8 @@ public enum Route: String, Sendable, CaseIterable {
       .updateGift, .unclaimGift, .acknowledgeGift, .restoreGift, .claim, .blockedStores, .blockStore, .unblockStore,
       .leaveList, .revokeCurrentSession, .confirmProfile,
       .uploadImage, .me, .search, .createItem, .updateList, .deleteList, .acceptInvitation, .declineInvitation,
-      .updateItem, .deleteItem, .addStoreLink, .updateStoreLink, .deleteStoreLink, .refreshPrices, .createList:
+      .updateItem, .deleteItem, .addStoreLink, .updateStoreLink, .deleteStoreLink, .refreshPrices, .createList,
+      .createInvitation:
       false
     }
   }
@@ -148,7 +151,7 @@ public enum Route: String, Sendable, CaseIterable {
       .revokeCurrentSession,
       .confirmProfile, .uploadImage, .me,
       .search, .createItem, .updateList, .deleteList, .acceptInvitation, .declineInvitation, .updateItem, .deleteItem,
-      .addStoreLink, .updateStoreLink, .deleteStoreLink, .refreshPrices, .createList:
+      .addStoreLink, .updateStoreLink, .deleteStoreLink, .refreshPrices, .createList, .createInvitation:
       []
     }
   }
@@ -182,9 +185,10 @@ public enum Route: String, Sendable, CaseIterable {
     // once. Refresh prices takes a new key on each tap: a second Refresh on purpose reads the pages again.
     case .addStoreLink, .refreshPrices: ["Idempotency-Key"]
     // An unsent change keeps its key, so a resend after a lost connection, or in a later sync, is the same write.
-    // A create of a list is an unsent change too: its key makes a resend after a lost answer make one list.
+    // A create of a list is an unsent change too: its key makes a resend after a lost answer make one list. So is an
+    // invitation: a resend makes one invitation, and a withdraw is a decline's route.
     case .updateGift, .unclaimGift, .acknowledgeGift, .updateList, .deleteList, .acceptInvitation,
-      .declineInvitation, .updateItem, .deleteItem, .updateStoreLink, .deleteStoreLink, .createList:
+      .declineInvitation, .updateItem, .deleteItem, .updateStoreLink, .deleteStoreLink, .createList, .createInvitation:
       ["Idempotency-Key"]
     case .health, .redeemLoginLink, .users, .user, .groups, .group, .groupUsers, .groupGroups, .occasions, .occasion,
       .occasionGroups, .lists, .list, .listRecipients, .listItems, .item, .invitations, .invitation, .gifts, .gift,
@@ -203,6 +207,7 @@ public enum Route: String, Sendable, CaseIterable {
     case .updateGift: fields(of: GiftChanges.CodingKeys.self)
     case .updateList: fields(of: ListChanges.CodingKeys.self)
     case .createList: fields(of: NewList.CodingKeys.self)
+    case .createInvitation: fields(of: NewInvitation.CodingKeys.self)
     case .updateItem: fields(of: ItemChanges.CodingKeys.self)
     case .addStoreLink: fields(of: AddStoreLinkBody.CodingKeys.self)
     case .updateStoreLink: fields(of: StoreLinkChanges.CodingKeys.self)
@@ -245,7 +250,7 @@ public enum Route: String, Sendable, CaseIterable {
     case .addStoreLink, .updateStoreLink: StoreLink.fields
     case .search: SearchBody.fields
     case .invitations: Page<VersionedRow<Invitation>>.fields
-    case .invitation: Invitation.fields
+    case .invitation, .createInvitation: Invitation.fields
     case .gifts: Page<VersionedRow<Gift>>.fields
     case .gift, .updateGift, .acknowledgeGift, .claim: Gift.fields
     case .blockedStores: Page<VersionedRow<BlockedStore>>.fields
@@ -452,6 +457,24 @@ extension Endpoint where Response == ListResource {
   /// answer is the list.
   static func createList(_ list: NewList, key: String) -> Endpoint {
     Endpoint(route: .createList, body: list, idempotencyKey: key)
+  }
+}
+
+extension Endpoint where Response == Invitation {
+  /// Invites the user to the extra list, with the unsent change's own key, so that a resend of the invite makes one
+  /// invitation. The answer is the invitation.
+  static func createInvitation(toList listID: String, userID: String, key: String) -> Endpoint {
+    Endpoint(
+      route: .createInvitation, parameters: ["id": listID], body: NewInvitation(userID: userID), idempotencyKey: key)
+  }
+}
+
+/// The body of `POST /lists/{id}/invitations`: the user to invite.
+struct NewInvitation: Encodable, Sendable, Equatable {
+  let userID: String
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case userID = "user_id"
   }
 }
 

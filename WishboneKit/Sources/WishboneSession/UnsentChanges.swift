@@ -137,7 +137,8 @@ extension SessionModel {
     }
   }
 
-  /// Sends one unsent change, and gives the server's answer. An unclaim, a delete and a decline have none. An
+  /// Sends one unsent change, and gives the server's answer. An unclaim, a delete, a decline and a withdraw have
+  /// none, and an invite's is the invitation, or none when the user was invited or on the list already. An
   /// upload's answer is the image, a create's is the item, and a create of a list the list, each by the server's ID. An item's edit, a move and a
   /// reorder have the item as their answer, and a store link's price edit the link.
   ///
@@ -198,6 +199,17 @@ extension SessionModel {
         try await client.updateItem(reorder.itemID, ItemChanges(position: reorder.position), key: change.key))
     case .createList(let list):
       return .createdList(try await client.createList(list.newList, key: change.key))
+    case .createInvitation(let invitation):
+      do {
+        return .invitation(
+          try await client.createInvitation(toList: invitation.listID, userID: invitation.userID, key: change.key))
+      } catch .refused(let refusal) where Self.isInvitedAlready(refusal) {
+        // The user has an invitation already, or is on the list: what the invite asked for. The pull brings it.
+        return .none
+      }
+    case .withdrawInvitation(let withdrawn):
+      try await client.withdrawInvitation(withdrawn.invitationID, key: change.key)
+      return .none
     }
   }
 
@@ -213,6 +225,11 @@ extension SessionModel {
       Log.fault(.session, "The journal can't be read.", detail: "\(error)")
       return nil
     }
+  }
+
+  /// Whether an invite's refusal says that the user is invited already, or is a recipient: a success.
+  private static func isInvitedAlready(_ refusal: APIError.Refusal) -> Bool {
+    refusal.status == 409 && (refusal.code == .alreadyInvited || refusal.code == .alreadyRecipient)
   }
 
   /// Whether the instance answered without deciding the change: too many requests, a request that took too long,

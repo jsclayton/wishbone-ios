@@ -35,6 +35,12 @@ public struct ListPage: Equatable, Sendable {
   /// Make {child} leave: each of the user's children whose recipient row has `can_delete`.
   public let makeLeave: [Leaver]
 
+  /// For a recipient: the list's other pending invitations, each with who invited them and Withdraw.
+  public let otherInvitations: [ListInvitation]
+
+  /// Whether the Invite row shows: the list's `can_invite`, and never on a primary list.
+  public let offersInvite: Bool
+
   /// A recipient on the "For {names}" line.
   public struct Recipient: Equatable, Sendable, Identifiable {
     public let user: UserRow
@@ -191,7 +197,9 @@ extension SessionModel {
       items: items,
       noItems: noItems,
       leave: leavers.own,
-      makeLeave: leavers.children
+      makeLeave: leavers.children,
+      otherInvitations: otherInvitations(toList: list.id),
+      offersInvite: list.canInvite && !list.isPrimary
     )
   }
 }

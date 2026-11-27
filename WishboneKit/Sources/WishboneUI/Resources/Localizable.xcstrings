@@ -155,6 +155,17 @@
         }
       }
     },
+    "%@ · invited by %@" : {
+      "comment" : "One of a list's pending invitations: the invited user's name, then the name of who invited them",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · invited by %2$@"
+          }
+        }
+      }
+    },
     "%@ · read %@" : {
       "localizations" : {
         "en" : {
@@ -752,6 +763,23 @@
     "Invitations" : {
 
     },
+    "Invite" : {
+
+    },
+    "Invite to %@" : {
+
+    },
+    "Inviting %@ to %@: %@" : {
+      "comment" : "A late refusal of Invite: the invited user's name, the list's name, then why nobody was invited",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inviting %1$@ to %2$@: %3$@"
+          }
+        }
+      }
+    },
     "It leaves your Received. If the giver still uses Wishbone, they see that, and can give it again." : {
 
     },
@@ -1334,6 +1362,9 @@
     "The recipients changed" : {
 
     },
+    "There's nobody else to invite. You can invite people you can see who aren't on this list." : {
+
+    },
     "This Wishbone needs an update" : {
 
     },
@@ -1459,6 +1490,20 @@
     },
     "With a year, your family sees the age you're turning." : {
 
+    },
+    "Withdraw" : {
+
+    },
+    "Withdrawing the invitation of %@ to %@: %@" : {
+      "comment" : "A late refusal of Withdraw: the invited user's name, the list's name, then why the invitation wasn't withdrawn",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Withdrawing the invitation of %1$@ to %2$@: %3$@"
+          }
+        }
+      }
     },
     "Year (optional)" : {
 
