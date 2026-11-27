@@ -907,7 +907,7 @@ export async function prepareSimulator({ directory, say = console.log, relative 
  * process, and it can fail with "Application '<bundle ID>' does not have a process ID".
  * After the app's first activation, when the test runner's environment has LLVM_PROFILE_FILE (code coverage on),
  * it asks for a background assertion for the app's process, and it can fail with "Failed to get background
- * assertion for target app with pid <pid>". Both are in XCUIAutomation's
+ * assertion for target app with pid <pid>". All three are in XCUIAutomation's
  * `-[XCUIApplicationImpl _launchWithRequest:]`, before it waits for the app's accessibility and for the app to go
  * idle. On CI, the test runner then failed too, and Xcode reports that as a test of its own, named
  * "<runner> (<pid>) encountered an error".
