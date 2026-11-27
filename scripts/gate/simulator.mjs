@@ -901,18 +901,21 @@ export async function prepareSimulator({ directory, say = console.log, relative 
 
 /**
  * The named flake "the app's launch gets no process ID on a busy machine" in docs/development.md. On a machine
- * under very high load, XCTest's `launch()` gives up before the app is ready, at one of two of its steps. First
- * it waits for the app's process, and it can fail with "Application '<bundle ID>' does not have a process ID".
+ * under very high load, XCTest's `launch()` gives up before the app is ready, at one of three of its steps. First
+ * it asks Xcode (here `xcodebuild`) to launch the app, and it can fail with "Failed to launch <app> via Xcode: Timed
+ * out while launching application via Xcode": the app's process never started. Then it waits for the app's
+ * process, and it can fail with "Application '<bundle ID>' does not have a process ID".
  * After the app's first activation, when the test runner's environment has LLVM_PROFILE_FILE (code coverage on),
  * it asks for a background assertion for the app's process, and it can fail with "Failed to get background
- * assertion for target app with pid <pid>". Both are in XCUIAutomation's
+ * assertion for target app with pid <pid>". All three are in XCUIAutomation's
  * `-[XCUIApplicationImpl _launchWithRequest:]`, before it waits for the app's accessibility and for the app to go
  * idle. On CI, the test runner then failed too, and Xcode reports that as a test of its own, named
  * "<runner> (<pid>) encountered an error".
  */
 export const launchFlake = {
   name: "the app's launch gets no process ID on a busy machine",
-  message: /Application '[^']+' does not have a process ID|Failed to get background assertion for target app with pid \d+/,
+  message:
+    /Failed to launch <[^>]+> via Xcode: Timed out while launching application via Xcode|Application '[^']+' does not have a process ID|Failed to get background assertion for target app with pid \d+/,
   runner: /-Runner \(\d+\) encountered an error$/,
 };
 

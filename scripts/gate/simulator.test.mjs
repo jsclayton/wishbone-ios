@@ -590,8 +590,27 @@ test('a launch that got no background assertion, in a journey that failed somewh
   assert.equal(launchFlakeIn(journeysReading({ [claim]: 'fail' }, { [claim]: [noAssertion, 'ClaimJourney.swift:80: Claimed did not show'] })), null);
 });
 
+const addItem = 'JourneyTests.AddItemJourney/testAddItem()';
+const launchTimedOut =
+  'Failed to launch <XCUIApplicationImpl: 0x10286e580 com.codemonkeylabs.wishbone at /Users/runner/work/wishbone-ios/wishbone-ios/build/DerivedData/Build/Products/Debug-iphonesimulator/Wishbone.app> via Xcode: Timed out while launching application via Xcode.';
+
+test('a launch that Xcode timed out on is the launch flake, as it showed on a CI runner', () => {
+  // The sighting of 2026-11-27, run 45972320145 attempt 1 (journeys-4): the message as the result bundle has it.
+  assert.deepEqual(launchFlakeIn(journeysReading({ [addItem]: 'fail', [signIn]: 'pass' }, { [addItem]: [launchTimedOut] })), [addItem]);
+});
+
+test('a launch that Xcode timed out on, in a journey that failed somewhere else too, is not the launch flake', () => {
+  assert.equal(launchFlakeIn(journeysReading({ [addItem]: 'fail' }, { [addItem]: [launchTimedOut, 'AddItemJourney.swift:60: The item did not show'] })), null);
+});
+
+test('a launch that Xcode failed for another reason is not the launch flake', () => {
+  const failed = launchTimedOut.replace('Timed out while launching application via Xcode.', 'The application crashed on launch.');
+  assert.equal(launchFlakeIn(journeysReading({ [addItem]: 'fail' }, { [addItem]: [failed] })), null);
+});
+
 test("the launch flake's message is XCTest's, for any app", () => {
   assert.match("Application 'com.example.other' does not have a process ID", launchFlake.message);
+  assert.match('Failed to launch <XCUIApplicationImpl: 0x1 com.example.other at /tmp/Other.app> via Xcode: Timed out while launching application via Xcode.', launchFlake.message);
   assert.doesNotMatch("Application 'com.codemonkeylabs.wishbone' has a process ID", launchFlake.message);
   assert.match('Failed to get background assertion for target app with pid 1: No failure details provided', launchFlake.message);
   // The test runner's own assertion, which XCTest asks for when it sends the runner to the background, is another failure.
