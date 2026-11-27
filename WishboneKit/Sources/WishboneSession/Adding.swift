@@ -536,11 +536,16 @@ extension SessionModel {
   /// the list. While the create still waits, an add filled in by hand is an unsent change after it, and any other
   /// add can't reach the instance.
   ///
+  /// **In the share extension** nothing waits for later: it keeps no journal (ADR 0006). An add that can't reach the
+  /// instance ends as `unreachable`, however the form was filled in, and Add tries again with the same key. After an
+  /// add, the extension tells the app, which syncs at once. See "The share extension" in `docs/spec.md`.
+  ///
   /// Diagnostics: never here. The client reports each error as its side asks.
   public func add(_ draft: inout ItemDraft) async -> AddOutcome {
     guard !hasEnded, var list = draft.listID.map({ self.list(id: $0) }) ?? primaryList else { return .failed }
-    if draft.isFilledInByHand, isInstanceUnreachable { return await addLater(&draft, to: list) }
-    if StandIn.isStandIn(list.id) {
+    let addsLater = draft.isFilledInByHand && role.isApp
+    if addsLater, isInstanceUnreachable { return await addLater(&draft, to: list) }
+    if StandIn.isStandIn(list.id), role.isApp {
       // A list that New list made, whose create waits: it is sent first. The instance has no list by the stand-in.
       switch await listSendingFirst(list) {
       case .sent(let sent): list = sent
@@ -580,6 +585,8 @@ extension SessionModel {
       let item = draft.newItem(imageIDs: imageIDs)
       let key = draft.key(for: item, onList: list.id)
       let added = try await client.createItem(item, onList: list.id, key: key)
+      // The instance has the item: the app syncs, whatever happens here next.
+      role.itemAdded()
       guard !hasEnded else { return .failed }
       try await database.save([added], answering: true)
       // A sync that runs now may have asked before the add. Its pull keeps the item, and one more sync asks after it.
@@ -590,7 +597,7 @@ extension SessionModel {
           imageWasLeftOut: imageWasLeftOut))
     } catch {
       switch await writeOutcome(of: error) {
-      case .unreachable where draft.isFilledInByHand: return await addLater(&draft, to: list)
+      case .unreachable where addsLater: return await addLater(&draft, to: list)
       case .unreachable: return .unreachable
       case .refused(let refusal) where refusal.code == .storeBlocked:
         if let link = draft.storeLink {

@@ -56,7 +56,7 @@ See [ADR 0003](adr/0003-one-session-model-is-shared-by-every-window-with-no-view
 - The session model publishes the copy through one observation (`CopyObservation.swift`). Inside each commit, it reads again only the parts of the snapshot whose tables the change wrote, and it publishes the snapshots in the order of the changes. A test holds each snapshot to the whole copy as its change left it.
 - Every write goes through the session model: it records the change, applies it to the copy, and sends it. A claim and a raise of a gift's quantity wait for the server instead.
 - Sign-out, or the API's own 401, discards the session model, the database, and its unsent changes.
-- The share extension builds its own session model, with a database in memory.
+- The share extension builds its own session model, with a database in memory, through its own device (`ShareDevice` in `WishboneSession`). It reads the session from the session keychain, and feeds the copy from the API: `GET /users/me`, the lists that the user can edit, the user's children, and the items of those lists for the duplicate hint. It keeps no journal and never syncs. After an add, it posts a Darwin notification, which carries no data, and the app's session model syncs at once. At the API's own 401 it deletes only the Keychain item.
 - "Store" means a shop, as in the server's **store link** and **blocked store**. It never names state in code or docs.
 
 ## The API client

@@ -236,6 +236,7 @@ To move the pin:
 - A journey that you run in Xcode has no helper. It audits once, in the settings that your simulator has. The double-length run has no helper either. With no helper, the journey waits for two screenshots in a row that are the same, in any appearance, before it audits, so the audit never reads a screen that a push or a sheet is still bringing in.
 - A second run is in the double-length pseudo-language, in which iOS shows each string of the String Catalog twice. There, the audit finds text that is cut short. A journey finds a control by its words, twice over, so text that is not in the String Catalog fails the journey.
 - A unit test checks the accent color and every person color against their backgrounds, in light, dark, and Increase Contrast: 4.5:1 for text, and 3:1 for large text and controls.
+- The share extension's view shows inside the app that shared, such as Safari, and an audit of that app doesn't read it: a text of a contrast near 1:1 in the extension passed an audit of Safari, and failed the same audit in the app (2026-11-26). So the add form is audited in the app, and the journey that adds from the share extension audits nothing.
 - A test can't show whether VoiceOver and Voice Control make the common tasks possible. A person checks that on a device before each release that claims an accessibility label.
 
 ### Strings

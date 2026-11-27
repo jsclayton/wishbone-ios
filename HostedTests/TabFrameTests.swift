@@ -86,22 +86,27 @@ struct TabFrameTests {
 /// A device signed in to the stand-in instance, with its copy in memory. Its timer runs on the clock.
 @MainActor
 func signedInDevice(
-  on instance: StandInInstance, timerClock: ManualClock = ManualClock(), diagnostics: any DiagnosticsReporter = .none
+  on instance: StandInInstance, timerClock: ManualClock = ManualClock(), diagnostics: any DiagnosticsReporter = .none,
+  addsFromShareExtension: any AddsFromShareExtension = .none
 ) throws -> Device {
-  try signedInDevice(at: instance.address, timerClock: timerClock, diagnostics: diagnostics)
+  try signedInDevice(
+    at: instance.address, timerClock: timerClock, diagnostics: diagnostics,
+    addsFromShareExtension: addsFromShareExtension)
 }
 
 /// A device signed in to the address, with its copy in memory. Its timer runs on the clock.
 @MainActor
 func signedInDevice(
-  at address: String, timerClock: ManualClock = ManualClock(), diagnostics: any DiagnosticsReporter = .none
+  at address: String, timerClock: ManualClock = ManualClock(), diagnostics: any DiagnosticsReporter = .none,
+  addsFromShareExtension: any AddsFromShareExtension = .none
 ) throws -> Device {
   let address = try #require(InstanceAddress(address))
   let kept = Session(instance: address, token: "a-token-for-the-test", userID: "7")
   return Device(
     Device.Setup(
       userAgent: UserAgent(version: "1.0", isPad: false), keychain: KeptSession(session: kept),
-      marker: WrittenMarker(), storage: .memory, timerClock: timerClock, diagnostics: diagnostics))
+      marker: WrittenMarker(), storage: .memory, timerClock: timerClock, diagnostics: diagnostics,
+      addsFromShareExtension: addsFromShareExtension))
 }
 
 /// A session keychain that holds one session, so a device starts signed in.

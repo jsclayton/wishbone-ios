@@ -519,6 +519,9 @@
     "Copy link" : {
 
     },
+    "Copy the link" : {
+
+    },
     "Couldn't load your lists from %@" : {
 
     },
@@ -1084,6 +1087,9 @@
     "Open Settings" : {
 
     },
+    "Open Wishbone" : {
+
+    },
     "Other lists" : {
 
     },
@@ -1223,6 +1229,9 @@
 
     },
     "Show on Lock Screen" : {
+
+    },
+    "Sign in to Wishbone first." : {
 
     },
     "Sign out" : {
@@ -1468,6 +1477,9 @@
 
     },
     "Wishbone" : {
+
+    },
+    "Wishbone can't add this. Share a link or some text." : {
 
     },
     "Wishbone can't use that file. Choose a JPEG, PNG, GIF, or WebP photo." : {

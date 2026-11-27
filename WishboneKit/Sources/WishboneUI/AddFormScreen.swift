@@ -12,6 +12,9 @@ import WishboneSession
 ///
 /// A photo that the user took or chose is the item's image, above the title. It goes only to the instance.
 ///
+/// In the share extension, the form has Cancel in place of Back, and after an Add that can't reach the instance,
+/// Copy the link. See `docs/screens/share-extension.md`.
+///
 /// **Provisional.** Plain default: a system form, in the order of the screen's spec. Add is in the toolbar.
 struct AddFormScreen: View {
   let session: SessionModel
@@ -22,6 +25,9 @@ struct AddFormScreen: View {
   /// Called when the item was added. The Add screen closes the form.
   private let didAdd: (AddedItem) -> Void
 
+  /// Cancel, in the share extension: it closes the extension, and keeps nothing. Nil in the app.
+  private let cancel: (() -> Void)?
+
   @State private var draft: ItemDraft
   @State private var isAdding = false
 
@@ -31,9 +37,12 @@ struct AddFormScreen: View {
 
   @Environment(\.dismiss) private var dismiss
 
-  init(session: SessionModel, draft: ItemDraft, didAdd: @escaping (AddedItem) -> Void) {
+  init(
+    session: SessionModel, draft: ItemDraft, cancel: (() -> Void)? = nil, didAdd: @escaping (AddedItem) -> Void
+  ) {
     self.session = session
     opened = draft
+    self.cancel = cancel
     self.didAdd = didAdd
     _draft = State(initialValue: draft)
   }
@@ -45,6 +54,9 @@ struct AddFormScreen: View {
       if let words = problemWords ?? noteWords {
         Section {
           Text(words)
+          if problem == .unreachable, cancel != nil, let link = draft.storeLink.flatMap({ URL(string: $0.url) }) {
+            CopyTheLinkButton(link: link)
+          }
         }
       }
       if let photo = draft.photo {
@@ -120,7 +132,13 @@ struct AddFormScreen: View {
     .interactiveDismissDisabled(hasChanges)
     .disabled(isAdding)
     .toolbar {
-      if hasChanges {
+      if let cancel {
+        ToolbarItem(placement: .cancellationAction) {
+          Button(action: cancel) {
+            Text("Cancel", bundle: #bundle)
+          }
+        }
+      } else if hasChanges {
         ToolbarItem(placement: .cancellationAction) {
           Button {
             isConfirmingDiscard = true

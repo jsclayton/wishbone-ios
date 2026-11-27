@@ -115,6 +115,7 @@ test('the simulator script takes a shard, and runs only its journeys, with the h
     'JourneyTests/FirstSyncFailedJourney/testFirstSyncFailed',
     'JourneyTests/MoveJourney/testMove',
     'JourneyTests/ReorderJourney/testReorder',
+    'JourneyTests/ShareExtensionJourney/testAddFromTheShareExtension',
   ]);
   const hosted = shards.find((shard) => shard.hosted);
   const other = shards.find((shard) => !shard.hosted);

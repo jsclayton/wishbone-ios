@@ -43,6 +43,6 @@ It takes one link, one text, or one image for each share. Wishbone is not offere
 - **A fresh install, before the app was opened:** the signed-out state.
 - **A shared thing that Wishbone can't use:** a message, with Cancel.
 
-**Provisional.** These words are drafts: "Reading {store}…", "Wishbone can't add this. Share a link, some text, or one photo.", and the label "Copy the link". "Sign in to Wishbone first." and "Open Wishbone" are decided in the spec.
+**Provisional.** These words are drafts: "Reading {store}…", "Wishbone can't add this. Share a link or some text.", and the label "Copy the link". The line names one photo too once the extension takes one. "Sign in to Wishbone first." and "Open Wishbone" are decided in the spec.
 
 The extension is held to the same accessibility rules as the app: every control has a label, the text scales, and nothing is only a gesture.

@@ -53,7 +53,8 @@ struct Instance {
     refresh: any RefreshScheduler = .none,
     timeZone: TimeZoneSource = .fixed("UTC"),
     diagnostics: any DiagnosticsReporter = .none,
-    reminders: Reminders = .none
+    reminders: Reminders = .none,
+    addsFromShareExtension: any AddsFromShareExtension = .none
   ) -> Device {
     Device(
       Device.Setup(
@@ -66,7 +67,8 @@ struct Instance {
         refresh: refresh,
         timeZone: timeZone,
         diagnostics: diagnostics,
-        reminders: reminders))
+        reminders: reminders,
+        addsFromShareExtension: addsFromShareExtension))
   }
 
   /// A user with the items on their primary list, in order.
