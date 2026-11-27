@@ -11,12 +11,12 @@
 //
 // Every `xcodebuild` writes its log, and its result bundle, to the results folder. The script prints one line for
 // each run. A run of the journeys that fails with the named flake "the app's launch gets no process ID on a busy
-// machine" runs again, once (`runAgainOnLaunchFlake`).
+// machine", or with "a `simctl ui` call hangs on a CI runner", runs again, once (`runAgainOnFlake`).
 //
 // `--shard=<name>` runs one shard of the journeys (parts.mjs), as a job of the dispatched Gate run in CI does: only
 // the shard's journeys, in both runs, and the hosted tests only when the shard has them.
 
-import { execFile, execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { closeSync, createWriteStream, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { createServer } from 'node:http';
@@ -32,9 +32,6 @@ import { checkAuditScreenshots, readAttachmentNames, readResultBundle } from './
 
 /** The name of the gate's own simulator. The gate makes it when the machine has none. */
 export const simulatorName = 'Wishbone gate';
-
-/** The status bar that the gate holds still: see `holdStatusBar`. */
-const statusBarOverride = ['--time', '9:41', '--dataNetwork', 'wifi', '--wifiBars', '3', '--batteryState', 'charged', '--batteryLevel', '100'];
 
 /** The device that the gate's simulator is, when the newest iOS has it. Otherwise it is that iOS's first iPhone. */
 const preferredDevice = 'iPhone 18 Pro';
@@ -256,35 +253,67 @@ export const readinessCallLimitMs = 5 * 60_000;
 export const readinessAnswerLimitMs = 3 * readinessCallLimitMs;
 
 /**
- * Runs `xcrun simctl <args>`, and stops it when it passes `limitMs`. Resolves when it ends well. Rejects when it
- * fails, and with an error whose `timedOut` is true when it passed its limit.
+ * Runs `file` with `args`, in a process group of its own, and resolves with its output when it ends well. Rejects
+ * when it fails, with its error's words, and with an error whose `timedOut` is true when it passes `limitMs`.
+ *
+ * The limit is hard. At the limit, it kills the whole process group, and rejects at once, without waiting for the
+ * output's pipe to close: a process that the call started can hold the pipe open after the call is gone.
  */
-export function simctlWithLimit(args, limitMs = settingCallLimitMs, { file = 'xcrun', prefix = ['simctl'] } = {}) {
+export function runWithLimit(file, args, limitMs) {
   return new Promise((resolve, reject) => {
-    execFile(file, [...prefix, ...args], { timeout: limitMs, killSignal: 'SIGKILL', encoding: 'utf8' }, (error, stdout, stderr) => {
-      if (error === null) {
-        resolve(stdout);
-        return;
+    const failure = (message, timedOut) => Object.assign(new Error(message), { timedOut });
+    const child = spawn(file, args, { detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    const out = [];
+    const err = [];
+    let done = false;
+    const finish = (end) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      end();
+    };
+    const timer = setTimeout(() => {
+      try {
+        process.kill(-child.pid, 'SIGKILL');
+      } catch {
+        // The group is gone already.
       }
-      const failure = new Error(error.killed ? `didn't return within ${duration(limitMs)}` : (stderr.trim() || error.message));
-      failure.timedOut = error.killed === true;
-      reject(failure);
+      child.stdout.destroy();
+      child.stderr.destroy();
+      finish(() => reject(failure(`didn't return within ${duration(limitMs)}`, true)));
+    }, limitMs);
+    child.stdout.on('data', (chunk) => out.push(chunk));
+    child.stderr.on('data', (chunk) => err.push(chunk));
+    child.on('error', (error) => finish(() => reject(failure(error.message, false))));
+    child.on('close', (code, signal) => {
+      finish(() => {
+        if (code === 0) {
+          resolve(Buffer.concat(out).toString('utf8'));
+          return;
+        }
+        const words = Buffer.concat(err).toString('utf8').trim();
+        reject(failure(words || `${file} ended with ${code ?? signal}`, false));
+      });
     });
   });
 }
 
 /**
- * The simulator's CoreSimulatorBridge, as its launchd knows it. It is a daemon inside the simulator, and it answers
- * each `simctl ui` call, and `simctl status_bar`, for the Mac. Its launchd keeps it alive, so a restart starts it
- * again at once.
+ * Runs `xcrun simctl <args>`, with a hard limit of `limitMs` (`runWithLimit`). Resolves when it ends well. Rejects
+ * when it fails, and with an error whose `timedOut` is true when it passed its limit.
  */
-export const bridgeService = 'user/foreground/com.apple.CoreSimulator.bridge';
+export function simctlWithLimit(args, limitMs = settingCallLimitMs, { file = 'xcrun', prefix = ['simctl'] } = {}) {
+  return runWithLimit(file, [...prefix, ...args], limitMs);
+}
 
-/** The limit of each call of a recovery (`bridgeRecovery`). */
-const recoveryCallLimitsMs = { print: 10_000, ps: 5_000, sample: 10_000, restart: 10_000, hold: 10_000 };
+/** The limit of each call of a hang's record (`hangRecord`). */
+const recordCallLimitsMs = { top: 10_000, ps: 5_000, sample: 10_000 };
 
-/** The longest time that a recovery takes: its calls' limits, added up. */
-export const recoveryLimitMs = Object.values(recoveryCallLimitsMs).reduce((sum, one) => sum + one, 0);
+/** The longest time that a hang's record takes: its calls' limits, added up. */
+export const recordLimitMs = Object.values(recordCallLimitsMs).reduce((sum, one) => sum + one, 0);
+
+/** The processes on the Mac that a hang's record looks for: the simulator's launchd, its bridge, and the service. */
+const recordedProcesses = ['launchd_sim', 'CoreSimulatorBridge', 'CoreSimulatorService'];
 
 /** The words of an error, on one line, with no full stop at the end. */
 function errorWords(error) {
@@ -306,83 +335,69 @@ function topOfStack(sample) {
 }
 
 /**
- * The recovery from a hung `simctl ui` call, for `settingsApplier`: the named flake "a `simctl ui` call hangs on a
- * CI runner" in docs/development.md. A call of `simctl ui` waits for the simulator's CoreSimulatorBridge to answer.
- * A bridge that is stopped (SIGSTOP) makes every `simctl ui` call, a change or a read, hang until its limit, which
- * is the flake's signature. A restart of the bridge ends that at once, and drops the status bar's override.
+ * The record of a hung `simctl ui` call, for `settingsApplier`: the named flake "a `simctl ui` call hangs on a CI
+ * runner" in docs/development.md. During a hang on CI, every `simctl` call to the simulator hangs, `simctl spawn`
+ * too, so the record asks only the Mac: the CPU's idle share (`top`), the state and CPU of the simulator's
+ * `launchd_sim`, its CoreSimulatorBridge and CoreSimulatorService (`ps`), and a sample of CoreSimulatorService for
+ * a second. Each call has a hard limit of its own (`runWithLimit`), and a call that fails doesn't stop the ones
+ * after it. It keeps all of it in `hang-<N>.txt` in `directory`, and resolves with one line.
  *
- * So the recovery first records what the bridge was doing: its state in launchd, its process's state and CPU on the
- * Mac (`ps`), and a sample of it for a second, whose file it keeps in `directory`. Then it restarts the bridge
- * (`launchctl kickstart -k`), and holds the status bar again. Each step has its own limit, and a step that fails
- * doesn't stop the ones after it. It resolves with one line that says what it found and did.
- *
- * `run(args, limitMs)` is a `simctl` call, and `host(file, args, limitMs)` a call of a program on the Mac, both with
- * a limit, as `simctlWithLimit`. `relative(file)` gives a file's name for the line.
+ * `host(file, args, limitMs)` runs a program on the Mac, as `runWithLimit`. `relative(file)` gives a file's name
+ * for the line.
  */
-export function bridgeRecovery(
-  simulator,
-  {
-    directory,
-    run = simctlWithLimit,
-    host = (file, args, limitMs) => simctlWithLimit(args, limitMs, { file, prefix: [] }),
-    relative = (file) => file,
-  },
-) {
+export function hangRecord({ directory, host = runWithLimit, relative = (file) => file }) {
   let count = 0;
   return async () => {
     count += 1;
-    const limits = recoveryCallLimitsMs;
-    let found;
+    const file = path.join(directory, `hang-${count}.txt`);
+    const kept = [];
+    const parts = [];
     try {
-      const print = await run(['spawn', simulator, 'launchctl', 'print', bridgeService], limits.print);
-      const field = (name) => print.match(new RegExp(`^\\t${name} = (.+)$`, 'm'))?.[1].trim() ?? null;
-      const pid = field('pid');
-      found = `CoreSimulatorBridge was ${pid === null ? 'not running' : `pid ${pid}`}, launchd state ${field('state') ?? 'unknown'}, run ${field('runs') ?? 'unknown'}`;
-      if (pid !== null) {
-        try {
-          const [stat, cpu, up] = (await host('ps', ['-o', 'stat=,%cpu=,etime=', '-p', pid], limits.ps)).trim().split(/\s+/);
-          found += `, ps ${stat} ${cpu}% CPU up ${up}`;
-        } catch (error) {
-          found += `, ps couldn't read it: ${errorWords(error)}`;
+      const usage = (await host('top', ['-l', '2', '-n', '0'], recordCallLimitsMs.top)).split('\n').filter((line) => line.startsWith('CPU usage'));
+      kept.push(...usage);
+      const idle = usage.at(-1)?.match(/([\d.]+)% idle/)?.[1];
+      parts.push(idle === undefined ? 'CPU unread (no CPU usage line)' : `CPU ${idle}% idle`);
+    } catch (error) {
+      parts.push(`CPU unread (${errorWords(error)})`);
+    }
+    let rows = null;
+    try {
+      rows = (await host('ps', ['-axo', 'pid=,stat=,%cpu=,etime=,comm='], recordCallLimitsMs.ps))
+        .split('\n')
+        .map((line) => line.match(/^\s*(\d+)\s+(\S+)\s+([\d.]+)\s+(\S+)\s+(.+)$/))
+        .filter((match) => match !== null)
+        .map(([line, pid, stat, cpu, , command]) => ({ line: line.trim(), pid, stat, cpu, name: path.basename(command.trim()) }));
+    } catch (error) {
+      parts.push(`processes unread (${errorWords(error)})`);
+    }
+    if (rows !== null) {
+      for (const name of recordedProcesses) {
+        const found = rows.filter((row) => row.name === name || row.name.endsWith(`.${name}`));
+        kept.push(...found.map((row) => row.line));
+        let words = found.length === 0 ? `${name} none` : `${name} ${found.map((row) => `${row.pid} ${row.stat} ${row.cpu}%`).join(', ')}`;
+        if (name === 'CoreSimulatorService' && found.length > 0) {
+          const sampleFile = path.join(directory, `hang-${count}-service-sample.txt`);
+          try {
+            await host('sample', [found[0].pid, '1', '-file', sampleFile], recordCallLimitsMs.sample);
+            const sample = readFileSync(sampleFile, 'utf8');
+            kept.push('', sample);
+            words += `, top of its stack: ${topOfStack(sample)}`;
+          } catch (error) {
+            words += `, not sampled (${errorWords(error)})`;
+          }
         }
-        const file = path.join(directory, `bridge-${count}.txt`);
-        try {
-          await host('sample', [pid, '1', '-file', file], limits.sample);
-          found += `; top of its stack: ${topOfStack(readFileSync(file, 'utf8'))} (sample: ${relative(file)})`;
-        } catch (error) {
-          found += `; couldn't sample it: ${errorWords(error)}`;
-        }
+        parts.push(words);
       }
-      found += '.';
-    } catch (error) {
-      found = `Couldn't read CoreSimulatorBridge's state: ${errorWords(error)}.`;
     }
-    let restarted = null;
-    try {
-      await run(['spawn', simulator, 'launchctl', 'kickstart', '-k', bridgeService], limits.restart);
-    } catch (error) {
-      restarted = errorWords(error);
-    }
-    let held = null;
-    try {
-      await run(['status_bar', simulator, 'override', ...statusBarOverride], limits.hold);
-    } catch (error) {
-      held = errorWords(error);
-    }
-    if (restarted === null && held === null) return `${found} Restarted it, and held the status bar again.`;
-    if (restarted === null) return `${found} Restarted it, but couldn't hold the status bar again: ${held}.`;
-    if (held === null) return `${found} Couldn't restart it: ${restarted}. Held the status bar again.`;
-    return `${found} Couldn't restart it: ${restarted}, or hold the status bar again: ${held}.`;
+    writeFileSync(file, `${kept.join('\n')}\n`);
+    return `${parts.join('; ')} (record: ${relative(file)})`;
   };
 }
 
-/** The lines after the journeys in the four settings, for each recovery of a hung call (`bridgeRecovery`). */
-export function bridgeRecoveryLines(recoveries) {
-  if (recoveries.length === 0) return [];
-  return [
-    "  After each hang, the helper looked at the simulator's CoreSimulatorBridge, which answers `simctl ui`, and restarted it:",
-    ...recoveries.map((line) => `    ${line}`),
-  ];
+/** The lines after the journeys in the four settings, with each hang's record (`hangRecord`). */
+export function hangRecordLines(records) {
+  if (records.length === 0) return [];
+  return [`  At each hang, the Mac had (the named flake "${hangFlake.name}"):`, ...records.map((line) => `    ${line}`)];
 }
 
 /**
@@ -400,11 +415,9 @@ export function bridgeRecoveryLines(recoveries) {
  * an error that names the setting, the call, and how many times it hung. So a hang in CI shows as itself, not as a
  * journey's request that timed out. A call that fails in any other way fails the setting at once.
  *
- * After a hang, and before the wait, the applier runs `recover()`, when it was given one and the change has
- * `recoveryLimitMs` left: `bridgeRecovery` records what the simulator's CoreSimulatorBridge, which answers
- * `simctl ui`, was doing, and restarts it. `recover` resolves with a line that says what it found and did. The
- * applier keeps each line, after the call that hung. A recovery that fails doesn't fail the change: its line says
- * why.
+ * After a hang, and before the wait, the applier runs `record()`, when it was given one and the change has
+ * `recordLimitMs` left: `hangRecord` records what the Mac was doing, and resolves with a line. The applier keeps
+ * each line, after the call that hung. A record that fails doesn't fail the change: its line says why.
  *
  * `apply` takes `{ limitMs, answerLimitMs }`, which are `limitMs` and `answerLimitMs` unless it says otherwise.
  *
@@ -418,9 +431,8 @@ export function bridgeRecoveryLines(recoveries) {
  * is `<option> unread`. The helper reads them when a journey sends a change again (`startSettingsHelper`), so the
  * gate's line says whether the simulator had the setting that the app didn't show.
  *
- * Returns `{ apply(setting, { limitMs, answerLimitMs }), read(), calls(), hangs(), ms(), recoveries() }`: the
- * number of calls that changed a setting, how many of them hung, the time that the changes took, and the line of
- * each recovery, in the order they ran.
+ * Returns `{ apply(setting, { limitMs, answerLimitMs }), read(), calls(), hangs(), ms(), records() }`: the number
+ * of calls that changed a setting, how many of them hung, the time that the changes took, and each hang's record.
  */
 export function settingsApplier(
   simulator,
@@ -430,7 +442,7 @@ export function settingsApplier(
     answerLimitMs = helperAnswerLimitMs,
     readLimitMs = settingReadLimitMs,
     pauseMs = settingPauseMs,
-    recover = null,
+    record = null,
     now = Date.now,
     sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   } = {},
@@ -439,7 +451,7 @@ export function settingsApplier(
   let calls = 0;
   let hangs = 0;
   let ms = 0;
-  const recoveries = [];
+  const records = [];
   let queue = Promise.resolve();
   const applyNow = async (setting, callLimitMs, applyLimitMs) => {
     const started = now();
@@ -476,14 +488,14 @@ export function settingsApplier(
             hung += 1;
             hangs += 1;
           }
-          if (recover !== null && fits(recoveryLimitMs)) {
+          if (record !== null && fits(recordLimitMs)) {
             let found;
             try {
-              found = await recover();
+              found = await record();
             } catch (error) {
-              found = `the recovery failed: ${error.message}`;
+              found = `the record failed: ${error.message}`;
             }
-            recoveries.push(`simctl ${command.join(' ')}: ${found}`);
+            records.push(`simctl ${command.join(' ')}: ${found}`);
           }
           await sleep(Math.min(pauseMs, Math.max(0, applyLimitMs - (now() - started))));
           if ((await readBack(command)) === value) break;
@@ -521,7 +533,7 @@ export function settingsApplier(
     calls: () => calls,
     hangs: () => hangs,
     ms: () => ms,
-    recoveries: () => [...recoveries],
+    records: () => [...records],
   };
 }
 
@@ -742,7 +754,7 @@ export function resendLines(resends) {
  * comparing screenshots, so the clock and the rest of the bar are held still.
  */
 function holdStatusBar(simulator) {
-  simctl(['status_bar', simulator, 'override', ...statusBarOverride]);
+  simctl(['status_bar', simulator, 'override', '--time', '9:41', '--dataNetwork', 'wifi', '--wifiBars', '3', '--batteryState', 'charged', '--batteryLevel', '100']);
 }
 
 /**
@@ -837,14 +849,14 @@ export async function prepareSimulator({ directory, say = console.log, relative 
   const started = Date.now();
   const simulator = findOrMakeSimulator();
   say(`✓ Found the gate's simulator (${duration(Date.now() - started)})`);
-  // One recovery for every applier of the step, so that each sample has a name of its own.
-  const recover = bridgeRecovery(simulator, { directory, relative });
+  // One record for every applier of the step, so that each hang's files have names of their own.
+  const record = hangRecord({ directory, relative });
   const applier = await startSimulator({
     boot: () => simctl(['bootstatus', simulator, '-b'], { stdio: 'ignore' }),
     hold: () => holdStatusBar(simulator),
     // A new applier each time: it runs every call, because the simulator that booted again can be in any setting.
     putInDefault: async () => {
-      const one = settingsApplier(simulator, { recover });
+      const one = settingsApplier(simulator, { record });
       await one.apply(settings[0], { limitMs: readinessCallLimitMs, answerLimitMs: readinessAnswerLimitMs });
       return one;
     },
@@ -889,17 +901,47 @@ export function launchFlakeIn(reading) {
 }
 
 /**
- * Runs `runOnce` (a run of the journeys, which resolves with `{ passed, reading }`), and runs it again once when it
- * failed with the launch flake's signature (`launchFlakeIn`). Before the second run, `keep()` moves the first
- * run's files aside, and returns where they are, for the line. Any other failure, and a second run that fails in
- * any way, is red. Resolves with whether the last run passed.
+ * The named flake "a `simctl ui` call hangs on a CI runner" in docs/development.md, as a journey's failure shows it:
+ * the settings helper's error for a change whose call hung until the change had no time left, or that a hang
+ * before it left no time for.
  */
-export async function runAgainOnLaunchFlake(runOnce, { keep, say = console.log }) {
+export const hangFlake = {
+  name: 'a `simctl ui` call hangs on a CI runner',
+  message: /The settings helper didn't apply .+?: simctl ui \S+ \S+ \S+ (didn't return within \d|wasn't run: the change's earlier calls took)/,
+};
+
+/**
+ * Whether a reading of a run of the journeys failed with the hang flake's signature, and nothing else: at least one
+ * test failed, and each failure message of each failed test is the helper's error for a hang.
+ *
+ * Returns the names of the tests that failed, or null when the failure isn't the flake.
+ */
+export function hangFlakeIn(reading) {
+  if (reading.tests === null || reading.failed.length === 0) return null;
+  const messages = (name) => reading.messages?.[name] ?? [];
+  const hung = (name) => messages(name).length > 0 && messages(name).every((message) => hangFlake.message.test(message));
+  return reading.failed.every(hung) ? reading.failed : null;
+}
+
+/**
+ * Runs `runOnce` (a run of the journeys, which resolves with `{ passed, reading }`), and runs it again once when it
+ * failed with the launch flake's signature (`launchFlakeIn`), or the hang flake's (`hangFlakeIn`). Before the
+ * second run, `keep()` moves the first run's files aside, and returns where they are, for the line. Any other
+ * failure, and a second run that fails in any way, with a flake too, is red. Resolves with whether the last run
+ * passed.
+ */
+export async function runAgainOnFlake(runOnce, { keep, say = console.log }) {
   const first = await runOnce();
-  const launches = first.passed ? null : launchFlakeIn(first.reading);
-  if (launches === null) return first.passed;
+  if (first.passed) return true;
+  const launches = launchFlakeIn(first.reading);
+  const hangs = launches === null ? hangFlakeIn(first.reading) : null;
+  if (launches === null && hangs === null) return false;
   const kept = keep();
-  say(`  ${launches.join(', ')}: XCTest gave up on the launch (the named flake "${launchFlake.name}"), so this run of the journeys runs again, once. The first run is in ${kept.join(' and ')}.`);
+  const why =
+    launches === null
+      ? `${hangs.join(', ')}: a simctl ui call hung until the change had no time left (the named flake "${hangFlake.name}")`
+      : `${launches.join(', ')}: XCTest gave up on the launch (the named flake "${launchFlake.name}")`;
+  say(`  ${why}, so this run of the journeys runs again, once. The first run is in ${kept.join(' and ')}.`);
   return (await runOnce()).passed;
 }
 
@@ -1000,7 +1042,7 @@ export async function runSimulatorTier({ root, directory, build = true, shard, s
         const helperCalls = applier.calls();
         const helperHangs = applier.hangs();
         const helperMs = applier.ms();
-        const helperRecoveries = applier.recoveries().length;
+        const helperRecords = applier.records().length;
         // Only the run in the four settings has a helper, so the screens that it remembers are that run's.
         await helper?.close();
         helper = journeys.helper ? await startSettingsHelper((setting, options) => applier.apply(setting, options), { readSettings: () => applier.read() }) : null;
@@ -1014,9 +1056,9 @@ export async function runSimulatorTier({ root, directory, build = true, shard, s
         for (const line of journeyTimeLines(reading?.times)) say(line);
         if (journeys.helper) {
           const hung = applier.hangs() - helperHangs;
-          const again = hung === 0 ? '' : `, and ${hung} of them hung (the named flake "a \`simctl ui\` call hangs on a CI runner")`;
+          const again = hung === 0 ? '' : `, and ${hung} of them hung (the named flake "${hangFlake.name}")`;
           say(`  The settings helper made ${applier.calls() - helperCalls} simctl calls, in ${duration(applier.ms() - helperMs)}${again}.`);
-          for (const line of bridgeRecoveryLines(applier.recoveries().slice(helperRecoveries))) say(line);
+          for (const line of hangRecordLines(applier.records().slice(helperRecords))) say(line);
           for (const line of resendLines(helper.resends())) say(line);
           for (const line of auditRetryLines(helper.auditRetries())) say(line);
           for (const line of screenshotRetryLines(helper.screenshotRetries())) say(line);
@@ -1025,7 +1067,7 @@ export async function runSimulatorTier({ root, directory, build = true, shard, s
         }
         return { passed, reading };
       };
-      const passed = await runAgainOnLaunchFlake(runJourneys, {
+      const passed = await runAgainOnFlake(runJourneys, {
         // The first run's bundle and log stay, under other names, for a person to look at. The gate reads only the
         // second run's bundle, at the run's own path.
         keep: () => keepFirstTry(directory, bundle, log).map(relative),

@@ -10,9 +10,6 @@ import { readTestResults } from './xcresult.mjs';
 import {
   auditRetryLines,
   auditTimeOutFlake,
-  bridgeRecovery,
-  bridgeRecoveryLines,
-  bridgeService,
   lostElementFlake,
   lostElementRetryLines,
   partlyScalingFlake,
@@ -20,6 +17,10 @@ import {
   buildArguments,
   compiledFiles,
   gateSimulators,
+  hangFlake,
+  hangFlakeIn,
+  hangRecord,
+  hangRecordLines,
   helperAnswerLimitMs,
   journeyRuns,
   keepFirstTry,
@@ -30,12 +31,13 @@ import {
   pickDevice,
   readinessAnswerLimitMs,
   readinessCallLimitMs,
-  recoveryLimitMs,
+  recordLimitMs,
   resendAnswerLimitMs,
   resendFlake,
   resendLines,
   resultBundles,
-  runAgainOnLaunchFlake,
+  runWithLimit,
+  runAgainOnFlake,
   screenshotRetryLines,
   screenshotTimeOutFlake,
   settingCallLimitMs,
@@ -376,162 +378,44 @@ test('a read that fails or hangs after a hang counts as a setting that is not se
   assert.equal(applier.calls(), 5);
 });
 
-test('after a hang, the applier runs its recovery before it reads the setting back, and keeps what the recovery found', async () => {
+test("after a hang, the applier records the Mac's state before it reads the setting back, and keeps the record's line", async () => {
   const order = [];
   const { applier, ran } = fakeSimulator({
     hangs: (command, calls) => command[3] === 'dark' && calls.filter((one) => one === 'appearance dark').length === 1,
-    recover: async () => {
-      order.push(`recover after ${ran.at(-1)}`);
-      return 'the bridge was stopped; restarted it';
+    record: async () => {
+      order.push(`record after ${ran.at(-1)}`);
+      return 'CPU 0% idle';
     },
   });
   await applier.apply(settings[0]);
   await applier.apply(settings[2]);
-  assert.deepEqual(order, ['recover after appearance dark']);
+  assert.deepEqual(order, ['record after appearance dark']);
   assert.deepEqual(ran.slice(3), ['appearance dark', 'read appearance', 'appearance dark']);
-  assert.deepEqual(applier.recoveries(), ['simctl ui SIM appearance dark: the bridge was stopped; restarted it']);
+  assert.deepEqual(applier.records(), ['simctl ui SIM appearance dark: CPU 0% idle']);
 });
 
-test("a recovery that fails doesn't fail the change, and its line says why", async () => {
-  const { applier } = fakeSimulator({
+test("a record that fails doesn't fail the change, and none runs that could end after the change's time", async () => {
+  const failing = fakeSimulator({
     hangs: (command, calls) => command[3] === 'dark' && calls.filter((one) => one === 'appearance dark').length === 1,
-    recover: async () => {
-      throw new Error('launchctl is gone');
+    record: async () => {
+      throw new Error('ps is gone');
     },
   });
-  await applier.apply(settings[0]);
-  await applier.apply(settings[2]);
-  assert.deepEqual(applier.recoveries(), ["simctl ui SIM appearance dark: the recovery failed: launchctl is gone"]);
-});
-
-test('the applier runs no recovery that could end after the change has used its time', async () => {
-  let recovered = 0;
-  const { applier, clock } = fakeSimulator({
+  await failing.applier.apply(settings[0]);
+  await failing.applier.apply(settings[2]);
+  assert.deepEqual(failing.applier.records(), ['simctl ui SIM appearance dark: the record failed: ps is gone']);
+  let recorded = 0;
+  const tight = fakeSimulator({
     hangs: (command) => command[3] === 'dark',
-    answerLimitMs: settingCallLimitMs + recoveryLimitMs - 1,
-    recover: async () => {
-      recovered += 1;
-      return 'restarted';
+    answerLimitMs: settingCallLimitMs + recordLimitMs - 1,
+    record: async () => {
+      recorded += 1;
+      return 'CPU 0% idle';
     },
   });
-  await applier.apply(settings[0]);
-  await assert.rejects(applier.apply(settings[2]), /appearance dark didn't return within 30s, /);
-  assert.equal(recovered, 0);
-  assert.ok(clock.longest <= settingCallLimitMs + recoveryLimitMs);
-  // With the time for it, a hang is recovered, and the recovery's time counts toward the change's.
-  const roomy = fakeSimulator({
-    hangs: (command) => command[3] === 'dark',
-    recover: async () => {
-      roomy.clock.ms += 3_000;
-      return 'restarted';
-    },
-  });
-  await roomy.applier.apply(settings[0]);
-  await assert.rejects(roomy.applier.apply(settings[2]), /appearance dark didn't return within 30s/);
-  assert.ok(roomy.applier.recoveries().length >= 1);
-  assert.ok(roomy.clock.longest <= helperAnswerLimitMs, `the apply took ${roomy.clock.longest}ms`);
-});
-
-/** `launchctl print` of a running bridge, cut to the lines that `bridgeRecovery` reads, and a nested one. */
-const bridgePrint = [
-  'user/501/com.apple.CoreSimulator.bridge = {',
-  '\tactive count = 1',
-  '\tstate = running',
-  '\tprogram = /usr/libexec/CoreSimulatorBridge',
-  '\truns = 1',
-  '\tpid = 4242',
-  '\tevent triggers = {',
-  '\t\tstate = active',
-  '\t}',
-  '}',
-].join('\n');
-
-/** A sample's file, with the part that `bridgeRecovery` reads: the top of the stack. */
-const bridgeSample = [
-  'Analysis of sampling CoreSimulatorBridge (pid 4242) every 1 millisecond',
-  'Call graph:',
-  '    1900 Thread_1   DispatchQueue_1: com.apple.main-thread  (serial)',
-  '',
-  'Sort by top of stack, same collapsed (when >= 5):',
-  '        __psynch_cvwait  (in libsystem_kernel.dylib)        1890',
-  '        mach_msg2_trap  (in libsystem_kernel.dylib)        1800',
-  '        __workq_kernreturn  (in libsystem_kernel.dylib)        900',
-  '        kevent_id  (in libsystem_kernel.dylib)        12',
-  '',
-  'Binary images:',
-].join('\n');
-
-/**
- * The runs of a `bridgeRecovery` on a fake simulator and host. `fails(args)` gives an error for a call that fails.
- * Returns `{ recover, ran, directory }`: `ran` has each call's words, with its limit.
- */
-function fakeBridge(t, { fails = () => null } = {}) {
-  const directory = mkdtempSync(path.join(tmpdir(), 'bridge-'));
-  t.after(() => rmSync(directory, { recursive: true, force: true }));
-  const ran = [];
-  const answer = async (args, limitMs) => {
-    ran.push(`${args.join(' ')} (${limitMs}ms)`);
-    const error = fails(args);
-    if (error !== null) throw error;
-    if (args.includes('print')) return `${bridgePrint}\n`;
-    if (args[0] === 'ps') return ' S     0.0   04:12\n';
-    if (args[0] === 'sample') writeFileSync(args[4], bridgeSample);
-    return '';
-  };
-  const recover = bridgeRecovery('SIM', { directory, run: answer, host: (file, args, limitMs) => answer([file, ...args], limitMs), relative: (file) => path.basename(file) });
-  return { recover, ran, directory };
-}
-
-test("a recovery records the bridge's state and the top of its stack, then restarts it and holds the status bar again", async (t) => {
-  const { recover, ran, directory } = fakeBridge(t);
-  assert.equal(
-    await recover(),
-    'CoreSimulatorBridge was pid 4242, launchd state running, run 1, ps S 0.0% CPU up 04:12; ' +
-      'top of its stack: __psynch_cvwait 1890, mach_msg2_trap 1800, __workq_kernreturn 900 (sample: bridge-1.txt). ' +
-      'Restarted it, and held the status bar again.',
-  );
-  assert.deepEqual(
-    ran.map((one) => one.replace(directory, 'DIR')),
-    [
-      `spawn SIM launchctl print ${bridgeService} (10000ms)`,
-      'ps -o stat=,%cpu=,etime= -p 4242 (5000ms)',
-      'sample 4242 1 -file DIR/bridge-1.txt (10000ms)',
-      `spawn SIM launchctl kickstart -k ${bridgeService} (10000ms)`,
-      'status_bar SIM override --time 9:41 --dataNetwork wifi --wifiBars 3 --batteryState charged --batteryLevel 100 (10000ms)',
-    ],
-  );
-  // Each recovery has a sample of its own.
-  await recover();
-  assert.ok(existsSync(path.join(directory, 'bridge-2.txt')));
-});
-
-test('the limits of a recovery add up to its limit', () => {
-  assert.equal(recoveryLimitMs, 10_000 + 5_000 + 10_000 + 10_000 + 10_000);
-});
-
-test('a recovery goes on when one of its steps fails, and says which', async (t) => {
-  // The print hangs: there is no pid, so nothing to look at, but the bridge is still restarted.
-  const noPrint = fakeBridge(t, { fails: (args) => (args.includes('print') ? hung() : null) });
-  assert.equal(
-    await noPrint.recover(),
-    "Couldn't read CoreSimulatorBridge's state: didn't return within 30s. Restarted it, and held the status bar again.",
-  );
-  assert.ok(noPrint.ran.some((one) => one.includes('kickstart')));
-  // The restart fails: the line says so, and the status bar is held anyway.
-  const noRestart = fakeBridge(t, { fails: (args) => (args.includes('kickstart') ? new Error('Operation not permitted') : null) });
-  assert.match(await noRestart.recover(), /Couldn't restart it: Operation not permitted\. Held the status bar again\.$/);
-  // The status bar fails: the line says so.
-  const noHold = fakeBridge(t, { fails: (args) => (args[0] === 'status_bar' ? new Error('Invalid device state') : null) });
-  assert.match(await noHold.recover(), /Restarted it, but couldn't hold the status bar again: Invalid device state\.$/);
-});
-
-test("the lines after the journeys give each recovery, under the flake's name", () => {
-  assert.deepEqual(bridgeRecoveryLines([]), []);
-  assert.deepEqual(bridgeRecoveryLines(['simctl ui SIM appearance dark: restarted', 'simctl ui SIM content_size large: restarted']), [
-    '  After each hang, the helper looked at the simulator\'s CoreSimulatorBridge, which answers `simctl ui`, and restarted it:',
-    '    simctl ui SIM appearance dark: restarted',
-    '    simctl ui SIM content_size large: restarted',
-  ]);
+  await tight.applier.apply(settings[0]);
+  await assert.rejects(tight.applier.apply(settings[2]), /appearance dark didn't return within 30s/);
+  assert.equal(recorded, 0);
 });
 
 test("an apply can give its calls a longer limit, as the step's start does while the simulator gets ready", async () => {
@@ -716,6 +600,7 @@ function journeysRuns(...outcomes) {
   const runs = [];
   const readings = {
     flake: { passed: false, reading: journeysReading({ [signIn]: 'fail' }, { [signIn]: [noProcessID] }) },
+    hang: { passed: false, reading: journeysReading({ [claim]: 'fail', [signIn]: 'pass' }, { [claim]: [hungChange] }) },
     fail: { passed: false, reading: journeysReading({ [signIn]: 'fail' }, { [signIn]: ['SignInJourney.swift:80: Home did not show'] }) },
     pass: { passed: true, reading: journeysReading({ [signIn]: 'pass' }) },
   };
@@ -732,7 +617,7 @@ test('journeys that fail with the launch flake run again once, keep the first ru
   const { runOnce, runs } = journeysRuns('flake', 'pass');
   const lines = [];
   let kept = 0;
-  const passed = await runAgainOnLaunchFlake(runOnce, { keep: () => (kept += 1, ['first.xcresult', 'first.log']), say: (line) => lines.push(line) });
+  const passed = await runAgainOnFlake(runOnce, { keep: () => (kept += 1, ['first.xcresult', 'first.log']), say: (line) => lines.push(line) });
   assert.equal(passed, true);
   assert.deepEqual(runs, ['flake', 'pass']);
   assert.equal(kept, 1);
@@ -743,13 +628,13 @@ test('journeys that fail with the launch flake run again once, keep the first ru
 
 test('journeys that fail with the launch flake twice are red: they run again only once', async () => {
   const { runOnce, runs } = journeysRuns('flake', 'flake', 'pass');
-  assert.equal(await runAgainOnLaunchFlake(runOnce, { keep: () => [], say: () => {} }), false);
+  assert.equal(await runAgainOnFlake(runOnce, { keep: () => [], say: () => {} }), false);
   assert.deepEqual(runs, ['flake', 'flake']);
 });
 
 test('journeys that fail in another way, after the launch flake, are red', async () => {
   const { runOnce, runs } = journeysRuns('flake', 'fail');
-  assert.equal(await runAgainOnLaunchFlake(runOnce, { keep: () => [], say: () => {} }), false);
+  assert.equal(await runAgainOnFlake(runOnce, { keep: () => [], say: () => {} }), false);
   assert.deepEqual(runs, ['flake', 'fail']);
 });
 
@@ -758,11 +643,161 @@ test('journeys that pass, or that fail in another way, run once', async () => {
     const { runOnce, runs } = journeysRuns(outcome, 'pass');
     const lines = [];
     let kept = 0;
-    assert.equal(await runAgainOnLaunchFlake(runOnce, { keep: () => (kept += 1, []), say: (line) => lines.push(line) }), outcome === 'pass');
+    assert.equal(await runAgainOnFlake(runOnce, { keep: () => (kept += 1, []), say: (line) => lines.push(line) }), outcome === 'pass');
     assert.deepEqual(runs, [outcome]);
     assert.equal(kept, 0);
     assert.deepEqual(lines, []);
   }
+});
+
+/** The failure of run 45956119178's journeys-1 on CI, as the gate reads it. */
+const hungChange =
+  "failed - The settings helper didn't apply the largest text size: simctl ui 5E435B5F-954B-439A-9020-B93EF4C3D276 content_size accessibility-extra-extra-extra-large didn't return within 30s, once in 2m53s, so the simulator isn't in the largest text size";
+
+test("a journey that failed only because a simctl ui call hung is the hang flake, as on CI", () => {
+  assert.deepEqual(hangFlakeIn(journeysReading({ [claim]: 'fail', [signIn]: 'pass' }, { [claim]: [hungChange] })), [claim]);
+  // Run 45898045293: the change back to the default.
+  const people = 'JourneyTests.PeopleJourney/testPeople()';
+  const toDefault =
+    "failed - The settings helper didn't apply the default settings: simctl ui CDD71CA6-C0F5-43ED-98B1-D883F0C77575 increase_contrast disabled didn't return within 30s, 3 times in 2m55s, so the simulator isn't in the default settings";
+  assert.deepEqual(hangFlakeIn(journeysReading({ [people]: 'fail' }, { [people]: [toDefault] })), [people]);
+  // A call that a hang before it left no time for.
+  const notRun =
+    "failed - The settings helper didn't apply the default settings: simctl ui SIM increase_contrast disabled wasn't run: the change's earlier calls took its 3m00s, so the simulator isn't in the default settings";
+  assert.deepEqual(hangFlakeIn(journeysReading({ [people]: 'fail' }, { [people]: [notRun] })), [people]);
+});
+
+test('a call that failed in another way, or a failure of any other kind beside the hang, is not the hang flake', () => {
+  const invalid = "failed - The settings helper didn't apply dark mode: simctl ui SIM appearance dark Invalid device state, so the simulator isn't in dark mode";
+  assert.equal(hangFlakeIn(journeysReading({ [claim]: 'fail' }, { [claim]: [invalid] })), null);
+  assert.equal(hangFlakeIn(journeysReading({ [claim]: 'fail', [signIn]: 'fail' }, { [claim]: [hungChange], [signIn]: ['SignInJourney.swift:80: Home did not show'] })), null);
+  assert.equal(hangFlakeIn(journeysReading({ [claim]: 'fail' }, { [claim]: [hungChange, 'ClaimJourney.swift:80: Claimed did not show'] })), null);
+  assert.equal(hangFlakeIn(journeysReading({ [claim]: 'fail' }, { [claim]: [] })), null);
+  assert.equal(hangFlakeIn(journeysReading({ [claim]: 'pass' })), null);
+  assert.equal(hangFlakeIn(readTestResults(undefined)), null);
+});
+
+test('journeys that fail with the hang flake run again once, keep the first run, and say so', async () => {
+  const { runOnce, runs } = journeysRuns('hang', 'pass');
+  const lines = [];
+  assert.equal(await runAgainOnFlake(runOnce, { keep: () => ['first.xcresult', 'first.log'], say: (line) => lines.push(line) }), true);
+  assert.deepEqual(runs, ['hang', 'pass']);
+  assert.deepEqual(lines, [
+    `  ${claim}: a simctl ui call hung until the change had no time left (the named flake "${hangFlake.name}"), so this run of the journeys runs again, once. The first run is in first.xcresult and first.log.`,
+  ]);
+});
+
+test('journeys run again only once, whichever flake failed them', async () => {
+  for (const outcomes of [['hang', 'hang'], ['hang', 'flake'], ['flake', 'hang'], ['hang', 'fail']]) {
+    const { runOnce, runs } = journeysRuns(...outcomes, 'pass');
+    assert.equal(await runAgainOnFlake(runOnce, { keep: () => [], say: () => {} }), false);
+    assert.deepEqual(runs, outcomes);
+  }
+});
+
+test('a call that passes its limit returns at its limit, also when a process that it started keeps its output open', async () => {
+  // The shell's child sleeps on with the shell's output, as a process that `simctl spawn` starts in the simulator does.
+  const marker = `${30 + Math.floor(Math.random() * 1000) / 1000}`;
+  const started = Date.now();
+  await assert.rejects(runWithLimit('sh', ['-c', `sleep ${marker} & sleep ${marker}`], 500), (error) => error.timedOut === true);
+  assert.ok(Date.now() - started < 20_000, `the call returned after ${Date.now() - started}ms`);
+  // The whole process group was stopped: no sleep is left behind. A busy machine can take a moment to end it.
+  const { execFileSync } = await import('node:child_process');
+  const left = () => {
+    try {
+      return execFileSync('pgrep', ['-f', `sleep ${marker}`], { encoding: 'utf8' }).trim();
+    } catch {
+      return '';
+    }
+  };
+  for (let tries = 0; tries < 100 && left() !== ''; tries += 1) await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.equal(left(), '');
+});
+
+test("a call that ends gives its output, and one that fails gives its error's words", async () => {
+  const noLimitMs = 60 * 60_000;
+  assert.equal(await runWithLimit('sh', ['-c', 'echo ok'], noLimitMs), 'ok\n');
+  await assert.rejects(runWithLimit('sh', ['-c', 'echo "No devices are booted." >&2; exit 1'], noLimitMs), (error) => error.timedOut === false && error.message === 'No devices are booted.');
+  await assert.rejects(runWithLimit('no-such-program-wt304', [], noLimitMs), (error) => error.timedOut === false && /ENOENT/.test(error.message));
+});
+
+/** `ps -axo pid=,stat=,%cpu=,etime=,comm=` on a Mac with the gate's simulator, cut short. */
+const hostPs = [
+  '  101 Ss     0.0 02:10:00 /sbin/launchd',
+  '  812 S      4.1    12:34 /Library/Developer/PrivateFrameworks/CoreSimulator.framework/Versions/A/XPCServices/com.apple.CoreSimulator.CoreSimulatorService.xpc/Contents/MacOS/com.apple.CoreSimulator.CoreSimulatorService',
+  ' 4100 Ss     0.0    10:02 launchd_sim',
+  ' 4242 Ss    97.5    09:58 /usr/libexec/CoreSimulatorBridge',
+  ' 5000 R     50.0    00:30 /usr/bin/xcodebuild',
+].join('\n');
+
+const serviceSample = [
+  'Sort by top of stack, same collapsed (when >= 5):',
+  '        mach_msg2_trap  (in libsystem_kernel.dylib)        1800',
+  '        __psynch_cvwait  (in libsystem_kernel.dylib)        900',
+  '        kevent_id  (in libsystem_kernel.dylib)        12',
+  '        __ulock_wait2  (in libsystem_kernel.dylib)        6',
+  '',
+].join('\n');
+
+const topOutput = ['Processes: 500 total', 'CPU usage: 50.0% user, 30.0% sys, 20.0% idle', 'Processes: 500 total', 'CPU usage: 70.12% user, 29.0% sys, 0.88% idle', ''].join('\n');
+
+/** The calls of a `hangRecord` on a fake host. `fails(file)` gives an error for a call that fails. */
+function fakeHost(t, { fails = () => null } = {}) {
+  const directory = mkdtempSync(path.join(tmpdir(), 'hang-record-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const ran = [];
+  const host = async (file, args, limitMs) => {
+    ran.push(`${file} ${args.join(' ')} (${limitMs}ms)`);
+    const error = fails(file);
+    if (error !== null) throw error;
+    if (file === 'ps') return `${hostPs}\n`;
+    if (file === 'top') return topOutput;
+    if (file === 'sample') writeFileSync(args[3], serviceSample);
+    return '';
+  };
+  return { record: hangRecord({ directory, host, relative: (file) => path.basename(file) }), ran, directory };
+}
+
+test("a hang's record says what the Mac was doing, from the Mac alone, with no simctl call", async (t) => {
+  const { record, ran, directory } = fakeHost(t);
+  assert.equal(
+    await record(),
+    'CPU 0.88% idle; launchd_sim 4100 Ss 0.0%; CoreSimulatorBridge 4242 Ss 97.5%; CoreSimulatorService 812 S 4.1%, ' +
+      'top of its stack: mach_msg2_trap 1800, __psynch_cvwait 900, kevent_id 12 (record: hang-1.txt)',
+  );
+  assert.deepEqual(
+    ran.map((one) => one.replace(directory, 'DIR')),
+    ['top -l 2 -n 0 (10000ms)', 'ps -axo pid=,stat=,%cpu=,etime=,comm= (5000ms)', 'sample 812 1 -file DIR/hang-1-service-sample.txt (10000ms)'],
+  );
+  assert.ok(!ran.some((one) => one.includes('simctl')));
+  // The record's file has the processes and the sample, for a person to read.
+  const kept = readFileSync(path.join(directory, 'hang-1.txt'), 'utf8');
+  assert.match(kept, /CoreSimulatorBridge/);
+  assert.match(kept, /mach_msg2_trap/);
+  await record();
+  assert.ok(existsSync(path.join(directory, 'hang-2.txt')));
+});
+
+test('the limits of a record add up to its limit', () => {
+  assert.equal(recordLimitMs, 10_000 + 5_000 + 10_000);
+});
+
+test("a record goes on when one of its calls fails, and says which", async (t) => {
+  const noTop = fakeHost(t, { fails: (file) => (file === 'top' ? Object.assign(new Error("didn't return within 10s"), { timedOut: true }) : null) });
+  assert.match(await noTop.record(), /^CPU unread \(didn't return within 10s\); launchd_sim 4100/);
+  const noPs = fakeHost(t, { fails: (file) => (file === 'ps' ? new Error('ps: Operation not permitted') : null) });
+  assert.match(await noPs.record(), /^CPU 0\.88% idle; processes unread \(ps: Operation not permitted\) \(record: hang-1\.txt\)$/);
+  assert.ok(!noPs.ran.some((one) => one.startsWith('sample')));
+  const noSample = fakeHost(t, { fails: (file) => (file === 'sample' ? new Error('sample: no such process') : null) });
+  assert.match(await noSample.record(), /CoreSimulatorService 812 S 4\.1%, not sampled \(sample: no such process\) \(record: hang-1\.txt\)$/);
+});
+
+test("the lines after the journeys give each hang's record, under the flake's name", () => {
+  assert.deepEqual(hangRecordLines([]), []);
+  assert.deepEqual(hangRecordLines(['simctl ui SIM appearance dark: CPU 0% idle']), [
+    `  At each hang, the Mac had (the named flake "${hangFlake.name}"):`,
+    '    simctl ui SIM appearance dark: CPU 0% idle',
+  ]);
 });
 
 test("the first run's bundle and log move aside, so the second run writes its own at the run's paths", (t) => {
