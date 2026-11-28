@@ -10,8 +10,9 @@ nonisolated final class MenuAcrossSyncJourney: JourneyTestCase {
   /// How often the app syncs in this journey, in seconds.
   private static let timerSeconds = 4
 
-  /// How long the journey waits for the timer's first sync to show on the page, in seconds.
-  private static let firstTimerSync: TimeInterval = 150
+  /// How long the journey waits for the timer's first sync to show on the page, in seconds: several of the timer's
+  /// intervals, with room for a slow simulator.
+  private static let firstTimerSync: TimeInterval = 30
 
   @MainActor
   func testMenuStaysOpenAcrossASync() async {
@@ -56,8 +57,8 @@ nonisolated final class MenuAcrossSyncJourney: JourneyTestCase {
     XCTAssertTrue(row(first.title).waitForExistence(timeout: 30), "The list's page has no row for its item.")
 
     // The timer syncs: an item added on the server shows on the page with nothing touched. Only then is Sort opened,
-    // so that syncs come while it is open. The wait is long: after the sign-in, the timer waits for the sync's
-    // rebuild of the reminders, and on a simulator iOS took 78 seconds to answer its first ask for authorization.
+    // so that syncs come while it is open. The timer doesn't wait for the rebuild of the reminders after the sign-in,
+    // whose first ask for authorization iOS took 78 seconds to answer on a simulator.
     let early = try await builder.item(builder.name("Almanac"), on: list, as: sam)
     XCTAssertTrue(
       row(early.title).waitForExistence(timeout: Self.firstTimerSync),

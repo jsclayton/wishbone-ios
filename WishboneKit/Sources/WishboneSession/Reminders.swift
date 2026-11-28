@@ -65,8 +65,8 @@ extension SessionModel {
   /// plan's. See "Staying correct" in `docs/spec.md`.
   ///
   /// It runs after every sync that succeeded, after the profile gate, and after each change of the reminder settings.
-  /// A failed sync leaves the set as it is. One
-  /// rebuild runs at a time: a call during one runs after it.
+  /// A failed sync leaves the set as it is. One rebuild runs at a time: a call during one runs after it, and after
+  /// every rebuild that waits before it. It returns when its own rebuild has ended.
   ///
   /// Before the first rebuild after sign-in and the profile gate, it asks iOS for provisional authorization, once:
   /// while iOS has no answer from the user. After that iOS has one, so the app never asks again. While the gate
@@ -76,13 +76,19 @@ extension SessionModel {
   ///
   /// Diagnostics: never. A copy that can't be read is logged, and leaves the set as it is.
   func rebuildReminders() async {
+    await startRebuildingReminders().value
+  }
+
+  /// Starts a rebuild, as `rebuildReminders()` does, and returns its task at once: it ends when the rebuild has
+  /// ended. A sync starts one this way, so that the next sync doesn't wait for it.
+  func startRebuildingReminders() -> Task<Void, Never> {
     let previous = rebuildingReminders
     let task = Task {
       await previous?.value
       await rebuildRemindersNow()
     }
     rebuildingReminders = task
-    await task.value
+    return task
   }
 
   private func rebuildRemindersNow() async {

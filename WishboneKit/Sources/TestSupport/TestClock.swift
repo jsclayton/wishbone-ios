@@ -32,7 +32,7 @@ public final class TestClock: Clock, Sendable {
     var now = Instant(offset: .zero)
     var nextID = 0
     var sleepers: [Sleeper] = []
-    var watchers: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
+    var watchers: [(id: Int, count: Int, continuation: CheckedContinuation<Void, Never>)] = []
   }
 
   private let state = Mutex(State())
@@ -98,15 +98,36 @@ public final class TestClock: Clock, Sendable {
     state.withLock { $0.sleepers.count }
   }
 
-  /// Returns when at least `count` sleepers wait on the clock.
+  /// Returns when at least `count` sleepers wait on the clock. It also returns when its task is cancelled, so the
+  /// time limit of a test ends a wait for a sleeper that never comes, and the test fails by its name.
   public func waitForSleepers(_ count: Int = 1) async {
-    await withCheckedContinuation { continuation in
-      let isReady = state.withLock { state in
-        if state.sleepers.count >= count { return true }
-        state.watchers.append((count, continuation))
-        return false
-      }
-      if isReady { continuation.resume() }
+    let id = state.withLock { state in
+      defer { state.nextID += 1 }
+      return state.nextID
     }
+    await withTaskCancellationHandler {
+      await withCheckedContinuation { continuation in
+        let isReady = state.withLock { state in
+          if state.sleepers.count >= count { return true }
+          state.watchers.append((id, count, continuation))
+          return false
+        }
+        if isReady {
+          continuation.resume()
+        } else if Task.isCancelled {
+          // The task was cancelled before the watcher was in place, so the handler below found nothing to end.
+          stopWatching(id)
+        }
+      }
+    } onCancel: {
+      stopWatching(id)
+    }
+  }
+
+  private func stopWatching(_ id: Int) {
+    let watcher = state.withLock { state in
+      state.watchers.firstIndex { $0.id == id }.map { state.watchers.remove(at: $0) }
+    }
+    watcher?.continuation.resume()
   }
 }
