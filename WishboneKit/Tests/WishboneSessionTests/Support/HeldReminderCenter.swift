@@ -4,10 +4,13 @@ import WishboneSession
 /// A notification center that doesn't answer the ask for provisional authorization until the test lets it. On a
 /// simulator whose answer is not yet known, iOS took more than a minute to answer that ask.
 ///
-/// Until it answers, the authorization is not determined. After, it is provisional. It schedules nothing.
+/// Until it answers, the authorization is not determined. After, it is provisional. It schedules nothing, but counts
+/// the asks and the replaces of the pending set.
 final class HeldReminderCenter: ReminderCenter {
   private struct State {
     var isAsked = false
+    var askCount = 0
+    var replaceCount = 0
     var isAnswered = false
     var waitingForAsk: [CheckedContinuation<Void, Never>] = []
     var asks: [CheckedContinuation<Void, Never>] = []
@@ -25,6 +28,12 @@ final class HeldReminderCenter: ReminderCenter {
       if isAsked { waiter.resume() }
     }
   }
+
+  /// How many times the session has asked for provisional authorization.
+  var asks: Int { state.withLock { $0.askCount } }
+
+  /// How many times the session has replaced the pending set: once at the end of each rebuild.
+  var replaces: Int { state.withLock { $0.replaceCount } }
 
   /// Answers the ask, and every later one at once.
   func answer() {
@@ -44,6 +53,7 @@ final class HeldReminderCenter: ReminderCenter {
     await withCheckedContinuation { ask in
       let (isAnswered, waiters) = state.withLock { state in
         state.isAsked = true
+        state.askCount += 1
         defer { state.waitingForAsk = [] }
         if !state.isAnswered { state.asks.append(ask) }
         return (state.isAnswered, state.waitingForAsk)
@@ -55,7 +65,9 @@ final class HeldReminderCenter: ReminderCenter {
 
   func requestFullAuthorization() async {}
 
-  func replacePending(with requests: [ReminderRequest]) async {}
+  func replacePending(with requests: [ReminderRequest]) async {
+    state.withLock { $0.replaceCount += 1 }
+  }
 
   func removeAll() {}
 }

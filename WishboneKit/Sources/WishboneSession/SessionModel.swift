@@ -151,7 +151,7 @@ public final class SessionModel {
   private var running: Task<SyncOutcome, Never>?
 
   /// The sync that was asked for while one runs. It runs once, after it, however many ask for it.
-  private var waiting: Task<SyncOutcome, Never>?
+  private var waiting: Task<SyncEnd, Never>?
 
   /// The windows of the app that are in the foreground, each by the ID that the window gave.
   private(set) var windowsInForeground: Set<UUID> = []
@@ -248,14 +248,14 @@ public final class SessionModel {
     let changes = network.changes()
     watchingNetwork = Task { [weak self] in
       for await _ in changes {
-        await self?.syncNow()
+        _ = await self?.sync()
       }
     }
     // The share extension added an item: the app syncs at once. See "When the app syncs" in `docs/spec.md`.
     let adds = addsFromShareExtension.adds()
     watchingShareExtension = Task { [weak self] in
       for await _ in adds {
-        await self?.syncNow()
+        _ = await self?.sync()
       }
     }
   }
@@ -428,21 +428,38 @@ public final class SessionModel {
   /// calls ask for it. Each of those calls returns when that sync ends. While a version block shows, and after the
   /// session ended, no sync starts, and a call returns `.stopped`.
   ///
-  /// It returns when its sync ends, with the sync's outcome. When the instance answers with the API's own 401, the
-  /// session is over: the call returns when the device has forgotten it.
+  /// It returns when its sync ends, with the sync's outcome, and after a sync that succeeded, when that sync's
+  /// rebuild of the reminders has ended too. When the instance answers with the API's own 401, the session is over:
+  /// the call returns when the device has forgotten it.
   @discardableResult
   public func syncNow() async -> SyncOutcome {
+    let end = await sync()
+    await end.rebuildingReminders?.value
+    return end.outcome
+  }
+
+  /// A sync, as Sync now runs it, but it returns when the sync ends: it doesn't wait for the sync's rebuild of the
+  /// reminders. The timer, the network's changes, and the share extension's adds sync this way. A rebuild can wait
+  /// for iOS, which took more than a minute to answer the first ask for authorization on a simulator, and a loop
+  /// that waited for it synced no more until iOS answered.
+  private func sync() async -> SyncEnd {
     if let waiting { return await waiting.value }
     guard let running else { return await startSync() }
     let next = Task {
       _ = await running.value
       waiting = nil
       // iOS ended the background run that waited for this sync. See `refreshInBackground()`.
-      guard !Task.isCancelled else { return SyncOutcome.stopped }
+      guard !Task.isCancelled else { return SyncEnd(outcome: .stopped) }
       return await startSync()
     }
     waiting = next
     return await next.value
+  }
+
+  /// How a sync ended: its outcome, and the rebuild of the reminders that it started, if it started one.
+  private struct SyncEnd {
+    var outcome: SyncOutcome
+    var rebuildingReminders: Task<Void, Never>?
   }
 
   /// Asks for one more sync when a sync runs now, after a write that waits for the server has put the server's
@@ -463,24 +480,23 @@ public final class SessionModel {
   }
 
   /// Starts a sync, as the one that runs, and returns its outcome when it ends. After a sync that succeeded, it
-  /// starts the fetch of images ahead of time, which nothing waits for, and returns when the reminders are rebuilt.
+  /// starts the fetch of images ahead of time and a rebuild of the reminders, and returns with the rebuild's task.
+  /// The rebuild runs after the ones before it, one at a time.
   ///
-  /// Neither is part of the sync that runs. The rebuild can wait for iOS, which took more than a minute to answer the
-  /// first ask for authorization on a simulator. A sync that waited for it held every later sync, and with them the
-  /// line "Can't reach {address}" after the instance went away.
-  private func startSync() async -> SyncOutcome {
+  /// Neither is part of the sync that runs, and the next sync waits for neither. The rebuild can wait for iOS, which
+  /// took more than a minute to answer the first ask for authorization on a simulator. A sync that waited for it
+  /// held every later sync, and with them the line "Can't reach {address}" after the instance went away.
+  private func startSync() async -> SyncEnd {
     // The share extension never syncs: its copy is what it read from the API, and it keeps no unsent change.
-    guard !hasEnded, versionBlock == nil, role.isApp else { return .stopped }
+    guard !hasEnded, versionBlock == nil, role.isApp else { return SyncEnd(outcome: .stopped) }
     let task = Task { await runSync() }
     running = task
     let outcome = await task.value
     if running == task { running = nil }
     // Only a sync that succeeded rebuilds the reminders and fetches images. A failed sync leaves both as they are.
-    if outcome == .succeeded, !hasEnded {
-      fetchImagesAhead()
-      await rebuildReminders()
-    }
-    return outcome
+    guard outcome == .succeeded, !hasEnded else { return SyncEnd(outcome: outcome) }
+    fetchImagesAhead()
+    return SyncEnd(outcome: outcome, rebuildingReminders: startRebuildingReminders())
   }
 
   /// One sync: it sends the unsent changes, in order, then pulls. A send that can't reach the instance, or that
@@ -653,7 +669,8 @@ public final class SessionModel {
 
   /// Starts or stops the timer that syncs every 60 seconds, on the timer's clock. It runs while a window is in the
   /// foreground, the instance answers, no version block shows, and the session goes on. So it stops while the
-  /// instance can't be reached, and starts again after a sync that reaches it.
+  /// instance can't be reached, and starts again after a sync that reaches it. Each minute counts from the end of
+  /// the last minute's sync, not of its rebuild of the reminders.
   private func updateTimer() {
     let shouldRun = !hasEnded && !windowsInForeground.isEmpty && !isInstanceUnreachable && versionBlock == nil
     if !shouldRun {
@@ -669,7 +686,7 @@ public final class SessionModel {
             return
           }
           guard let self, !Task.isCancelled else { return }
-          await self.syncNow()
+          _ = await self.sync()
         }
       }
     }

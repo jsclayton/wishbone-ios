@@ -138,6 +138,69 @@ struct KeepInStepTests {
     #expect(!session.isInstanceUnreachable)
   }
 
+  @Test(
+    "While a rebuild of the reminders waits for iOS, the timer, a network change, and the share extension's word each sync, and each sync's rebuild follows, one at a time"
+  )
+  func remindersHoldNoTimer() async throws {
+    let robin = try await instance.person(items: ["Kite"])
+    try await instance.builder.confirmProfile(of: robin)
+    let list = try await instance.builder.primaryList(of: robin)
+    let center = HeldReminderCenter()
+    let adds = AddsRecorder()
+    let device = instance.device(
+      timerClock: timer, network: network, reminders: Reminders(center: center), addsFromShareExtension: adds)
+    let before = pulls()
+
+    // The sync at sign-in succeeded, and its rebuild waits for iOS to answer the ask, as it can for minutes.
+    let link = try await instance.loginLink(for: robin)
+    let signingIn = Task { await device.signIn(pasting: link) }
+    await center.waitUntilAsked()
+    let session = try #require(device.session)
+    let foreground = Task { await session.cameToForeground(window: window) }
+
+    // Minutes pass, and the timer syncs each minute. A timer that waited for the rebuild would wait no more, and the
+    // suite's time limit would end the test. Once two minutes have passed, every earlier sync has ended.
+    await aMinutePasses()
+    await aMinutePasses()
+    // What changed elsewhere arrives within the minute.
+    _ = try await instance.builder.item("Tent", on: list, as: robin)
+    await aMinutePasses()
+    await until { session.primaryListItems.map(\.title) == ["Kite", "Tent"] }
+
+    // The network changes, and its sync ends: the next minute's sync runs after it. Then the network changes again,
+    // and that sync brings what changed elsewhere. A network change that waited for the rebuild would bring nothing.
+    var versions = instance.conditioner.hold(Self.versions)
+    network.change()
+    await versions.waitUntilHeld()
+    versions.release()
+    await aMinutePasses()
+    _ = try await instance.builder.item("Lamp", on: list, as: robin)
+    network.change()
+    await until { session.primaryListItems.map(\.title) == ["Kite", "Tent", "Lamp"] }
+
+    // The same for the share extension's word that it added an item.
+    versions = instance.conditioner.hold(Self.versions)
+    adds.yield()
+    await versions.waitUntilHeld()
+    versions.release()
+    await aMinutePasses()
+    _ = try await instance.builder.item("Book", on: list, as: robin)
+    adds.yield()
+    await until { session.primaryListItems.map(\.title) == ["Kite", "Tent", "Lamp", "Book"] }
+
+    // The rebuilds wait their turn: the first one still waits for iOS, and no second one has asked.
+    #expect(center.asks == 1)
+
+    // iOS answers. Sign-in and the foreground end, and a rebuild follows each sync that succeeded, one at a time.
+    // Sync now's rebuild comes after every earlier one.
+    center.answer()
+    await signingIn.value
+    await foreground.value
+    #expect(await session.syncNow() == .succeeded)
+    #expect(center.asks == 1)
+    #expect(center.replaces == pulls() - before)
+  }
+
   @Test("A quiet minute costs one request: the versions, answered 304")
   func quietMinute() async throws {
     // A server of its own: on the shared one, another test's row for the whole instance changes the versions.
