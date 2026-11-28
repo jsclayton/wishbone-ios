@@ -91,41 +91,19 @@ nonisolated final class ShareExtensionJourney: JourneyTestCase {
     safari.terminate()
   }
 
-  /// How long the journey waits for XCTest's record of an app's state. On 2026-11-27, in CI run 46046440049
-  /// attempt 1, the record came 57 seconds after Safari came to the front, and hadn't come more than 60 seconds after
-  /// the app came back: the named flake "XCTest's record of an app's state lags on a CI runner" in
-  /// `docs/development.md`. A wait for a state that comes ends when it comes, so a long limit costs a passing run
-  /// nothing.
-  static let stateRecordTimeout: TimeInterval = 180
-
   /// Brings the app back to the front after the share. `activate()` waits at most 60 seconds for XCTest's record of
   /// the app's state, and fails when the record lags, though the app is in the front. So the journey expects only
-  /// that failure, for this app, and then waits on the same record itself, for `stateRecordTimeout`. Any other
-  /// failure in that span fails the journey. See the named flake "XCTest's record of an app's state lags on a CI
-  /// runner" in `docs/development.md`.
+  /// that failure, for this app, and then waits on the same record itself (`waitPastStateRecordLag`). Any other
+  /// failure in that span fails the journey. See the named flake "XCTest's record of an app's state lags" in
+  /// `docs/development.md`.
   @MainActor
   private func bringBack(_ app: XCUIApplication) async {
-    let options = XCTExpectedFailure.Options()
-    options.isStrict = false
-    options.issueMatcher = { issue in Self.isActivationLag(issue.compactDescription) }
-    let start = Date.now
-    // The gate lets this test pass with a known issue only with this reason: `allowedKnownIssues` in
-    // `scripts/gate/steps.mjs`.
-    continueAfterFailure = true
-    XCTExpectFailure("XCTest's record of an app's state lags on a CI runner", options: options) {
+    await waitPastStateRecordLag(
+      of: app, "activation", in: "ShareExtensionJourney", until: .runningForeground, named: "Running Foreground",
+      isLag: Self.isActivationLag
+    ) {
       app.activate()
     }
-    continueAfterFailure = false
-    guard app.state != .runningForeground else { return }
-    let caughtUp = app.wait(for: .runningForeground, timeout: Self.stateRecordTimeout)
-    let seconds = Int(Date.now.timeIntervalSince(start).rounded())
-    let record = caughtUp ? "the record said so after \(seconds) s" : "the record didn't say so within \(seconds) s"
-    print("XCTest's activation of the app timed out on its record of the app's state: \(record).")
-    await Audit.reportRetry("ShareExtensionJourney: \(record)", at: "activation-lags")
-    XCTAssertTrue(
-      caughtUp,
-      "XCTest's record of the app's state didn't say Running Foreground within \(Int(Self.stateRecordTimeout)) "
-        + "seconds of the activation.")
   }
 
   /// Whether an issue is `activate()`'s time-out on a lagging record of this app's state: the app's bundle, not the

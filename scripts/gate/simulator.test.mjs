@@ -9,13 +9,13 @@ import { testResults } from './xcresult-fixture.mjs';
 import { readTestResults } from './xcresult.mjs';
 
 import {
-  activationLagFlake,
-  activationLagLines,
+  stateRecordLagFlake,
+  stateRecordLagLines,
   auditRetryLines,
   auditTimeOutFlake,
   dragFlake,
   dragRetryLines,
-  loggedActivationLags,
+  loggedStateRecordLags,
   loggedDragRetries,
   loggedSortRetries,
   sortFlake,
@@ -1082,20 +1082,20 @@ test('the settings helper remembers each time a journey opened Sort again, apart
   assert.deepEqual(helper.screens(), []);
 });
 
-test('the settings helper remembers each activation that a journey waited past, apart from the drags', async (t) => {
+test('the settings helper remembers each time-out on the record that a journey waited past, apart from the drags', async (t) => {
   const { applier, ran } = fakeSimulator();
   const helper = await startSettingsHelper((setting, options) => applier.apply(setting, options));
   t.after(() => helper.close());
-  const post = (body, method = 'POST') => fetch(`${helper.address}/activation-lags`, { method, body });
-  assert.deepEqual(helper.activationLags(), []);
-  const sighting = 'ShareExtensionJourney: the record said so after 75 s';
+  const post = (body, method = 'POST') => fetch(`${helper.address}/state-record-lags`, { method, body });
+  assert.deepEqual(helper.stateRecordLags(), []);
+  const sighting = 'ShareExtensionJourney, its activation: the record said so after 75 s';
   assert.equal((await post(sighting)).status, 204);
-  assert.deepEqual(helper.activationLags(), [sighting]);
+  assert.deepEqual(helper.stateRecordLags(), [sighting]);
   const empty = await post('');
   assert.equal(empty.status, 400);
-  assert.equal(await empty.text(), "the journey and how long XCTest's record took, as the body");
+  assert.equal(await empty.text(), "the journey, its step and how long XCTest's record took, as the body");
   assert.equal((await post(undefined, 'GET')).status, 404);
-  assert.equal(helper.activationLags().length, 1);
+  assert.equal(helper.stateRecordLags().length, 1);
   assert.deepEqual(helper.dragRetries(), []);
   assert.deepEqual(helper.auditRetries(), []);
   assert.deepEqual(ran, []);
@@ -1141,57 +1141,77 @@ test('the Reorder journey opens Sort at most 3 times, tells the helper of each t
   assert.match(journey, /if wasTapped \{\n\s*throw AuditError\(/);
 });
 
-test('the line after the journeys names each activation waited past, with how long the record took, and the flake', () => {
-  assert.deepEqual(activationLagLines([]), []);
-  assert.deepEqual(activationLagLines(['ShareExtensionJourney: the record said so after 75 s']), [
-    `  The journeys waited past 1 activation, because XCTest's record of the app's state lagged (the named flake "${activationLagFlake}"):`,
-    '    ShareExtensionJourney: the record said so after 75 s',
+test('the line after the journeys names each time-out waited past, with its journey, how long the record took, and the flake', () => {
+  assert.deepEqual(stateRecordLagLines([]), []);
+  assert.deepEqual(stateRecordLagLines(['ShareExtensionJourney, its activation: the record said so after 75 s']), [
+    `  The journeys waited past 1 time-out of XCTest's, because its record of the app's state lagged (the named flake "${stateRecordLagFlake}"):`,
+    '    ShareExtensionJourney, its activation: the record said so after 75 s',
   ]);
-  assert.match(activationLagLines(['a', 'b'])[0], /waited past 2 activations/);
+  assert.match(stateRecordLagLines(['a', 'b'])[0], /waited past 2 time-outs of XCTest's/);
 });
 
-test("a run with no helper names each activation waited past from its log, as the helper's line does", () => {
-  const journey = readFileSync(new URL('../../JourneyTests/ShareExtensionJourney.swift', import.meta.url), 'utf8');
-  // The journey's own words, as its log has them.
-  assert.match(journey, /print\("XCTest's activation of the app timed out on its record of the app's state: \\\(record\)\."\)/);
-  assert.match(journey, /"the record said so after \\\(seconds\) s"/);
-  assert.match(journey, /"the record didn't say so within \\\(seconds\) s"/);
+test("a run with no helper names each time-out waited past from its log, as the helper's line does", () => {
+  const lag = readFileSync(new URL('../../JourneyTests/StateRecordLag.swift', import.meta.url), 'utf8');
+  // The journeys' own words, as their log has them, and as the helper gets them.
+  assert.match(lag, /print\("XCTest's \\\(step\) of the app timed out on its record of the app's state, in \\\(journey\): \\\(record\)\."\)/);
+  assert.match(lag, /Audit\.reportRetry\("\\\(journey\), its \\\(step\): \\\(record\)", at: "state-record-lags"\)/);
+  assert.match(lag, /"the record said so after \\\(seconds\) s"/);
+  assert.match(lag, /"the record didn't say so within \\\(seconds\) s"/);
   const log = [
     '    t =   135.73s     Activate com.codemonkeylabs.wishbone',
-    "XCTest's activation of the app timed out on its record of the app's state: the record said so after 75 s.",
-    "XCTest's activation of the app timed out on its record of the app's state: the record didn't say so within 241 s.",
+    "XCTest's activation of the app timed out on its record of the app's state, in ShareExtensionJourney: the record said so after 75 s.",
+    "XCTest's termination of the app timed out on its record of the app's state, in ClaimJourney: the record didn't say so within 241 s.",
   ].join('\n');
-  assert.deepEqual(loggedActivationLags(log), [
-    'ShareExtensionJourney: the record said so after 75 s',
-    "ShareExtensionJourney: the record didn't say so within 241 s",
+  assert.deepEqual(loggedStateRecordLags(log), [
+    'ShareExtensionJourney, its activation: the record said so after 75 s',
+    "ClaimJourney, its termination: the record didn't say so within 241 s",
   ]);
-  assert.deepEqual(loggedActivationLags(''), []);
+  assert.deepEqual(loggedStateRecordLags(''), []);
 });
 
-test("the gate allows one known issue: the share extension's journey's activation lag, by the flake's name", () => {
-  const journey = readFileSync(new URL('../../JourneyTests/ShareExtensionJourney.swift', import.meta.url), 'utf8');
+test('the gate allows known issues only for the lagging record, in the two journeys that wait past it, by the flake\'s name', () => {
+  const lag = readFileSync(new URL('../../JourneyTests/StateRecordLag.swift', import.meta.url), 'utf8');
   const docs = readFileSync(new URL('../../docs/development.md', import.meta.url), 'utf8');
   assert.deepEqual(allowedKnownIssues, [
-    { test: 'JourneyTests.ShareExtensionJourney/testAddFromTheShareExtension()', reason: activationLagFlake },
+    { test: 'JourneyTests.ShareExtensionJourney/testAddFromTheShareExtension()', reason: stateRecordLagFlake },
+    { test: 'JourneyTests.ClaimJourney/testClaim()', reason: stateRecordLagFlake },
   ]);
-  // The journey gives XCTExpectFailure the same reason, and it is the flake's name under Named flakes.
-  assert.ok(journey.includes(`XCTExpectFailure("${activationLagFlake}", options: options)`));
-  assert.ok(docs.includes(`**${activationLagFlake}.**`));
-  // The journey's one expected failure is the only XCTExpectFailure in it.
-  assert.equal(journey.match(/XCTExpectFailure\(/g).length, 1);
+  // The journeys give XCTExpectFailure the same reason, and it is the flake's name under Named flakes.
+  assert.ok(lag.includes(`static let stateRecordLag = "${stateRecordLagFlake}"\n`));
+  assert.ok(docs.includes(`**${stateRecordLagFlake}.**`));
+  // The one XCTExpectFailure in the journeys is the wait past the lag, and each allowed journey goes through it.
+  const journeys = new URL('../../JourneyTests/', import.meta.url);
+  const expecting = readdirSync(journeys)
+    .filter((file) => file.endsWith('.swift'))
+    .filter((file) => /XCTExpectFailure\(/.test(readFileSync(new URL(file, journeys), 'utf8')));
+  assert.deepEqual(expecting, ['StateRecordLag.swift']);
+  assert.equal(lag.match(/XCTExpectFailure\(/g).length, 1);
+  const share = readFileSync(new URL('ShareExtensionJourney.swift', journeys), 'utf8');
+  const claim = readFileSync(new URL('ClaimJourney.swift', journeys), 'utf8');
+  assert.match(share, /waitPastStateRecordLag\(\n\s*of: app, "activation", in: "ShareExtensionJourney"/);
+  assert.match(claim, /await end\(app, in: "ClaimJourney"\)/);
 });
 
-test("the share extension's journey expects only activate()'s time-out on this app's lagging record, and then waits itself", () => {
+test('the wait past the lag expects only its own issue, with continueAfterFailure on only around the call, then waits itself', () => {
+  const lag = readFileSync(new URL('../../JourneyTests/StateRecordLag.swift', import.meta.url), 'utf8');
+  assert.match(lag, /static let stateRecordTimeout: TimeInterval = 180\n/);
+  assert.match(lag, /options\.isStrict = false/);
+  assert.match(lag, /options\.issueMatcher = \{ issue in\n\s*guard isLag\(issue\.compactDescription\) else \{ return false \}/);
+  assert.match(lag, /continueAfterFailure = true\n\s*XCTExpectFailure\(Self\.stateRecordLag, options: options, failingBlock: call\)\n\s*continueAfterFailure = false\n/);
+  // Only when the expected issue came does the journey wait on the record, and a record that doesn't catch up fails.
+  assert.match(lag, /guard lagged\.seen\.withLock\(\{ \$0 \}\) else \{ return \}\n\s*let caughtUp = app\.wait\(for: state, timeout: Self\.stateRecordTimeout\)/);
+  assert.match(lag, /XCTAssertTrue\(\n\s*caughtUp,/);
+  // The end expects only terminate()'s time-out on the app's own process, whose ID XCTest cleared.
+  assert.ok(lag.includes(String.raw`#/Failed to terminate com\.codemonkeylabs\.wishbone:\d+: Failed to terminate com\.codemonkeylabs\.wishbone:0/#`));
+  assert.match(lag, /until: \.notRunning, named: "Not Running", isLag: Self\.isTerminationLag/);
+});
+
+test("the share extension's journey expects only activate()'s time-out on this app's lagging record", () => {
   const journey = readFileSync(new URL('../../JourneyTests/ShareExtensionJourney.swift', import.meta.url), 'utf8');
-  assert.match(journey, /static let stateRecordTimeout: TimeInterval = 180\n/);
-  // Only the app's own activation, on a record that says background, is expected, and never strictly.
+  // Only the app's own activation, on a record that says background, is expected.
   assert.match(journey, /description\.contains\("Failed to activate application 'com\.codemonkeylabs\.wishbone at "\)\n\s*&& description\.contains\("\(current state: Running Background\)"\)/);
-  assert.match(journey, /options\.isStrict = false/);
-  // continueAfterFailure is on only around activate(), and the journey's own wait on the record follows.
-  assert.match(journey, /continueAfterFailure = true\n\s*XCTExpectFailure\(".*", options: options\) \{\n\s*app\.activate\(\)\n\s*\}\n\s*continueAfterFailure = false\n/);
-  assert.match(journey, /app\.wait\(for: \.runningForeground, timeout: Self\.stateRecordTimeout\)/);
-  assert.match(journey, /Audit\.reportRetry\("ShareExtensionJourney: \\\(record\)", at: "activation-lags"\)/);
-  assert.match(journey, /XCTAssertTrue\(\n\s*caughtUp,/);
+  assert.match(journey, /until: \.runningForeground, named: "Running Foreground",\n\s*isLag: Self\.isActivationLag\n\s*\) \{\n\s*app\.activate\(\)\n\s*\}/);
+  assert.match(journey, /safari\.wait\(for: \.runningForeground, timeout: Self\.stateRecordTimeout\)/);
   // The journey has no other activate().
   assert.equal(journey.match(/\.activate\(\)/g).length, 1);
 });

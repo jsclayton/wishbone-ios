@@ -46,7 +46,7 @@ test("an expected failure's reasons are read, as XCTest gives them, and not the 
 });
 
 test('a known issue passes only in a test on the named list, and only with its reason', () => {
-  const lag = "XCTest's record of an app's state lags on a CI runner";
+  const lag = "XCTest's record of an app's state lags";
   const allowed = [{ test: item, reason: lag }];
   const read = (reasons, outcomes = { [item]: 'known', [signIn]: 'pass' }) =>
     readTestResults(testResults(outcomes, { reasons }));
