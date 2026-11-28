@@ -104,7 +104,7 @@ nonisolated final class ClaimJourney: JourneyTestCase {
     XCTAssertEqual(XCTWaiter().wait(for: [isOn], timeout: 10), .completed, "The toggle didn't show the gift bought.")
     let isBought = try await isBoughtOnServer(gift, as: robin)
     XCTAssertTrue(isBought, "The server doesn't have the gift bought.")
-    app.terminate()
+    await end(app, in: "ClaimJourney")
   }
 
   /// Whether the server has the giver's gift bought. The app sends the change behind the toggle, so this asks until

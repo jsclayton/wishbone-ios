@@ -569,19 +569,19 @@ export function settingsApplier(
  * server had the order from before the drag: the named flake "a drag to reorder doesn't reach the app on a CI
  * runner". `POST /sort-retries`, with the journey, its try and what showed as the body, records each time a journey
  * opened Sort again because Price wasn't chosen: the named flake "the Sort menu closes before the journey taps Price
- * on a CI runner". `POST /activation-lags`, with the journey and how long XCTest's record took as the body, records
- * an activation that timed out on XCTest's record of the app's state, after which the journey waited on the record
- * itself: the named flake "XCTest's record of an app's state lags on a CI runner".
+ * on a CI runner". `POST /state-record-lags`, with the journey, its step and how long XCTest's record took as the
+ * body, records an activation or a termination that timed out on XCTest's record of the app's state, after which
+ * the journey waited on the record itself: the named flake "XCTest's record of an app's state lags".
  *
  * Resolves with `{ address, close, screens, resends, auditRetries, screenshotRetries, lostElementRetries,
- * partlyScalingRetries, dragRetries, sortRetries, activationLags }`, where `screens()` gives the names, in the
+ * partlyScalingRetries, dragRetries, sortRetries, stateRecordLags }`, where `screens()` gives the names, in the
  * order they came, `resends()` gives each change that a journey sent again: `{ setting, after, read }`, with the
  * settings' labels and what `readSettings` read before the change was sent again, and `auditRetries()` gives each
  * audit that ran again, by its screen and setting, in the order they came. `screenshotRetries()` gives each
  * screenshot that was asked for again, the same way, `lostElementRetries()` each audit that ran again for an
  * issue with no element, `partlyScalingRetries()` each audit that ran again for text called partially
  * unsupported, `dragRetries()` each drag that a journey made again, `sortRetries()` each time a journey opened
- * Sort again, and `activationLags()` each activation whose time-out a journey waited past.
+ * Sort again, and `stateRecordLags()` each activation or termination whose time-out a journey waited past.
  */
 export function startSettingsHelper(applySetting, { readSettings = async () => 'not read' } = {}) {
   const resends = [];
@@ -591,7 +591,7 @@ export function startSettingsHelper(applySetting, { readSettings = async () => '
   const partlyScalingRetries = [];
   const dragRetries = [];
   const sortRetries = [];
-  const activationLags = [];
+  const stateRecordLags = [];
   const retries = {
     '/audit-retries': [auditRetries, "the audit's screen and setting"],
     '/screenshot-retries': [screenshotRetries, "the screenshot's screen and setting"],
@@ -599,7 +599,7 @@ export function startSettingsHelper(applySetting, { readSettings = async () => '
     '/partly-scaling-retries': [partlyScalingRetries, "the audit's screen and setting"],
     '/drag-retries': [dragRetries, "the journey, its try and the server's order"],
     '/sort-retries': [sortRetries, 'the journey, its try and what showed'],
-    '/activation-lags': [activationLags, "the journey and how long XCTest's record took"],
+    '/state-record-lags': [stateRecordLags, "the journey, its step and how long XCTest's record took"],
   };
   const screens = new Set();
   const server = createServer((request, response) => {
@@ -680,7 +680,7 @@ export function startSettingsHelper(applySetting, { readSettings = async () => '
         partlyScalingRetries: () => [...partlyScalingRetries],
         dragRetries: () => [...dragRetries],
         sortRetries: () => [...sortRetries],
-        activationLags: () => [...activationLags],
+        stateRecordLags: () => [...stateRecordLags],
       });
     });
   });
@@ -768,19 +768,23 @@ export function sortRetryLines(retries) {
   ];
 }
 
-/** The name of the flake that a journey meets by waiting past an activation's time-out. See `startSettingsHelper`. */
-export const activationLagFlake = "XCTest's record of an app's state lags on a CI runner";
+/**
+ * The name of the flake that a journey meets by waiting past an activation's or a termination's time-out. See
+ * `startSettingsHelper`.
+ */
+export const stateRecordLagFlake = "XCTest's record of an app's state lags";
 
 /**
- * The lines after a run of the journeys, one for each activation that timed out on XCTest's record of the app's
- * state, after which the journey waited on the record itself (`activationLags()` of `startSettingsHelper`). Each is a
- * sighting of the flake, with how long the record took. None when no activation timed out.
+ * The lines after a run of the journeys, one for each activation or termination that timed out on XCTest's record
+ * of the app's state, after which the journey waited on the record itself (`stateRecordLags()` of
+ * `startSettingsHelper`). Each is a sighting of the flake, with its journey, its step and how long the record took.
+ * None when nothing timed out.
  */
-export function activationLagLines(lags) {
+export function stateRecordLagLines(lags) {
   if (lags.length === 0) return [];
-  const activations = lags.length === 1 ? '1 activation' : `${lags.length} activations`;
+  const timeOuts = lags.length === 1 ? '1 time-out' : `${lags.length} time-outs`;
   return [
-    `  The journeys waited past ${activations}, because XCTest's record of the app's state lagged (the named flake "${activationLagFlake}"):`,
+    `  The journeys waited past ${timeOuts} of XCTest's, because its record of the app's state lagged (the named flake "${stateRecordLagFlake}"):`,
     ...lags.map((lag) => `    ${lag}`),
   ];
 }
@@ -796,13 +800,13 @@ export function loggedSortRetries(log) {
 }
 
 /**
- * Each activation whose time-out a journey waited past, from the log of a run with no settings helper: the line
- * that the journey logs. See `activationLagLines`.
+ * Each activation or termination whose time-out a journey waited past, from the log of a run with no settings
+ * helper: the line that the journey logs, as the helper has it. See `stateRecordLagLines`.
  */
-export function loggedActivationLags(log) {
-  return [...log.matchAll(/^XCTest's activation of the app timed out on its record of the app's state: (the record .*)\.$/gm)].map(
-    (match) => `ShareExtensionJourney: ${match[1]}`,
-  );
+export function loggedStateRecordLags(log) {
+  return [
+    ...log.matchAll(/^XCTest's (activation|termination) of the app timed out on its record of the app's state, in (\w+): (the record .*)\.$/gm),
+  ].map((match) => `${match[2]}, its ${match[1]}: ${match[3]}`);
 }
 
 /** The name of the flake that a journey meets by asking for a screenshot again. See `startSettingsHelper`. */
@@ -1167,14 +1171,15 @@ export async function runSimulatorTier({ root, directory, build = true, shard, s
           for (const line of partlyScalingRetryLines(helper.partlyScalingRetries())) say(line);
           for (const line of dragRetryLines(helper.dragRetries())) say(line);
           for (const line of sortRetryLines(helper.sortRetries())) say(line);
-          for (const line of activationLagLines(helper.activationLags())) say(line);
+          for (const line of stateRecordLagLines(helper.stateRecordLags())) say(line);
         } else {
-          // A run with no helper has the drag's and Sort's retries, and an activation's lag, only in its log, which CI
-          // uploads only when the part fails. So the lines name each one here too: each is a sighting.
+          // A run with no helper has the drag's and Sort's retries, and a lag of XCTest's record of the app's state,
+          // only in its log, which CI uploads only when the part fails. So the lines name each one here too: each is
+          // a sighting.
           const logged = existsSync(path.join(directory, log)) ? readFileSync(path.join(directory, log), 'utf8') : '';
           for (const line of dragRetryLines(loggedDragRetries(logged))) say(line);
           for (const line of sortRetryLines(loggedSortRetries(logged))) say(line);
-          for (const line of activationLagLines(loggedActivationLags(logged))) say(line);
+          for (const line of stateRecordLagLines(loggedStateRecordLags(logged))) say(line);
         }
         return { passed, reading };
       };

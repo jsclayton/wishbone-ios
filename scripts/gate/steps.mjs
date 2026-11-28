@@ -23,11 +23,17 @@ export const allowedSkips = [];
 // is a test's name as the gate prints it, with a comment that says why. A known issue in any other test, or with
 // any other reason, fails the gate.
 export const allowedKnownIssues = [
-  // The named flake "XCTest's record of an app's state lags on a CI runner" in docs/development.md: the journey
-  // expects only `activate()`'s time-out on the app's own lagging record, and then waits on the record itself.
+  // The named flake "XCTest's record of an app's state lags" in docs/development.md: the journey expects only
+  // `activate()`'s time-out on the app's own lagging record, and then waits on the record itself.
   {
     test: 'JourneyTests.ShareExtensionJourney/testAddFromTheShareExtension()',
-    reason: "XCTest's record of an app's state lags on a CI runner",
+    reason: "XCTest's record of an app's state lags",
+  },
+  // The same flake: the journey expects only `terminate()`'s time-out on the app's own lagging record at its end,
+  // and then waits on the record itself.
+  {
+    test: 'JourneyTests.ClaimJourney/testClaim()',
+    reason: "XCTest's record of an app's state lags",
   },
 ];
 

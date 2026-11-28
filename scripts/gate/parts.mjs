@@ -62,6 +62,7 @@ export const shards = [
       'ScreenshotTests/testATimeOutWhileAScreenshotIsTakenIsHeldBackAndNoted',
       'ScreenshotTests/testOnlyXCTestsTimeOutIsHeldBackAndOnlyWhileAScreenshotIsTaken',
       'SignOutJourney/testSignOut',
+      'StateRecordLagTests/testOnlyTerminatesTimeOutOnTheAppsOwnClearedProcessIsALag',
     ],
   },
   {
