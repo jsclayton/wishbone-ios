@@ -177,6 +177,13 @@ export function readEventStreamFile(path) {
   return readEventStream(text);
 }
 
+/** Whether a test's known issues are all the one that `allowedKnownIssues` names for it, by their reasons. */
+function isAllowedKnownIssue(name, reasons, allowedKnownIssues) {
+  const allowed = allowedKnownIssues.find((entry) => entry.test === name);
+  if (allowed === undefined || reasons === undefined || reasons.length === 0) return false;
+  return reasons.every((reason) => reason === allowed.reason);
+}
+
 function listed(names, limit = 10) {
   const shown = names.slice(0, limit).join(', ');
   return names.length > limit ? `${shown}, and ${names.length - limit} more` : shown;
@@ -186,14 +193,24 @@ function listed(names, limit = 10) {
  * Says why a reading fails the gate, or null when it passes.
  *
  * It fails on a run with no summary, on any failure or recorded issue (a known issue is a recorded issue), on a
- * run with 0 tests, and on a skipped or cancelled test that is not in `allowedSkips`.
+ * run with 0 tests, and on a skipped or cancelled test that is not in `allowedSkips`. A known issue passes only in
+ * a test in `allowedKnownIssues` (`{ test, reason }`), and only when every expected failure of the test has that
+ * entry's reason (`knownReasons` of the reading). A reading with no reasons, such as one from an event stream or
+ * an XCTest log, has every known issue fail.
  */
-export function judge(reading, allowedSkips = []) {
+export function judge(reading, allowedSkips = [], allowedKnownIssues = []) {
   if (reading.tests === null) return 'the test run has no summary';
   if (reading.failed.length > 0) return `${reading.failed.length} failed: ${listed(reading.failed)}`;
   if (reading.strayIssues > 0) return `${reading.strayIssues} recorded outside a test`;
   if (reading.runFailed) return `the test run failed: ${reading.summary}`;
-  if (reading.known.length > 0) return `${reading.known.length} with a known issue: ${listed(reading.known)}`;
+  const known = reading.known.filter((name) => !isAllowedKnownIssue(name, reading.knownReasons?.[name], allowedKnownIssues));
+  if (known.length > 0) {
+    const shown = known.map((name) => {
+      const reasons = reading.knownReasons?.[name] ?? [];
+      return reasons.length === 0 ? name : `${name} (${reasons.map((reason) => `"${reason}"`).join(', ')})`;
+    });
+    return `${known.length} with a known issue: ${listed(shown)}`;
+  }
   if (reading.tests === 0) return '0 tests ran';
   const unnamed = reading.skipped.filter((name) => !allowedSkips.includes(name));
   if (unnamed.length > 0) return `${unnamed.length} skipped, and not on the named list: ${listed(unnamed)}`;

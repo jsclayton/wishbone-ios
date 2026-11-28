@@ -19,6 +19,18 @@ const minute = 60_000;
 // the gate.
 export const allowedSkips = [];
 
+// The tests that may pass with a known issue, and the one reason that each may give `XCTExpectFailure`. Each entry
+// is a test's name as the gate prints it, with a comment that says why. A known issue in any other test, or with
+// any other reason, fails the gate.
+export const allowedKnownIssues = [
+  // The named flake "XCTest's record of an app's state lags on a CI runner" in docs/development.md: the journey
+  // expects only `activate()`'s time-out on the app's own lagging record, and then waits on the record itself.
+  {
+    test: 'JourneyTests.ShareExtensionJourney/testAddFromTheShareExtension()',
+    reason: "XCTest's record of an app's state lags on a CI runner",
+  },
+];
+
 /**
  * The limit of the simulator step of each shard of the journeys (parts.mjs), when CI runs the shards side by side.
  * Each shard's step has the simulator's start, the hosted tests if the shard has them, and its journeys, twice: in
@@ -140,7 +152,7 @@ export function gateSteps({ root, runDirectory, part }) {
       slot: true,
       counts: ['hosted', 'ui'],
       check: ({ exit }) => {
-        const checked = checkResultBundles(resultBundles(simulatorDirectory, shard), { exit, allowedSkips });
+        const checked = checkResultBundles(resultBundles(simulatorDirectory, shard), { exit, allowedSkips, allowedKnownIssues });
         if (checked.fail !== undefined || shard === undefined || exit !== 0) return checked;
         // A shard's journeys must be its own, each once: so across the shards, each journey runs once.
         const problem = shardProblem(checked.names.ui ?? [], shard);

@@ -36,7 +36,34 @@ test("a failed test's failure messages are read, in order, also from a failing c
 
 test('an expected failure is a known issue, and fails', () => {
   const reading = readTestResults(testResults({ [item]: 'known' }));
-  assert.equal(judge(reading), `1 with a known issue: ${item}`);
+  assert.equal(judge(reading), `1 with a known issue: ${item} ("planted")`);
+});
+
+test("an expected failure's reasons are read, as XCTest gives them, and not the issue's message", () => {
+  const reading = readTestResults(testResults({ [item]: 'known', [signIn]: 'pass' }, { reasons: { [item]: ['one', 'two'] } }));
+  assert.deepEqual(reading.known, [item]);
+  assert.deepEqual(reading.knownReasons, { [item]: ['one', 'two'] });
+});
+
+test('a known issue passes only in a test on the named list, and only with its reason', () => {
+  const lag = "XCTest's record of an app's state lags on a CI runner";
+  const allowed = [{ test: item, reason: lag }];
+  const read = (reasons, outcomes = { [item]: 'known', [signIn]: 'pass' }) =>
+    readTestResults(testResults(outcomes, { reasons }));
+  // The named test, with the named reason, passes.
+  assert.equal(judge(read({ [item]: [lag] }), [], allowed), null);
+  // The same test with another reason fails, and so does one with the named reason and another too.
+  assert.equal(judge(read({ [item]: ['something else'] }), [], allowed), `1 with a known issue: ${item} ("something else")`);
+  assert.equal(judge(read({ [item]: [lag, 'something else'] }), [], allowed), `1 with a known issue: ${item} ("${lag}", "something else")`);
+  // Another test with the named reason fails.
+  const other = read({ [signIn]: [lag] }, { [item]: 'pass', [signIn]: 'known' });
+  assert.equal(judge(other, [], allowed), `1 with a known issue: ${signIn} ("${lag}")`);
+  // With no list, as before, every known issue fails.
+  assert.equal(judge(read({ [item]: [lag] })), `1 with a known issue: ${item} ("${lag}")`);
+  // A reading with no reasons, as from an event stream, fails even for the named test.
+  assert.equal(judge({ ...read({ [item]: [lag] }), knownReasons: undefined }, [], allowed), `1 with a known issue: ${item}`);
+  // A failure in the named test still fails.
+  assert.match(judge(read({}, { [item]: 'fail', [signIn]: 'pass' }), [], allowed), /^1 failed: /);
 });
 
 test('a skipped test fails unless it is on the named list', () => {

@@ -45,7 +45,8 @@ nonisolated final class ShareExtensionJourney: JourneyTestCase {
     // The store's page in Safari, and Share in its page menu.
     let safari = XCUIApplication(bundleIdentifier: "com.apple.mobilesafari")
     XCUIDevice.shared.system.open(page.url)
-    XCTAssertTrue(safari.wait(for: .runningForeground, timeout: 60), "Safari didn't open the store's page.")
+    XCTAssertTrue(
+      safari.wait(for: .runningForeground, timeout: Self.stateRecordTimeout), "Safari didn't open the store's page.")
     XCTAssertTrue(safari.staticTexts[page.title].waitForExistence(timeout: 60), "Safari didn't show the page.")
     let menu = safari.buttons["MoreMenuButton"]
     XCTAssertTrue(menu.waitForExistence(timeout: 30), "Safari has no page menu.")
@@ -75,7 +76,7 @@ nonisolated final class ShareExtensionJourney: JourneyTestCase {
       form.wait(for: \.exists, toEqual: false, timeout: 60), "The share extension stayed open after Add.")
 
     // In the app, the item is on the list.
-    app.activate()
+    await bringBack(app)
     XCTAssertTrue(lists.waitForExistence(timeout: 60), "The app didn't come back.")
     lists.tap()
     // In the double-length pseudo-language, iOS puts a row's format places before its doubled words, so the row is
@@ -88,6 +89,50 @@ nonisolated final class ShareExtensionJourney: JourneyTestCase {
     try await attachScreenshot(of: app, named: "The list with the item from the share extension")
     app.terminate()
     safari.terminate()
+  }
+
+  /// How long the journey waits for XCTest's record of an app's state. On 2026-11-27, in CI run 46046440049
+  /// attempt 1, the record came 57 seconds after Safari came to the front, and hadn't come more than 60 seconds after
+  /// the app came back: the named flake "XCTest's record of an app's state lags on a CI runner" in
+  /// `docs/development.md`. A wait for a state that comes ends when it comes, so a long limit costs a passing run
+  /// nothing.
+  static let stateRecordTimeout: TimeInterval = 180
+
+  /// Brings the app back to the front after the share. `activate()` waits at most 60 seconds for XCTest's record of
+  /// the app's state, and fails when the record lags, though the app is in the front. So the journey expects only
+  /// that failure, for this app, and then waits on the same record itself, for `stateRecordTimeout`. Any other
+  /// failure in that span fails the journey. See the named flake "XCTest's record of an app's state lags on a CI
+  /// runner" in `docs/development.md`.
+  @MainActor
+  private func bringBack(_ app: XCUIApplication) async {
+    let options = XCTExpectedFailure.Options()
+    options.isStrict = false
+    options.issueMatcher = { issue in Self.isActivationLag(issue.compactDescription) }
+    let start = Date.now
+    // The gate lets this test pass with a known issue only with this reason: `allowedKnownIssues` in
+    // `scripts/gate/steps.mjs`.
+    continueAfterFailure = true
+    XCTExpectFailure("XCTest's record of an app's state lags on a CI runner", options: options) {
+      app.activate()
+    }
+    continueAfterFailure = false
+    guard app.state != .runningForeground else { return }
+    let caughtUp = app.wait(for: .runningForeground, timeout: Self.stateRecordTimeout)
+    let seconds = Int(Date.now.timeIntervalSince(start).rounded())
+    let record = caughtUp ? "the record said so after \(seconds) s" : "the record didn't say so within \(seconds) s"
+    print("XCTest's activation of the app timed out on its record of the app's state: \(record).")
+    await Audit.reportRetry("ShareExtensionJourney: \(record)", at: "activation-lags")
+    XCTAssertTrue(
+      caughtUp,
+      "XCTest's record of the app's state didn't say Running Foreground within \(Int(Self.stateRecordTimeout)) "
+        + "seconds of the activation.")
+  }
+
+  /// Whether an issue is `activate()`'s time-out on a lagging record of this app's state: the app's bundle, not the
+  /// share extension's, and a record that says the app is still in the background.
+  nonisolated static func isActivationLag(_ description: String) -> Bool {
+    description.contains("Failed to activate application 'com.codemonkeylabs.wishbone at ")
+      && description.contains("(current state: Running Background)")
   }
 
   /// Taps Wishbone in the share sheet: in its row of apps, or else under More, in the list of every app.
