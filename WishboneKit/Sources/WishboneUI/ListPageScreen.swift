@@ -172,50 +172,12 @@ struct ListPageScreen: View {
     #if os(iOS)
       .navigationBarTitleDisplayMode(.inline)
     #endif
-    .toolbar {
-      #if os(iOS)
-        if offersReorder {
-          ToolbarItem(placement: .primaryAction) {
-            EditButton()
-          }
-        }
-      #endif
-      ToolbarItem(placement: .primaryAction) {
-        Menu {
-          if page.list.canEdit {
-            Button {
-              isEditing = true
-            } label: {
-              Label {
-                Text("Edit list", bundle: #bundle)
-              } icon: {
-                Image(systemName: "pencil")
-              }
-            }
-          }
-          Picker(selection: $sort) {
-            ForEach(ListSort.allCases) { sort in
-              // The tag is the order itself. The ForEach's own tag is the order's ID, a string, which never matches
-              // the selection, so a choice would change nothing.
-              SortWords(sort: sort)
-                .tag(sort)
-            }
-          } label: {
-            Label {
-              Text("Sort", bundle: #bundle)
-            } icon: {
-              Image(systemName: "arrow.up.arrow.down")
-            }
-          }
-          .pickerStyle(.menu)
-        } label: {
-          Label {
-            Text("More", bundle: #bundle)
-          } icon: {
-            Image(systemName: "ellipsis")
-          }
-        }
-      }
+    // The toolbar comes from a view of its own, whose body runs again only when what the toolbar shows changes. A
+    // toolbar declared again closes an open Sort, and the page's own body runs again at each sync that changes the
+    // list.
+    .background {
+      ListPageToolbar(canEdit: page.list.canEdit, offersReorder: offersReorder, sort: $sort, isEditing: $isEditing)
+        .equatable()
     }
     #if os(iOS)
       .environment(\.editMode, $editMode)
@@ -380,6 +342,77 @@ enum DeleteListWords {
   /// The confirmation's message.
   static var message: Text {
     Text("This can't be undone.", bundle: #bundle)
+  }
+}
+
+/// The toolbar of a list's page: Reorder's Edit button, in List order from `can_edit`, and the menu, with Edit list,
+/// from `can_edit`, and Sort.
+///
+/// Its only inputs are what it shows. A sync that publishes a change to the list runs the page's body again, and a
+/// toolbar declared again under an open Sort closes Sort. This view's body runs again only when one of its inputs
+/// changed, so the toolbar is declared again only then.
+private struct ListPageToolbar: View {
+  let canEdit: Bool
+  let offersReorder: Bool
+  @Binding var sort: ListSort
+  @Binding var isEditing: Bool
+
+  var body: some View {
+    Color.clear
+      .accessibilityHidden(true)
+      .toolbar {
+        #if os(iOS)
+          if offersReorder {
+            ToolbarItem(placement: .primaryAction) {
+              EditButton()
+            }
+          }
+        #endif
+        ToolbarItem(placement: .primaryAction) {
+          Menu {
+            if canEdit {
+              Button {
+                isEditing = true
+              } label: {
+                Label {
+                  Text("Edit list", bundle: #bundle)
+                } icon: {
+                  Image(systemName: "pencil")
+                }
+              }
+            }
+            Picker(selection: $sort) {
+              ForEach(ListSort.allCases) { sort in
+                // The tag is the order itself. The ForEach's own tag is the order's ID, a string, which never matches
+                // the selection, so a choice would change nothing.
+                SortWords(sort: sort)
+                  .tag(sort)
+              }
+            } label: {
+              Label {
+                Text("Sort", bundle: #bundle)
+              } icon: {
+                Image(systemName: "arrow.up.arrow.down")
+              }
+            }
+            .pickerStyle(.menu)
+          } label: {
+            Label {
+              Text("More", bundle: #bundle)
+            } icon: {
+              Image(systemName: "ellipsis")
+            }
+          }
+        }
+      }
+  }
+}
+
+extension ListPageToolbar: @MainActor Equatable {
+  /// The same toolbar: the same Edit button, the same Edit list, and the same order chosen. The bindings are this
+  /// page's own state.
+  static func == (lhs: Self, rhs: Self) -> Bool {
+    lhs.canEdit == rhs.canEdit && lhs.offersReorder == rhs.offersReorder && lhs.sort == rhs.sort
   }
 }
 
