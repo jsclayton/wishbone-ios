@@ -76,7 +76,11 @@ export const shards = [
   {
     name: 'journeys-4',
     hosted: true,
-    tests: ['AddItemJourney/testAddItem', 'SignInJourney/testSignInToTheProfileGate'],
+    tests: [
+      'AddItemJourney/testAddItem',
+      'MenuAcrossSyncJourney/testMenuStaysOpenAcrossASync',
+      'SignInJourney/testSignInToTheProfileGate',
+    ],
   },
 ];
 

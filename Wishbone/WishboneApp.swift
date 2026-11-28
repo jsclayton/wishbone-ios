@@ -115,6 +115,9 @@ extension Device.Setup {
     let appGroup = info.object(forInfoDictionaryKey: "WishboneAppGroup") as? String ?? ""
     #if DEBUG
       Journey.startSignedOut(accessGroup: accessGroup)
+      let timerClock: any Clock<Duration> = Journey.timerClock ?? ContinuousClock()
+    #else
+      let timerClock: any Clock<Duration> = ContinuousClock()
     #endif
     return Device.Setup(
       userAgent: UserAgent(version: version, isPad: UIDevice.current.userInterfaceIdiom == .pad),
@@ -124,6 +127,7 @@ extension Device.Setup {
       // The images come from the instance again, so they go in the app's own Caches folder, never the shared
       // container.
       images: .folder(.cachesDirectory),
+      timerClock: timerClock,
       network: .system,
       refresh: SystemRefreshScheduler(),
       diagnostics: diagnostics,

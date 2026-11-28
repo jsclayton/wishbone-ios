@@ -19,6 +19,33 @@
     /// simulator's storefront late, or not at all, so a journey would see the Support Wishbone row come and go.
     static let storefrontVariable = "WISHBONE_JOURNEY_STOREFRONT"
 
+    /// Set to a number of seconds, such as "5", for the timer to sync that often in place of every 60 seconds. A
+    /// journey that must see a sync while a screen shows waits seconds, not a minute.
+    static let timerSecondsVariable = "WISHBONE_JOURNEY_TIMER_SECONDS"
+
+    /// The clock of the timer that syncs: one whose every sleep is the launch environment's seconds, or `nil` for
+    /// the system's clock.
+    static var timerClock: (any Clock<Duration>)? {
+      guard let text = ProcessInfo.processInfo.environment[timerSecondsVariable], let seconds = Int(text), seconds > 0
+      else { return nil }
+      return ShortTimerClock(interval: .seconds(seconds))
+    }
+
+    /// A clock whose every sleep is the interval, whatever it was asked for. The timer is the only one that sleeps
+    /// on it.
+    private struct ShortTimerClock: Clock {
+      let interval: Duration
+      private let base = ContinuousClock()
+
+      var now: ContinuousClock.Instant { base.now }
+
+      var minimumResolution: Duration { base.minimumResolution }
+
+      func sleep(until deadline: ContinuousClock.Instant, tolerance: Duration?) async throws {
+        try await base.sleep(for: interval)
+      }
+    }
+
     /// The storefront that the launch environment fixes, or `nil` to read StoreKit's.
     static var storefront: (any StorefrontSource)? {
       guard let code = ProcessInfo.processInfo.environment[storefrontVariable], !code.isEmpty else { return nil }

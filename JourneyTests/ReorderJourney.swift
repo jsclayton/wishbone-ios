@@ -141,7 +141,8 @@ nonisolated final class ReorderJourney: JourneyTestCase {
   /// with Price in it, for about 20 seconds. Then Sort closed, and the menu showed Edit list and Sort again. XCTest's
   /// tap had found Price as it went, and failed with `Activation point invalid`, then found no Price at all. Likely a
   /// sync rebuilt the page and its menu: the app syncs every 60 seconds while it is in the foreground, and the first
-  /// timer sync started about when the journey tapped More. That is inferred, not proven.
+  /// timer sync started about when the journey tapped More. `MenuAcrossSyncJourney` reproduced it, and the app keeps
+  /// Sort open across a sync now: the retries stay, for a Sort that closes for another cause.
   ///
   /// So the journey taps Price only once Price can be tapped, at the point where it was. When the menu closed Sort, or
   /// closed, it opens them again, at most `sortTries` times in all, and tells the settings helper of each: the named

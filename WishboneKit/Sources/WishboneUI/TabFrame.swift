@@ -18,6 +18,10 @@ public struct TabFrame: View {
   /// Whether this window shows Settings. Each window can show its own.
   @State private var isShowingSettings = false
 
+  /// The Gifts tab's badge, as the session last had it. The body reads it here, never from the session: see
+  /// `SessionReader`.
+  @State private var giftsBadge: Int?
+
   @Environment(\.diagnosticsReporter) private var diagnostics
 
   public init(session: SessionModel, place: Binding<WindowPlace>) {
@@ -64,11 +68,11 @@ public struct TabFrame: View {
         } icon: {
           Image(systemName: "gift")
         }
-        .accessibilityLabel(session.giftsBadge.map { Text(GiftWords.tab(badge: $0)) } ?? Text("Gifts", bundle: #bundle))
+        .accessibilityLabel(giftsBadge.map { Text(GiftWords.tab(badge: $0)) } ?? Text("Gifts", bundle: #bundle))
       }
       // The number of open gifts that need attention, as the server says. None at zero. It is inside the app: the
       // app icon has no badge.
-      .badge(session.giftsBadge ?? 0)
+      .badge(giftsBadge ?? 0)
 
       // The plus: the round button that the system sets apart at the end of the tab bar.
       Tab(value: WindowTab.add, role: .search) {
@@ -84,17 +88,15 @@ public struct TabFrame: View {
     .tabViewStyle(.sidebarAdaptable)
     // The plus opens the Add screen with its field ready.
     .tabViewSearchActivation(.searchTabSelection)
-    .tabViewSidebarFooter { shortcuts }
+    .tabViewSidebarFooter { SidebarShortcuts(session: session, place: $place) }
     // Pull to refresh, on every screen of every tab that scrolls. It syncs everything, and ends when the sync
     // ends. See "What every screen shares" in `docs/screens/README.md`.
     .refreshable { await session.syncNow() }
     .sheet(isPresented: $isShowingSettings) {
       SettingsSheet(session: session)
     }
-    // VoiceOver says when the instance can't be reached, once, as the line or the unreachable state appears.
-    .onChange(of: session.isInstanceUnreachable) { _, isUnreachable in
-      guard isUnreachable else { return }
-      AccessibilityNotification.Announcement(CantReach.words(for: session.session.instance)).post()
+    .background {
+      SessionReader(session: session, giftsBadge: $giftsBadge)
     }
     .onChange(of: isShowingSettings) { _, isShowing in
       if isShowing { diagnostics.leave(.placeOpened(.settings)) }
@@ -108,9 +110,26 @@ public struct TabFrame: View {
     }
   }
 
-  /// The sidebar's shortcuts: your lists, then People, then one section for each of the user's groups, with its
-  /// users. They are rows under the tabs, in the sidebar only, so a tab bar never shows them.
-  private var shortcuts: some View {
+  /// A tab's navigation stack: the tab's first screen, with the window's pages for the tab pushed on it.
+  private func stack(on tab: WindowTab, @ViewBuilder first: () -> some View) -> some View {
+    NavigationStack(path: $place[pagesOn: tab]) {
+      first()
+        .navigationDestination(for: Page.self) { page in
+          PageScreen(page: page, session: session, pages: $place[pagesOn: tab])
+        }
+    }
+  }
+}
+
+/// The sidebar's shortcuts: your lists, then People, then one section for each of the user's groups, with its users.
+/// They are rows under the tabs, in the sidebar only, so a tab bar never shows them.
+///
+/// A view of its own, so that the frame's body never reads the session: see `SessionReader`.
+private struct SidebarShortcuts: View {
+  let session: SessionModel
+  @Binding var place: WindowPlace
+
+  var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       if !session.yourLists.isEmpty {
         SidebarHeading(words: String(localized: "Your lists", bundle: #bundle))
@@ -143,14 +162,28 @@ public struct TabFrame: View {
       if case .group = part.kind { true } else { false }
     }
   }
+}
 
-  /// A tab's navigation stack: the tab's first screen, with the window's pages for the tab pushed on it.
-  private func stack(on tab: WindowTab, @ViewBuilder first: () -> some View) -> some View {
-    NavigationStack(path: $place[pagesOn: tab]) {
-      first()
-        .navigationDestination(for: Page.self) { page in
-          PageScreen(page: page, session: session, pages: $place[pagesOn: tab])
-        }
-    }
+/// What the frame shows from the session, read in a view of its own: the Gifts tab's badge, which it hands to the
+/// frame only when the number changes, and VoiceOver's word that the instance can't be reached.
+///
+/// The frame's body never reads the session. When it did, each sync that changed the copy ran it again, and the
+/// tab view, updated under an open menu, built the menu again: an open Sort in a list page's More closed back to
+/// More. See "When the app syncs" in `docs/spec.md`.
+private struct SessionReader: View {
+  let session: SessionModel
+  @Binding var giftsBadge: Int?
+
+  var body: some View {
+    Color.clear
+      .accessibilityHidden(true)
+      .onChange(of: session.giftsBadge, initial: true) { _, badge in
+        if giftsBadge != badge { giftsBadge = badge }
+      }
+      // VoiceOver says when the instance can't be reached, once, as the line or the unreachable state appears.
+      .onChange(of: session.isInstanceUnreachable) { _, isUnreachable in
+        guard isUnreachable else { return }
+        AccessibilityNotification.Announcement(CantReach.words(for: session.session.instance)).post()
+      }
   }
 }
